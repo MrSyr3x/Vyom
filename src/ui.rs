@@ -450,9 +450,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
     // --- FOOTER ---
-    let desc_style = Style::default().fg(theme.overlay); // subtext1 map to overlay 
+    let desc_style = Style::default().fg(theme.overlay);
     
-    let footer_text = Line::from(vec![
+    // Split footer into 2 chunks: Left (Controls) and Right (Volume)
+    let footer_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(20),    // Left: Main Controls
+            Constraint::Length(12), // Right: Volume Control
+        ])
+        .split(footer_area);
+
+    let left_footer_text = Line::from(vec![
         Span::styled(" q ", Style::default().fg(theme.red).add_modifier(Modifier::BOLD)), 
         Span::styled("Exit   ", desc_style),
         
@@ -463,14 +472,21 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         Span::styled("Prev   ", desc_style),
         
         Span::styled(" Space ", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)), 
-        Span::styled("Play/Pause   ", desc_style),
+        Span::styled("Play/Pause", desc_style),
+    ]);
+    
+    let left_footer = Paragraph::new(left_footer_text)
+        .alignment(Alignment::Right)
+        .block(Block::default().style(Style::default().bg(Color::Reset)));
+    f.render_widget(left_footer, footer_chunks[0]);
 
+    let right_footer_text = Line::from(vec![
         Span::styled(" +/- ", Style::default().fg(theme.yellow).add_modifier(Modifier::BOLD)), 
         Span::styled("Vol ", desc_style),
     ]);
-    
-    let footer = Paragraph::new(footer_text)
+
+    let right_footer = Paragraph::new(right_footer_text)
         .alignment(Alignment::Right)
         .block(Block::default().style(Style::default().bg(Color::Reset)));
-    f.render_widget(footer, footer_area);
+    f.render_widget(right_footer, footer_chunks[1]);
 }
