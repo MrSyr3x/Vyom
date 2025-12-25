@@ -19,13 +19,16 @@ pub struct App {
     
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
+    
+    // Display Mode
+    pub show_lyrics: bool,
 
 }
 
 
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(show_lyrics: bool) -> Self {
         Self {
             should_quit: false,
             track: None,
@@ -37,6 +40,7 @@ impl App {
             progress_rect: Rect::default(),
             lyrics_hitboxes: Vec::new(),
             lyrics_offset: None,
+            show_lyrics,
         }
     }
 

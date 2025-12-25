@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::new(want_lyrics);
     let (tx, mut rx) = mpsc::channel(100);
 
     // 1. Input Event Task

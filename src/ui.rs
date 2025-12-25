@@ -43,7 +43,11 @@ impl Mocha {
 pub fn ui(f: &mut Frame, app: &mut App) {
     // Responsive Layout Check
     let area = f.area();
-    let is_compressed = area.height < 40; // Mini Mode Cutoff
+    // Mini Mode Rule: 
+    // 1. If explicit 'show_lyrics' is FALSE (default `termony`), ALWAYS use compressed layout.
+    // 2. If explicit 'show_lyrics' is TRUE (`termony --lyrics`), use responsive check.
+    let is_compressed = !app.show_lyrics || area.height < 40; 
+
 
     // 1. Main Vertical Split
     let main_constraints = if is_compressed {
