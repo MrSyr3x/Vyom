@@ -36,11 +36,51 @@ async fn main() -> Result<()> {
     // Smart Window Logic
     let want_lyrics = args.iter().any(|a| a == "--lyrics");
     
+    let current_exe = std::env::current_exe()?;
+    let exe_path = current_exe.to_str().unwrap();
+
+    // 1. LAUNCHER MODE (Spawn New Window) 🚀
+    if !is_tmux && !is_standalone {
+        let term = std::env::var("TERM_PROGRAM").unwrap_or_default();
+        let mut launched = false;
+
+        // A. Apple Terminal
+        if term == "Apple_Terminal" {
+            let script = format!(
+                "tell application \"Terminal\" to do script \"{} --standalone {}\"",
+                exe_path,
+                if want_lyrics { "--lyrics" } else { "" }
+            );
+            if std::process::Command::new("osascript").arg("-e").arg(script).output().is_ok() {
+               launched = true;
+            }
+        }
+        // B. Ghostty / Alacritty / Kita (Generic -e support)
+        else if term == "ghostty" || term == "Alacritty" { // Case sensitive? Alacritty sets TERM usually, not TERM_PROGRAM check env
+             let bin = if term == "ghostty" { "ghostty" } else { "alacritty" };
+             let mut cmd = std::process::Command::new(bin);
+             cmd.arg("-e").arg(exe_path).arg("--standalone");
+             if want_lyrics { cmd.arg("--lyrics"); }
+             if cmd.spawn().is_ok() {
+                 launched = true;
+             }
+        }
+        // C. iTerm.app (Use open -a iTerm, but passing args is hard. Fallback to inline)
+
+        if launched {
+            println!("🚀 Termony launched in new window!");
+            return Ok(());
+        }
+        // If detection failed (e.g. VSCode, iTerm), default to INLINE (Mini Mode).
+        // This ensures it works everywhere even if "Launcher" features miss.
+    }
+
+    // 2. WINDOW TITLE (For Yabai/Amethyst) 🏷️
+    print!("\x1b]2;Termony\x07");
+
+    // 3. TMUX LOGIC
     if is_tmux && !is_standalone {
         // Auto-split logic (Tmux)
-        let current_exe = std::env::current_exe()?;
-        let exe_path = current_exe.to_str().unwrap();
-        
         let status = std::process::Command::new("tmux")
             .arg("split-window")
             .arg("-h")
@@ -55,8 +95,8 @@ async fn main() -> Result<()> {
                 eprintln!("Failed to create tmux split: {}", e);
             }
         }
-    } else if !is_tmux {
-        // Standalone Resize Logic (e.g. iTerm/Terminal/Ghostty)
+    } else if !is_tmux { 
+        // 4. STANDALONE RESIZE (Target Window)
         // \x1b[8;ROWS;COLSt
         if want_lyrics {
             print!("\x1b[8;80;100t"); // Full Size: 80 rows, 100 cols (Plenty for Lyrics)
