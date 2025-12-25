@@ -1,65 +1,67 @@
-# Walkthrough - Termony (formerly tmux-music)
+# Vyom (व्योम) 🌌
+> *Sanskrit: "The Sky", "The Void", or "The Ether"—the elemental medium through which sound travels.*
 
-**Termony** is a high-performance, aesthetically pleasing, and transparent music player TUI for macOS, built in Rust. It adapts intelligently to your environment.
+**Vyom** is a high-performance, intelligent music player for the terminal.
 
-## Key Features
+![Vyom Screenshot](assets/screenshot.png)
 
-### 1. Smart Window Management 🧠
-*   **Tmux:** Auto-splits to the perfect size alongside your work.
-*   **Standalone Mode:**
-    *   **Manual Control:** Run `termony` in any terminal window.
-    *   **Window Title:** Sets title to `Termony` for easy Window Manager filtering (Yabai/Amethyst).
-*   **Strict Modes:**
-    *   `termony`: **Mini Player Mode**. Music Only. Resizing does NOT show lyrics.
-    *   `termony --lyrics`: **Full Mode**. Shows Lyrics if window is large enough.
+## Why? The "Lazy & Creative" Origin Story 🛌💡
 
-    | Environment | Command | Behavior | Window |
-    | :--- | :--- | :--- | :--- |
-    | **Standalone** | `termony` | **Mini Mode** (Strict, no lyrics) | 51x33 |
-    | **Standalone** | `termony --lyrics` | **Full Mode** (Lyrics enabled) | 100x80 |
-    | **Tmux** | `termony` | **Full Split** (Lyrics enabled by default) | 35% Split |
+I built **Vyom** because I was tired. 
 
-    ```bash
-    # Yabai Rule (Float the player)
-    yabai -m rule --add title="^Termony$" manage=off
-    ```
+I constantly forget which Desktop Space my Spotify or Apple Music window is hiding on. I was exhausted from spamming `Option + 1`, `Option + 2`, `Option + 3`... just to find the window to skip a track or see the lyrics.
 
-### 2. High-Performance TUI
-*   **Engine:** Built with `ratatui` and `tokio`.
-*   **Transparency:** Fully transparent background integration (`Color::Reset`).
-*   **Responsive:** UI adapts layout based on window height.
+I wanted something that lives where I live: **The Terminal**. 
 
-### 3. Interactive Lyrics 🎤
-*   **Manual Scroll:** Use mouse wheel to detach from sync and browse freely.
-*   **Click to Jump:** Click any line to instantly seek the track to that position and re-sync.
-*   **Active Highlight:** Green highlighting for the currently playing line.
+I didn't just want a controller; I wanted an experience. Something transparent that blends into my `neovim` workflow, something that splits perfectly in `tmux`, and something that looks "heavenly" with pixel-perfect artwork.
 
-### 4. Smart Catppuccin Theme ☕
-*   **Palette:** Full **Catppuccin Mocha** integration.
-*   **Styling:** Smooth `█▓▒░` gradient progress bar, `🎵` metadata prefix.
+I am lazy enough to automate the annoyance, and creative enough to make it beautiful. Thus, **Vyom** was born.
 
-## Usage
+## Features ✨
 
-### Installation
+*   **Intelligent Layouts:** 
+    *   **Tmux Mode:** Auto-splits to a perfect 35% sidebar.
+    *   **Standalone Mode:** Switches to a massive "Apple Music" style layout when you make the window huge (>120 cols).
+    *   **Mini Mode:** Shrinks down to just the essentials when space is tight.
+*   **"Heavenly" Pixel Art:** High-quality, aspect-ratio corrected album art rendered directly in the terminal using half-blocks (`▀`).
+*   **Synced Lyrics:** Live, scrolling lyrics that you can interact with (click lines to seek!).
+*   **Transparent:** Fully transparent UI that respects your terminal's background.
+
+## What You Need 🛠️
+
+To run **Vyom**, you need:
+
+1.  **macOS**: Works via AppleScript to talk to Spotify/Apple Music.
+2.  **Spotify** (Desktop App) running.
+3.  **Rust**: To build it.
+
+## Installation 🚀
+
 ```bash
-git clone https://github.com/MrSyr3x/termony.git
-cd termony
+git clone https://github.com/MrSyr3x/vyom.git
+cd vyom
 cargo install --path .
 ```
 
-### Running
+## How to Use 🎮
+
+**The Mini Player (Minimalist):**
 ```bash
-# Auto-detects environment
-termony
-
-# Force Full Mode with Lyrics
-termony --lyrics
+vyom
 ```
+*Perfect for a small corner window.*
 
-### Controls
-*   `Left Click`: Control playback, Seek on bar, Jump to Lyric.
-*   `Scroll Wheel`: Manually scroll lyrics.
+**The Full Experience (Lyrics + Big Art):**
+```bash
+vyom --lyrics
+```
+*If you are in Tmux, this will automatically split your window and dock Vyom to the side.*
+
+**Controls:**
 *   `Space`: Play/Pause
-*   `n`: Next Track
-*   `p`: Previous Track
+*   `n` / `p`: Next / Previous Track
+*   `Mouse`: Click progress bar to seek, click lyric lines to jump.
 *   `q`: Quit
+
+---
+*Made with </3 by syr3x*
