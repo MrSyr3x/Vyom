@@ -3,7 +3,7 @@
 
 **Vyom** is a high-performance, intelligent music player for the terminal.
 
-![Vyom Screenshot](assets/screenshot.png)
+![Vyom Screenshot](assets/screenshot.png?v=2)
 
 ## Why? The "Lazy & Creative" Origin Story 🛌💡
 
