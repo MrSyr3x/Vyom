@@ -78,7 +78,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Length(36),
+                        Constraint::Length(28), // Compact Music (Give lyrics more space)
                         Constraint::Min(0),
                     ])
                     .split(body_area);
