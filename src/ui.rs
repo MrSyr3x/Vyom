@@ -46,19 +46,20 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     
     let (music_area, lyrics_area, _is_horizontal) = if show_lyrics {
         if wide_mode {
-            // Horizontal Mode: Music Left (Fixed 45), Lyrics Right (Rest)
+            // Horizontal Mode: Apple Music Style (50/50 Split)
+            // Big Artwork on Left, Lyrics on Right
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Length(45), // Fixed width for music card
-                    Constraint::Min(10),    // Lyrics take rest
+                    Constraint::Percentage(50), // Music takes 50%
+                    Constraint::Percentage(50), // Lyrics takes 50%
                 ])
                 .split(body_area);
              (chunks[0], Some(chunks[1]), true)
         } else {
             // Vertical Mode
             if height < 40 {
-                // Too short for stack -> Hide Lyrics
+                // Too short for stack -> Hide Lyrics (Compressed)
                 (body_area, None, false)
             } else {
                 // Stack Mode: Music Top (36), Lyrics Bottom
@@ -94,17 +95,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     f.render_widget(music_block, music_area);
 
     // Inner Music Layout
-    // If vertical and compressed (< 40 height), we might need to compress internals too.
-    // "Compressed" implies < 36 height usually.
-    // If we hid lyrics because height < 40, we have the full body_area (which is < 40).
-    // So we check inner_music_area.height.
-    
     let m_height = inner_music_area.height;
-    let is_cramped = m_height < 30; // standard layout needs ~32 lines
+    let is_cramped = m_height < 30; 
 
+    // Dynamic Constraints for Big Artwork
+    // If we have tons of vertical space, let art take it.
     let music_constraints = if is_cramped {
-         // Compact (Hide spacers, maybe squish art?)
-         // 20(art) + 4(info) + 1(g) + 1(t) + 1(c) = 27 lines required.
          vec![
             Constraint::Min(10),    // 0: Artwork (Shrinkable)
             Constraint::Length(4),  // 1: Info 
@@ -113,15 +109,19 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Constraint::Length(1),  // 4: Controls
          ]
     } else {
-        // Normal
+        // Normal / Big
          vec![
-            Constraint::Length(24), // 0: Artwork
+            Constraint::Min(5),     // 0: Spacer Top (flexible) - actually Art should fill!
+            // Wait, we want Art to be BIG. Min(0) or Ratio?
+            // Let's use Proportional constraints to center art?
+            // Or just give Artwork Constraint::Min(20) and let it grow.
+            Constraint::Min(20),    // 0: Artwork (Takes available space!)
             Constraint::Length(4),  // 1: Info 
             Constraint::Length(1),  // 2: Gauge
             Constraint::Length(1),  // 3: Time
             Constraint::Length(1),  // 4: Spacer
             Constraint::Length(1),  // 5: Controls
-            Constraint::Min(0),     // 6: Spacer
+            Constraint::Min(0),     // 6: Spacer Bottom
         ]
     };
 
