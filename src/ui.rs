@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment, Rect},
     style::{Color, Style, Modifier},
     text::{Span, Line, Text},
-    widgets::{block::{Title, Position}, Block, Paragraph, Borders, BorderType},
+    widgets::{block::Title, Block, Paragraph, Borders, BorderType},
     Frame,
 };
 use crate::app::App;
@@ -271,20 +271,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 Span::styled(" lyrics ", Style::default().fg(Mocha::CRUST).bg(Mocha::MAUVE))
             ]));
 
-            let credits_title = Title::from(Line::from(vec![
+            let credits_title = Line::from(vec![
                 Span::styled(" ~ by syr3x </3 ", Style::default()
                     .fg(Color::Rgb(235, 111, 146))
                     .add_modifier(Modifier::BOLD | Modifier::ITALIC))
-            ]))
-            .alignment(Alignment::Center)
-            .position(Position::Bottom);
+            ]);
 
             let lyrics_block = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(lyrics_title)
                 .title_alignment(Alignment::Center)
-                .title(credits_title)
+                .title_bottom(credits_title)
                 .border_style(Style::default().fg(Mocha::MAUVE))
                 .style(Style::default().bg(Color::Reset));
                 
