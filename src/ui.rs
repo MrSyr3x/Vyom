@@ -10,34 +10,72 @@ use crate::spotify::PlayerState;
 
 pub fn ui(f: &mut Frame, app: &mut App) {
     let theme = &app.theme;
-
-    // Responsive Layout Check
     let area = f.area();
-    // Mini Mode Rule: 
-    // 1. If explicit 'show_lyrics' is FALSE (default `termony`), ALWAYS use compressed layout.
-    // 2. If explicit 'show_lyrics' is TRUE (`termony --lyrics`), use responsive check.
-    let is_compressed = !app.show_lyrics || area.height < 40; 
 
-
-    // 1. Main Vertical Split
-    let main_constraints = if is_compressed {
-        vec![
-            Constraint::Min(30),    // Music Card (Fit content)
-            Constraint::Length(0),  // No Lyrics
-            Constraint::Length(1),  // Restore Footer
-        ]
-    } else {
-        vec![
-            Constraint::Length(36), // Music Card
-            Constraint::Min(5),     // Lyrics Card
-            Constraint::Length(1),  // Footer
-        ]
-    };
-
-    let main_chunks = Layout::default()
+    // Responsive Logic 🧠
+    // 1. Footer needs 1 line at the bottom always.
+    let root_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(main_constraints)
+        .constraints([
+            Constraint::Min(0),    // Body
+            Constraint::Length(1), // Footer
+        ])
         .split(area);
+
+    let body_area = root_layout[0];
+    let footer_area = root_layout[1];
+
+    // 2. Decide Layout Direction
+    // - Horizontal: If width >= 100 && user wants lyrics.
+    // - Vertical: Standard.
+    // - Compressed: If Vertical AND height < 40 (Hide Lyrics).
+    let width = area.width;
+    let height = area.height;
+    
+    // Thresholds
+    let wide_mode = width >= 90; // Slightly relaxed from 100
+    
+    // Logic:
+    // If we want lyrics:
+    //    If wide -> Horizontal Split.
+    //    If narrow -> Vertical Split.
+    //       If too short (height < 40) -> Hide Lyrics (Compressed).
+    // If we don't want lyrics -> Music Card only.
+
+    let show_lyrics = app.show_lyrics;
+    
+    let (music_area, lyrics_area, _is_horizontal) = if show_lyrics {
+        if wide_mode {
+            // Horizontal Mode: Music Left (Fixed 45), Lyrics Right (Rest)
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(45), // Fixed width for music card
+                    Constraint::Min(10),    // Lyrics take rest
+                ])
+                .split(body_area);
+             (chunks[0], Some(chunks[1]), true)
+        } else {
+            // Vertical Mode
+            if height < 40 {
+                // Too short for stack -> Hide Lyrics
+                (body_area, None, false)
+            } else {
+                // Stack Mode: Music Top (36), Lyrics Bottom
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(36),
+                        Constraint::Min(0),
+                    ])
+                    .split(body_area);
+                (chunks[0], Some(chunks[1]), false)
+            }
+        }
+    } else {
+        // No Lyrics Mode
+        (body_area, None, false)
+    };
 
     // --- MUSIC CARD ---
     let music_title = Title::from(Line::from(vec![
@@ -52,28 +90,34 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         .border_style(Style::default().fg(theme.blue)) 
         .style(Style::default().bg(Color::Reset));
     
-    let music_area = music_block.inner(main_chunks[0]);
-    f.render_widget(music_block, main_chunks[0]);
+    let inner_music_area = music_block.inner(music_area);
+    f.render_widget(music_block, music_area);
 
     // Inner Music Layout
-    let music_constraints = if is_compressed {
-        // Compact for 33 height: 
-        // 20(art) + 4(info) + 1(gauge) + 1(time) + 1(controls) = 27 + 2(border) = 29
-        // Leaves 4 lines buffer for 33 height window. buttons will be safe.
-        vec![
-            Constraint::Length(20), // 0: Artwork (Smaller)
+    // If vertical and compressed (< 40 height), we might need to compress internals too.
+    // "Compressed" implies < 36 height usually.
+    // If we hid lyrics because height < 40, we have the full body_area (which is < 40).
+    // So we check inner_music_area.height.
+    
+    let m_height = inner_music_area.height;
+    let is_cramped = m_height < 30; // standard layout needs ~32 lines
+
+    let music_constraints = if is_cramped {
+         // Compact (Hide spacers, maybe squish art?)
+         // 20(art) + 4(info) + 1(g) + 1(t) + 1(c) = 27 lines required.
+         vec![
+            Constraint::Min(10),    // 0: Artwork (Shrinkable)
             Constraint::Length(4),  // 1: Info 
-            Constraint::Length(1),  // 2: Gauge (Row)
+            Constraint::Length(1),  // 2: Gauge
             Constraint::Length(1),  // 3: Time
-            Constraint::Length(0),  // 4: Spacer (Removed)
-            Constraint::Length(1),  // 5: Controls
-            Constraint::Min(0),     // 6: Spacer
-        ]
+            Constraint::Length(1),  // 4: Controls
+         ]
     } else {
-        vec![
+        // Normal
+         vec![
             Constraint::Length(24), // 0: Artwork
             Constraint::Length(4),  // 1: Info 
-            Constraint::Length(1),  // 2: Gauge (Row)
+            Constraint::Length(1),  // 2: Gauge
             Constraint::Length(1),  // 3: Time
             Constraint::Length(1),  // 4: Spacer
             Constraint::Length(1),  // 5: Controls
@@ -84,16 +128,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let music_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(music_constraints)
-        .split(music_area);
+        .split(inner_music_area);
 
     // 1. Artwork
-    let artwork_area = music_chunks[0];
+    // Index 0 always
+    let art_idx = 0;
+    
     if let Some(data) = &app.artwork {
         let mut lines = Vec::new();
-        // Crop artwork if area is too small? 
-        // With 24 layout constraint, it's fixed.
-        // If window is smaller than 36, music_area might be small/cut off.
-        // Ratatui handles clipping.
+        // Art might be clipped by Ratatui if area is too small.
         for row in data {
             let mut spans = Vec::new();
             for (fg, bg) in row {
@@ -107,11 +150,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             lines.push(Line::from(spans));
         }
         
+        // Center vertically if there is space? Paragraph centers automatically if configured? 
+        // No, Paragraph aligns text within the block. 
+        // We just render.
         let artwork_widget = Paragraph::new(lines)
             .alignment(Alignment::Center)
             .block(Block::default().style(Style::default().bg(Color::Reset)));
-        f.render_widget(artwork_widget, artwork_area);
-
+        f.render_widget(artwork_widget, music_chunks[art_idx]);
     } else {
        // Placeholder
        let text = if app.track.is_some() {
@@ -122,10 +167,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
        let p = Paragraph::new(text)
            .alignment(Alignment::Center)
            .block(Block::default().style(Style::default().fg(theme.overlay).bg(Color::Reset)));
-       f.render_widget(p, artwork_area);
+       f.render_widget(p, music_chunks[art_idx]);
     }
 
-    // 2. Track Info
+    // 2. Info
+    let info_idx = 1;
     if let Some(track) = &app.track {
         let info_text = vec![
             Line::from(Span::styled(
@@ -145,210 +191,223 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let info = Paragraph::new(info_text)
             .alignment(Alignment::Center)
              .block(Block::default().style(Style::default().bg(Color::Reset)));
-        f.render_widget(info, music_chunks[1]);
+        f.render_widget(info, music_chunks[info_idx]);
 
-        // 3. Progress Gauge
-        let gauge_area = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(10), 
-                Constraint::Percentage(80), 
-                Constraint::Percentage(10), 
-            ])
-            .split(music_chunks[2])[1];
+        // 3. Gauge
+        let gauge_idx = 2;
+        // Check if we have enough chunks. If cramped, we don't have spacers.
+        // We used indices 0..4 for cramped.
+        // music_chunks length check? 
+        
+        // Helper to safely get chunk
+        if gauge_idx < music_chunks.len() {
+             let gauge_area_rect = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(10), 
+                    Constraint::Percentage(80), 
+                    Constraint::Percentage(10), 
+                ])
+                .split(music_chunks[gauge_idx])[1];
 
-        let ratio = if track.duration_ms > 0 {
-            track.position_ms as f64 / track.duration_ms as f64
-        } else {
-            0.0
-        };
-        
-        // Custom Texture Gauge
-        let width = gauge_area.width as usize;
-        let occupied_width = (width as f64 * ratio.min(1.0).max(0.0)) as usize;
-        let fill_style = Style::default().fg(theme.magenta);
-        let empty_style = Style::default().fg(theme.surface);
-        
-        let mut bar_spans: Vec<Span> = Vec::with_capacity(width);
-        for i in 0..width {
-             if i < occupied_width {
-                if i >= occupied_width.saturating_sub(1) {
-                    bar_spans.push(Span::styled("▓", fill_style));
-                } else if i >= occupied_width.saturating_sub(2) {
-                    bar_spans.push(Span::styled("▒", fill_style));
-                } else {
-                    bar_spans.push(Span::styled("█", fill_style));
-                }
+            let ratio = if track.duration_ms > 0 {
+                track.position_ms as f64 / track.duration_ms as f64
             } else {
-                bar_spans.push(Span::styled("░", empty_style));
+                0.0
+            };
+            
+            let width = gauge_area_rect.width as usize;
+            let occupied_width = (width as f64 * ratio.min(1.0).max(0.0)) as usize;
+            let fill_style = Style::default().fg(theme.magenta);
+            let empty_style = Style::default().fg(theme.surface);
+            
+            let mut bar_spans: Vec<Span> = Vec::with_capacity(width);
+            for i in 0..width {
+                 if i < occupied_width {
+                    if i >= occupied_width.saturating_sub(1) {
+                        bar_spans.push(Span::styled("▓", fill_style));
+                    } else if i >= occupied_width.saturating_sub(2) {
+                        bar_spans.push(Span::styled("▒", fill_style));
+                    } else {
+                        bar_spans.push(Span::styled("█", fill_style));
+                    }
+                } else {
+                    bar_spans.push(Span::styled("░", empty_style));
+                }
             }
-        }
 
-        let gauge_p = Paragraph::new(Line::from(bar_spans))
-            .alignment(Alignment::Left)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
-        f.render_widget(gauge_p, gauge_area);
-        
-        app.progress_rect = gauge_area;
+            let gauge_p = Paragraph::new(Line::from(bar_spans))
+                .alignment(Alignment::Left)
+                .block(Block::default().style(Style::default().bg(Color::Reset)));
+            f.render_widget(gauge_p, gauge_area_rect);
+            app.progress_rect = gauge_area_rect;
+        }
 
         // 4. Time
-        let time_str = format!(
-            "{:02}:{:02} / {:02}:{:02}",
-            track.position_ms / 60000,
-            (track.position_ms % 60000) / 1000,
-            track.duration_ms / 60000,
-            (track.duration_ms % 60000) / 1000
-        );
-        let time_label = Paragraph::new(time_str)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.overlay));
-        f.render_widget(time_label, music_chunks[3]);
-
-        // 5. Controls
-        let play_icon = if track.state == PlayerState::Playing { "⏸" } else { "▶" };
-        let btn_style = Style::default().fg(theme.text).add_modifier(Modifier::BOLD);
-        
-        let prev_str = "   ⏮   ";
-        let next_str = "   ⏭   ";
-        let play_str = format!("   {}   ", play_icon); 
-        
-        let controls_text = Line::from(vec![
-            Span::styled(prev_str, btn_style),
-            Span::raw("   "), 
-            Span::styled(play_str, btn_style),
-            Span::raw("   "), 
-            Span::styled(next_str, btn_style),
-        ]);
-        
-        let controls = Paragraph::new(controls_text)
-            .alignment(Alignment::Center)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
-        
-        f.render_widget(controls, music_chunks[5]);
-
-        let area = music_chunks[5];
-        let mid_x = area.x + area.width / 2;
-        let y = area.y;
-        
-        app.prev_btn = ratatui::layout::Rect::new(mid_x.saturating_sub(13), y, 7, 1);
-        app.play_btn = ratatui::layout::Rect::new(mid_x.saturating_sub(3), y, 7, 1);
-        app.next_btn = ratatui::layout::Rect::new(mid_x + 7, y, 7, 1);
-
-
-        // --- LYRICS CARD ---
-        if !is_compressed {
-            let lyrics_title = Title::from(Line::from(vec![
-                Span::styled(" lyrics ", Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD))
-            ]));
-
-            let credits_title = Line::from(vec![
-                Span::styled(" ~ by syr3x </3 ", Style::default()
-                    .bg(Color::Rgb(235, 111, 146)) // #eb6f92  (Keep hardcoded as requested)
-                    .fg(theme.base)                // Use theme base (dark) for contrast, or explicit crust? Theme base should be safe.
-                    .add_modifier(Modifier::BOLD | Modifier::ITALIC))
-            ]);
-
-            let lyrics_block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(lyrics_title)
-                .title_alignment(Alignment::Center)
-                .title_bottom(credits_title)
-                .border_style(Style::default().fg(theme.magenta))
-                .style(Style::default().bg(Color::Reset));
-                
-            let lyrics_area = lyrics_block.inner(main_chunks[1]);
-            f.render_widget(lyrics_block, main_chunks[1]);
-
-            // Lyrics Hitboxes Clear
-            app.lyrics_hitboxes.clear(); 
-            
-            if let Some(lyrics) = &app.lyrics {
-                let height = lyrics_area.height as usize;
-                let current_time = track.position_ms;
-                let current_idx = lyrics.iter()
-                   .position(|l| l.timestamp_ms > current_time)
-                   .map(|i| if i > 0 { i - 1 } else { 0 })
-                   .unwrap_or(lyrics.len().saturating_sub(1));
-
-               // Scroll Logic: Use manual offset or auto-calculated
-               let start_idx = if let Some(offset) = app.lyrics_offset {
-                    offset.min(lyrics.len().saturating_sub(1))
-               } else {
-                    let half_height = height / 2;
-                    current_idx.saturating_sub(half_height)
-               };
-               
-               let end_idx = (start_idx + height).min(lyrics.len());
-               
-               let mut lines = Vec::new();
-               
-               for (offset, (i, line)) in lyrics.iter().enumerate().skip(start_idx).take(end_idx - start_idx).enumerate() {
-                   let style = if i == current_idx {
-                       Style::default().add_modifier(Modifier::BOLD).fg(theme.green)
-                   } else {
-                       Style::default().fg(theme.overlay)
-                   };
-                   
-                   let prefix = if i == current_idx { "● " } else { "  " };
-                   let prefix_span = if i == current_idx {
-                       Span::styled(prefix, Style::default().fg(theme.green))
-                   } else {
-                        Span::styled(prefix, style)
-                   };
-
-                   lines.push(Line::from(vec![
-                       prefix_span,
-                       Span::styled(line.text.clone(), style)
-                   ]));
-                   
-                   let line_y = lyrics_area.y + offset as u16;
-                   let hitbox = Rect::new(lyrics_area.x, line_y, lyrics_area.width, 1);
-                   app.lyrics_hitboxes.push((hitbox, line.timestamp_ms));
-               }
-               
-               let lyrics_widget = Paragraph::new(lines)
-                   .alignment(Alignment::Center)
-                   .block(Block::default().style(Style::default().bg(Color::Reset)));
-                   
-               f.render_widget(lyrics_widget, lyrics_area);
-
-            } else {
-                let no_lyrics = Paragraph::new(Text::styled("\nNo Lyrics Found", Style::default().fg(theme.overlay)))
-                    .alignment(Alignment::Center)
-                     .block(Block::default().style(Style::default().bg(Color::Reset)));
-                 f.render_widget(no_lyrics, lyrics_area);
-            }
+        let time_idx = 3;
+        if time_idx < music_chunks.len() {
+            let time_str = format!(
+                "{:02}:{:02} / {:02}:{:02}",
+                track.position_ms / 60000,
+                (track.position_ms % 60000) / 1000,
+                track.duration_ms / 60000,
+                (track.duration_ms % 60000) / 1000
+            );
+            let time_label = Paragraph::new(time_str)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.overlay));
+            f.render_widget(time_label, music_chunks[time_idx]);
         }
+        
+        // 5. Controls
+        // If cramped: index 4. If normal: index 5 (index 4 is spacer)
+        let controls_idx = if is_cramped { 4 } else { 5 };
+        
+        if controls_idx < music_chunks.len() {
+            let play_icon = if track.state == PlayerState::Playing { "⏸" } else { "▶" };
+            let btn_style = Style::default().fg(theme.text).add_modifier(Modifier::BOLD);
+            
+            let prev_str = "   ⏮   ";
+            let next_str = "   ⏭   ";
+            let play_str = format!("   {}   ", play_icon); 
+            
+            let controls_text = Line::from(vec![
+                Span::styled(prev_str, btn_style),
+                Span::raw("   "), 
+                Span::styled(play_str, btn_style),
+                Span::raw("   "), 
+                Span::styled(next_str, btn_style),
+            ]);
+            
+            let controls = Paragraph::new(controls_text)
+                .alignment(Alignment::Center)
+                .block(Block::default().style(Style::default().bg(Color::Reset)));
+            
+            f.render_widget(controls, music_chunks[controls_idx]);
 
-        // --- FOOTER (Rendered outside !is_compressed) ---
-        let desc_style = Style::default().fg(theme.overlay); // subtext1 map to overlay 
-        
-        let footer_text = Line::from(vec![
-            Span::styled(" q ", Style::default().fg(theme.red).add_modifier(Modifier::BOLD)), 
-            Span::styled("Exit   ", desc_style),
+            let area = music_chunks[controls_idx];
+            let mid_x = area.x + area.width / 2;
+            let y = area.y;
             
-            Span::styled("n ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)), 
-            Span::styled("Next   ", desc_style),
-            
-            Span::styled("p ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)), 
-            Span::styled("Prev   ", desc_style),
-            
-            Span::styled("Space ", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)), 
-            Span::styled("Play/Pause", desc_style),
-        ]);
-        
-        let footer = Paragraph::new(footer_text)
-            .alignment(Alignment::Right)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
-        f.render_widget(footer, main_chunks[2]);
+            app.prev_btn = ratatui::layout::Rect::new(mid_x.saturating_sub(13), y, 7, 1);
+            app.play_btn = ratatui::layout::Rect::new(mid_x.saturating_sub(3), y, 7, 1);
+            app.next_btn = ratatui::layout::Rect::new(mid_x + 7, y, 7, 1);
+        }
 
     } else {
         // IDLE STATE
         let t = Paragraph::new("Music Paused / Not Running")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.text))
-            .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Title::from(Line::from(vec![Span::styled(" termony ", Style::default().bg(Color::Reset).add_modifier(Modifier::BOLD))]))).title_alignment(Alignment::Center).style(Style::default().bg(Color::Reset)));
-        f.render_widget(t, main_chunks[0]);
+            .style(Style::default().fg(theme.text));
+        
+        // Just center it in available space
+        f.render_widget(t, inner_music_area);
     }
+    
+    // --- LYRICS CARD ---
+    if let Some(lyrics_area_rect) = lyrics_area {
+        let lyrics_title = Title::from(Line::from(vec![
+            Span::styled(" lyrics ", Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD))
+        ]));
+
+        let credits_title = Line::from(vec![
+            Span::styled(" ~ by syr3x </3 ", Style::default()
+                .bg(Color::Rgb(235, 111, 146)) // #eb6f92
+                .fg(theme.base) 
+                .add_modifier(Modifier::BOLD | Modifier::ITALIC))
+        ]);
+
+        let lyrics_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(lyrics_title)
+            .title_alignment(Alignment::Center)
+            .title_bottom(credits_title)
+            .border_style(Style::default().fg(theme.magenta))
+            .style(Style::default().bg(Color::Reset));
+        
+        let inner_lyrics_area = lyrics_block.inner(lyrics_area_rect);
+        f.render_widget(lyrics_block, lyrics_area_rect);
+
+        app.lyrics_hitboxes.clear(); 
+        
+        if let Some(lyrics) = &app.lyrics {
+            let height = inner_lyrics_area.height as usize;
+            let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
+            
+            let current_idx = lyrics.iter()
+               .position(|l| l.timestamp_ms > track_ms)
+               .map(|i| if i > 0 { i - 1 } else { 0 })
+               .unwrap_or(lyrics.len().saturating_sub(1));
+
+           let start_idx = if let Some(offset) = app.lyrics_offset {
+                offset.min(lyrics.len().saturating_sub(1))
+           } else {
+                let half_height = height / 2;
+                current_idx.saturating_sub(half_height)
+           };
+           
+           let end_idx = (start_idx + height).min(lyrics.len());
+           
+           let mut lines = Vec::new();
+           
+           for (offset, (i, line)) in lyrics.iter().enumerate().skip(start_idx).take(end_idx - start_idx).enumerate() {
+               let style = if i == current_idx {
+                   Style::default().add_modifier(Modifier::BOLD).fg(theme.green)
+               } else {
+                   Style::default().fg(theme.overlay)
+               };
+               
+               let prefix = if i == current_idx { "● " } else { "  " };
+               let prefix_span = if i == current_idx {
+                   Span::styled(prefix, Style::default().fg(theme.green))
+               } else {
+                    Span::styled(prefix, style)
+               };
+
+               lines.push(Line::from(vec![
+                   prefix_span,
+                   Span::styled(line.text.clone(), style)
+               ]));
+               
+               let line_y = inner_lyrics_area.y + offset as u16;
+               let hitbox = Rect::new(inner_lyrics_area.x, line_y, inner_lyrics_area.width, 1);
+               app.lyrics_hitboxes.push((hitbox, line.timestamp_ms));
+           }
+           
+           let lyrics_widget = Paragraph::new(lines)
+               .alignment(Alignment::Center)
+               .block(Block::default().style(Style::default().bg(Color::Reset)));
+               
+           f.render_widget(lyrics_widget, inner_lyrics_area);
+
+        } else {
+            let no_lyrics = Paragraph::new(Text::styled("\nNo Lyrics Found", Style::default().fg(theme.overlay)))
+                .alignment(Alignment::Center)
+                 .block(Block::default().style(Style::default().bg(Color::Reset)));
+             f.render_widget(no_lyrics, inner_lyrics_area);
+        }
+    }
+
+    // --- FOOTER ---
+    let desc_style = Style::default().fg(theme.overlay); // subtext1 map to overlay 
+    
+    let footer_text = Line::from(vec![
+        Span::styled(" q ", Style::default().fg(theme.red).add_modifier(Modifier::BOLD)), 
+        Span::styled("Exit   ", desc_style),
+        
+        Span::styled("n ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)), 
+        Span::styled("Next   ", desc_style),
+        
+        Span::styled("p ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)), 
+        Span::styled("Prev   ", desc_style),
+        
+        Span::styled("Space ", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)), 
+        Span::styled("Play/Pause", desc_style),
+    ]);
+    
+    let footer = Paragraph::new(footer_text)
+        .alignment(Alignment::Right)
+        .block(Block::default().style(Style::default().bg(Color::Reset)));
+    f.render_widget(footer, footer_area);
 }
