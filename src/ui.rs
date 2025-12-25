@@ -71,7 +71,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // --- MUSIC CARD ---
     let music_title = Title::from(Line::from(vec![
-        Span::styled(" termony ", Style::default().fg(Mocha::CRUST).bg(Mocha::BLUE))
+        Span::styled(" termony ", Style::default().fg(Mocha::CRUST).bg(Mocha::BLUE).add_modifier(Modifier::BOLD))
     ]));
 
     let music_block = Block::default()
@@ -268,7 +268,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         // --- LYRICS CARD ---
         if !is_compressed {
             let lyrics_title = Title::from(Line::from(vec![
-                Span::styled(" lyrics ", Style::default().fg(Mocha::CRUST).bg(Mocha::MAUVE))
+                Span::styled(" lyrics ", Style::default().fg(Mocha::CRUST).bg(Mocha::MAUVE).add_modifier(Modifier::BOLD))
             ]));
 
             let credits_title = Line::from(vec![
@@ -378,7 +378,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let t = Paragraph::new("Music Paused / Not Running")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Mocha::TEXT))
-            .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" termony ").title_alignment(Alignment::Center).style(Style::default().bg(Color::Reset)));
+            .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(Title::from(Line::from(vec![Span::styled(" termony ", Style::default().bg(Color::Reset).add_modifier(Modifier::BOLD))]))).title_alignment(Alignment::Center).style(Style::default().bg(Color::Reset)));
         f.render_widget(t, main_chunks[0]);
     }
 }
