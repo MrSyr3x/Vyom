@@ -1,6 +1,6 @@
 use crate::spotify::{TrackInfo};
 use crate::lyrics::{LyricLine};
-use image::DynamicImage;
+use crate::artwork::ArtworkData;
 use ratatui::layout::Rect;
 
 use crate::theme::Theme;
@@ -10,7 +10,7 @@ pub struct App {
     pub is_running: bool,
     pub track: Option<TrackInfo>,
     pub lyrics: Option<Vec<LyricLine>>,
-    pub artwork: Option<DynamicImage>,
+    pub artwork: Option<ArtworkData>,
     // Button Hit Areas
     pub prev_btn: Rect,
     pub play_btn: Rect,

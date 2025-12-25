@@ -9,8 +9,6 @@ use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use futures::{StreamExt};
 
-use image::DynamicImage;
-
 mod app;
 mod artwork;
 mod lyrics;
@@ -21,14 +19,14 @@ mod ui;
 use app::{App};
 use spotify::{Spotify, TrackInfo};
 use lyrics::{LyricsFetcher}; 
-use artwork::{ArtworkRenderer}; 
+use artwork::{ArtworkRenderer, ArtworkData}; 
 use theme::{Theme}; // Import Theme struct
 
 enum AppEvent {
     Input(Event),
     TrackUpdate(Option<TrackInfo>),
     LyricsUpdate(Option<Vec<lyrics::LyricLine>>),
-    ArtworkUpdate(Option<DynamicImage>),
+    ArtworkUpdate(Option<ArtworkData>),
     ThemeUpdate(Theme),
 }
 
@@ -231,9 +229,11 @@ async fn main() -> Result<()> {
                                 let tx_art = tx.clone();
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new();
-                                    // Fetch RAW image. Resize happens in UI.
-                                    if let Ok(img) = renderer.fetch_image(&url).await {
-                                        let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(img))).await;
+                                    // Maximize resolution for Length(24) constraint.
+                                    // 24 rows * 2 subpixels = 48 vertical pixels.
+                                    // Square aspect ratio = 48 width roughly.
+                                    if let Ok(data) = renderer.render_from_url(&url, 48, 24).await {
+                                        let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(data))).await;
                                     }
                                 });
                             }
