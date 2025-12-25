@@ -1,20 +1,31 @@
 use ratatui::style::Color;
+use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct Theme {
     pub name: String,
+    #[serde(deserialize_with = "deserialize_color")]
     pub base: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub text: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub red: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub green: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub yellow: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub blue: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub magenta: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub cyan: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub surface: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub overlay: Color,
 }
 
@@ -37,64 +48,47 @@ impl Theme {
     }
 }
 
+#[derive(Deserialize)]
+struct ThemeConfig {
+    theme: Theme,
+}
+
 pub fn load_current_theme() -> Theme {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let config_path = PathBuf::from(&home).join(".config/vyom/theme.toml");
     
-    // 1. Get Current Theme ID
-    let cache_path = PathBuf::from(&home).join(".cache/current-theme");
-    let theme_id = if let Ok(content) = fs::read_to_string(&cache_path) {
-        content.trim().to_string()
-    } else {
-        return Theme::default();
-    };
-
-    // 2. Read Definitions
-    let definitions_path = PathBuf::from(&home).join(".dotfiles/theme-selector/themes.sh");
-    let content = match fs::read_to_string(&definitions_path) {
-        Ok(c) => c,
-        Err(_) => return Theme::default(),
-    };
-
-    // 3. Parse Shell Script
-    // Looking for: THEMES[theme_id]="Name|Base|..."
-    let key = format!("THEMES[{}]=", theme_id);
-    
-    for line in content.lines() {
-        if let Some(pos) = line.find(&key) {
-            // Extract value inside quotes
-            let remainder = &line[pos + key.len()..];
-            let raw_value = remainder.trim_matches('"');
-            
-            let parts: Vec<&str> = raw_value.split('|').collect();
-            if parts.len() >= 11 {
-                return Theme {
-                    name: parts[0].to_string(),
-                    base: parse_hex(parts[1]),
-                    text: parse_hex(parts[2]),
-                    red: parse_hex(parts[3]),
-                    green: parse_hex(parts[4]),
-                    yellow: parse_hex(parts[5]),
-                    blue: parse_hex(parts[6]),
-                    magenta: parse_hex(parts[7]),
-                    cyan: parse_hex(parts[8]),
-                    surface: parse_hex(parts[9]),
-                    overlay: parse_hex(parts[10]),
-                };
-            }
+    if let Ok(content) = fs::read_to_string(&config_path) {
+        if let Ok(config) = toml::from_str::<ThemeConfig>(&content) {
+            return config.theme;
         }
     }
 
+    // Try parsing just the raw theme if the struct is flat in file? 
+    // Usually it is better to have [theme] table.
+    // Let's assume the user template writes:
+    // [theme]
+    // name = "..."
+    // ...
+    
     Theme::default()
 }
 
-fn parse_hex(hex: &str) -> Color {
+fn deserialize_color<'de, D>(deserializer: D) -> Result<Color, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    parse_hex(&s).map_err(serde::de::Error::custom)
+}
+
+fn parse_hex(hex: &str) -> Result<Color, String> {
     let hex = hex.trim_start_matches('#');
     if hex.len() == 6 {
-        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-        Color::Rgb(r, g, b)
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|e| e.to_string())?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|e| e.to_string())?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|e| e.to_string())?;
+        Ok(Color::Rgb(r, g, b))
     } else {
-        Color::Reset
+        Ok(Color::Reset) 
     }
 }

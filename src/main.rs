@@ -106,20 +106,21 @@ async fn main() -> Result<()> {
     let tx_theme = tx.clone();
     tokio::spawn(async move {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let cache_path = std::path::PathBuf::from(&home).join(".cache/current-theme");
-        let mut last_theme_content = String::new();
+        // Watch the actual config file now
+        let config_path = std::path::PathBuf::from(&home).join(".config/vyom/theme.toml");
+        let mut last_content = String::new();
         
         // Initial read
-        if let Ok(content) = std::fs::read_to_string(&cache_path) {
-            last_theme_content = content;
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            last_content = content;
         }
 
         loop {
             tokio::time::sleep(Duration::from_millis(1000)).await;
             
-            if let Ok(content) = std::fs::read_to_string(&cache_path) {
-                if content != last_theme_content {
-                    last_theme_content = content;
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                if content != last_content {
+                    last_content = content;
                     // Reload theme fully
                     let new_theme = theme::load_current_theme();
                     if tx_theme.send(AppEvent::ThemeUpdate(new_theme)).await.is_err() { break; }
