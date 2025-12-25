@@ -273,8 +273,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
             let credits_title = Line::from(vec![
                 Span::styled(" ~ by syr3x </3 ", Style::default()
-                    .fg(Color::Rgb(235, 111, 146))
-                    .bg(Color::Rgb(196, 167, 231)) // #c4a7e7
+                    .bg(Color::Rgb(235, 111, 146)) // #eb6f92
+                    .fg(Mocha::CRUST)              // Dark Text
                     .add_modifier(Modifier::BOLD | Modifier::ITALIC))
             ]);
 
