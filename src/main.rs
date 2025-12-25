@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Image Picker (Kitty/Sixel/HalfBlock)
-    let mut picker = match Picker::from_query_stdio() {
+    let picker = match Picker::from_query_stdio() {
         Ok(p) => p,
         Err(_) => Picker::from_fontsize((8, 16)),
     };
