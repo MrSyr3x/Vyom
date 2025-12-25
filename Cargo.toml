@@ -14,8 +14,9 @@ publish = false
 ratatui = "0.29.0"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 tokio = { version = "1.42.0", features = ["full"] }
+ratatui-image = "8.1"
 reqwest = { version = "0.12.9", features = ["json"] }
-image = "0.25.5"
+image = "0.25"
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.134"
 anyhow = "1.0.94"

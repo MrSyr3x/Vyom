@@ -88,30 +88,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // 1. Artwork
     let artwork_area = music_chunks[0];
-    if let Some(data) = &app.artwork {
-        let mut lines = Vec::new();
-        // Crop artwork if area is too small? 
-        // With 24 layout constraint, it's fixed.
-        // If window is smaller than 36, music_area might be small/cut off.
-        // Ratatui handles clipping.
-        for row in data {
-            let mut spans = Vec::new();
-            for (fg, bg) in row {
-                spans.push(Span::styled(
-                    "▀",
-                    Style::default()
-                        .fg(Color::Rgb(fg.0, fg.1, fg.2))
-                        .bg(Color::Rgb(bg.0, bg.1, bg.2))
-                ));
-            }
-            lines.push(Line::from(spans));
-        }
-        
-        let artwork_widget = Paragraph::new(lines)
-            .alignment(Alignment::Center)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
-        f.render_widget(artwork_widget, artwork_area);
-
+    if let Some(protocol) = &mut app.artwork {
+        use ratatui_image::StatefulImage;
+        let image = StatefulImage::new();
+        f.render_stateful_widget(image, artwork_area, protocol);
     } else {
        // Placeholder
        let text = if app.track.is_some() {

@@ -9,6 +9,9 @@ use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use futures::{StreamExt};
 
+use image::DynamicImage;
+use ratatui_image::picker::Picker;
+
 mod app;
 mod artwork;
 mod lyrics;
@@ -19,15 +22,14 @@ mod ui;
 use app::{App};
 use spotify::{Spotify, TrackInfo};
 use lyrics::{LyricsFetcher}; 
-use artwork::{ArtworkRenderer, ArtworkData};
-
+use artwork::{ArtworkRenderer};
 use theme::{Theme}; // Import Theme struct
 
 enum AppEvent {
     Input(Event),
     TrackUpdate(Option<TrackInfo>),
     LyricsUpdate(Option<Vec<lyrics::LyricLine>>),
-    ArtworkUpdate(Option<ArtworkData>),
+    ArtworkUpdate(Option<DynamicImage>),
     ThemeUpdate(Theme),
 }
 
@@ -73,6 +75,15 @@ async fn main() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
+    // Image Picker (Kitty/Sixel/HalfBlock)
+    let mut picker = match Picker::from_query_stdio() {
+        Ok(p) => p,
+        Err(_) => Picker::from_fontsize((8, 16)),
+    };
+    // pickle.guess_protocol() is removed/implied by query?
+    // If we want to force guess or protocol, we check docs.
+    // Usually query does it. 
 
     // In Tmux, we assume full split/window, so show lyrics by default.
     // In Standalone, strict mode applies (Mini unless --lyrics).
@@ -126,7 +137,7 @@ async fn main() -> Result<()> {
             }
         }
     });
-    
+
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
 
@@ -135,12 +146,14 @@ async fn main() -> Result<()> {
 
         if let Some(event) = rx.recv().await {
             match event {
+                // ... (Input handling omitted)
                 AppEvent::Input(Event::Mouse(mouse)) => {
-                    use crossterm::event::{MouseEventKind, MouseButton};
-                    match mouse.kind {
+                     // ... same as before
+                     use crossterm::event::{MouseEventKind, MouseButton};
+                     match mouse.kind {
                         MouseEventKind::Down(MouseButton::Left) => {
                              let (col, row) = (mouse.column, mouse.row);
-                            // Checks for lyrics hitboxes (Jump -> Auto Sync)
+                            // ...
                             let mut hit_lyrics = false;
                             for (rect, timestamp) in &app.lyrics_hitboxes {
                                 if rect.contains((col, row).into()) {
@@ -152,7 +165,6 @@ async fn main() -> Result<()> {
                                         track.position_ms = *timestamp;
                                     }
                                     hit_lyrics = true;
-                                    // Reset manual scroll on click!!
                                     app.lyrics_offset = None; 
                                     break;
                                 }
@@ -164,22 +176,11 @@ async fn main() -> Result<()> {
                         }
                         MouseEventKind::ScrollDown => {
                             if let (Some(lyrics), Some(track)) = (&app.lyrics, &app.track) {
-                                // Initialize offset if None
                                 if app.lyrics_offset.is_none() {
-                                    // Calculate current auto position to start scrolling from it
-                                    // Logic duplicated from ui.rs (approximate) or simple:
-                                    // We need to know where we ARE to scroll down from it.
-                                    // UI logic: current_idx - half_height.
-                                    // We don't have height here easily.
-                                    // Let's assume a default height or just start from current_idx?
-                                    // Better: UI should persist "visual_start_index" back to App?
-                                    // Or we just default to current_idx.
                                     let current_idx = lyrics.iter()
                                        .position(|l| l.timestamp_ms > track.position_ms)
                                        .map(|i| if i > 0 { i - 1 } else { 0 })
                                        .unwrap_or(0);
-                                     // Roughly center it? 
-                                     // Let's just set it to current_idx. 
                                      app.lyrics_offset = Some(current_idx);
                                 }
                                 
@@ -195,9 +196,6 @@ async fn main() -> Result<()> {
                                        .position(|l| l.timestamp_ms > track.position_ms)
                                        .map(|i| if i > 0 { i - 1 } else { 0 })
                                        .unwrap_or(0);
-                                       
-                                     // If we scroll up from auto-mode, we probably want to start a bit higher than current line?
-                                     // Or just current line.
                                      app.lyrics_offset = Some(current_idx);
                                 }
                                 
@@ -243,11 +241,9 @@ async fn main() -> Result<()> {
                                 let tx_art = tx.clone();
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new();
-                                    // Maximize resolution for Length(24) constraint.
-                                    // 24 rows * 2 subpixels = 48 vertical pixels.
-                                    // Square aspect ratio = 48 width roughly.
-                                    if let Ok(data) = renderer.render_from_url(&url, 48, 24).await {
-                                        let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(data))).await;
+                                    // Fetch standard image (renderer handles fetch)
+                                    if let Ok(img) = renderer.fetch_image(&url).await {
+                                        let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(img))).await;
                                     }
                                 });
                             }
@@ -255,10 +251,18 @@ async fn main() -> Result<()> {
                     } else {
                         last_track_id.clear();
                         last_artwork_url = None;
+                        app.artwork = None;
                     }
                 },
                 AppEvent::LyricsUpdate(lyrics) => app.lyrics = lyrics,
-                AppEvent::ArtworkUpdate(data) => app.artwork = data,
+                AppEvent::ArtworkUpdate(img_opt) => {
+                    if let Some(img) = img_opt {
+                         // Convert DynamicImage to ResizeProtocol
+                         app.artwork = Some(picker.new_resize_protocol(img));
+                    } else {
+                        app.artwork = None;
+                    }
+                },
                 AppEvent::ThemeUpdate(new_theme) => app.theme = new_theme,
             }
         }
