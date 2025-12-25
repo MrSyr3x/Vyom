@@ -127,7 +127,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Constraint::Length(1),  // 3: Time
             Constraint::Length(1),  // 4: Spacer
             Constraint::Length(1),  // 5: Controls
-            Constraint::Min(0),     // 6: Spacer
+            Constraint::Length(1),  // 6: Bottom Padding
         ]
     };
 
