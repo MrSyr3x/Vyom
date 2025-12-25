@@ -24,7 +24,7 @@ impl LyricsFetcher {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .user_agent("termony-rs/0.1.0")
+                .user_agent("vyom-rs/0.1.0")
                 .build()
                 .unwrap_or_default(),
         }

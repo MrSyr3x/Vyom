@@ -92,7 +92,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // --- MUSIC CARD ---
     let music_title = Title::from(Line::from(vec![
-        Span::styled(" termony ", Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD))
+        Span::styled(" vyom ", Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD))
     ]));
 
     let music_block = Block::default()

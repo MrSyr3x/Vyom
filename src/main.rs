@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let exe_path = current_exe.to_str().unwrap();
 
     // 1. WINDOW TITLE (For Yabai/Amethyst) 🏷️
-    print!("\x1b]2;Termony\x07");
+    print!("\x1b]2;Vyom\x07");
 
     // 2. TMUX LOGIC
     if is_tmux && !is_standalone {

@@ -1,5 +1,5 @@
 [package]
-name = "termony"
+name = "vyom"
 version = "0.1.0"
 edition = "2021"
 description = "A minimalist, transparent Spotify music player for tmux with Catppuccin theming."
