@@ -43,12 +43,12 @@ impl Mocha {
 pub fn ui(f: &mut Frame, app: &mut App) {
     // Responsive Layout Check
     let area = f.area();
-    let is_compressed = area.height < 45; // Mini Mode Cutoff
+    let is_compressed = area.height < 40; // Mini Mode Cutoff
 
     // 1. Main Vertical Split
     let main_constraints = if is_compressed {
         vec![
-            Constraint::Min(36),    // Music Card (takes full space)
+            Constraint::Min(30),    // Music Card (Fit content)
             Constraint::Length(0),  // No Lyrics
             Constraint::Length(1),  // Restore Footer
         ]
@@ -82,9 +82,19 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     f.render_widget(music_block, main_chunks[0]);
 
     // Inner Music Layout
-    let music_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    let music_constraints = if is_compressed {
+        // Compact for 33 height: 24(art)+4(info)+1(gauge)+1(time)+(0 spacer)+1(controls) = 31 + 2(border) = 33
+        vec![
+            Constraint::Length(24), // 0: Artwork
+            Constraint::Length(4),  // 1: Info 
+            Constraint::Length(1),  // 2: Gauge (Row)
+            Constraint::Length(1),  // 3: Time
+            Constraint::Length(0),  // 4: Spacer (Removed)
+            Constraint::Length(1),  // 5: Controls
+            Constraint::Min(0),     // 6: Spacer
+        ]
+    } else {
+        vec![
             Constraint::Length(24), // 0: Artwork
             Constraint::Length(4),  // 1: Info 
             Constraint::Length(1),  // 2: Gauge (Row)
@@ -92,7 +102,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Constraint::Length(1),  // 4: Spacer
             Constraint::Length(1),  // 5: Controls
             Constraint::Min(0),     // 6: Spacer
-        ])
+        ]
+    };
+
+    let music_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(music_constraints)
         .split(music_area);
 
     // 1. Artwork

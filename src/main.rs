@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
         if want_lyrics {
             print!("\x1b[8;60;80t"); // Full Size: 60 rows, 80 cols
         } else {
-            print!("\x1b[8;40;50t"); // Mini Size: 40 rows, 50 cols
+            print!("\x1b[8;33;51t"); // Mini Size: 33 rows, 51 cols
         }
     }
 
