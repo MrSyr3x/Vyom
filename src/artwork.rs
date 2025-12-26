@@ -1,5 +1,5 @@
 use image::DynamicImage;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 
