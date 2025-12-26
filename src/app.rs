@@ -24,14 +24,13 @@ pub struct App {
     
     // Display Mode
     pub app_show_lyrics: bool,
-    pub is_mini: bool,
     pub is_tmux: bool, // New field for layout logic
 }
 
 
 
 impl App {
-    pub fn new(app_show_lyrics: bool, is_mini: bool, is_tmux: bool) -> Self {
+    pub fn new(app_show_lyrics: bool, is_tmux: bool) -> Self {
         let theme = crate::theme::load_current_theme();
         
         Self {
@@ -47,7 +46,6 @@ impl App {
             lyrics_hitboxes: Vec::new(),
             lyrics_offset: None,
             app_show_lyrics,
-            is_mini,
             is_tmux,
         }
     }
