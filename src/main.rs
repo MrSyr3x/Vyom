@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
             .arg("split-window")
             .arg("-h")
             .arg("-p")
-            .arg("29") // Changed from "33" to "29"
+            .arg("22") // Changed from "29" to "22"
             .arg(format!("{} --standalone {}", exe_path, if want_lyrics { "--lyrics" } else { "" }))
             .status();
 
