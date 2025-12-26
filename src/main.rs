@@ -129,6 +129,7 @@ async fn main() -> Result<()> {
         }
     });
 
+
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
 
