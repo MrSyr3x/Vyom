@@ -27,6 +27,10 @@ pub struct Theme {
     pub surface: Color,
     #[serde(deserialize_with = "deserialize_color")]
     pub overlay: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub progress_fg: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub progress_bg: Color,
 }
 
 impl Theme {
@@ -44,6 +48,8 @@ impl Theme {
             cyan: Color::Rgb(148, 226, 213),   // #94e2d5
             surface: Color::Rgb(49, 50, 68),   // #313244 (Surface0)
             overlay: Color::Rgb(108, 112, 134),// #6c7086 (Overlay0)
+            progress_fg: Color::Rgb(166, 227, 161), // Green
+            progress_bg: Color::Rgb(49, 50, 68), // Surface
         }
     }
 }
