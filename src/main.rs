@@ -261,19 +261,34 @@ async fn main() -> Result<()> {
                                     let _ = tx_lyrics.send(AppEvent::LyricsUpdate(lyrics)).await;
                                 }
                             });
+
+                            // 2. Artwork Logic (Once per song checks)
+                            // If this is Apple Music and we have NO URL, try to fetch via iTunes Search.
+                            // We do this here (once) to avoid infinite polling loops.
+                            if track.source == "Music" && track.artwork_url.is_none() {
+                                app.artwork = ArtworkState::Loading;
+                                let tx_art = tx.clone();
+                                let (artist, album) = (track.artist.clone(), track.album.clone());
+                                tokio::spawn(async move {
+                                    let renderer = ArtworkRenderer::new();
+                                    match renderer.fetch_itunes_artwork(&artist, &album).await {
+                                        Ok(url) => {
+                                             match renderer.fetch_image(&url).await {
+                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
+                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                             }
+                                        },
+                                        Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                    }
+                                });
+                            }
                         }
-                        if track.artwork_url != last_artwork_url || track.source == "Music" {
-                            // Logic: 
-                            // 1. If URL changed (Spotify), update.
-                            // 2. If source is Music (URL is usually None initially), we might need to fetch.
-                            //    Wait, "last_artwork_url" tracks what we displayed.
+                        if track.artwork_url != last_artwork_url {
+                            // Logic: Only update if the URL *actually* changed.
+                            // This handles Spotify resolution upgrades or metadata fixes.
+                            // Note: "Music" NO-URL case is handled above in the one-time block.
                             
-                            // Better Logic:
-                            let target_url = track.artwork_url.clone();
-                            let is_music_no_art = track.source == "Music" && target_url.is_none();
-                            
-                            // If we have a URL and it's new -> Fetch it.
-                            if let Some(url) = target_url {
+                            if let Some(url) = track.artwork_url.clone() {
                                 if Some(url.clone()) != last_artwork_url {
                                     last_artwork_url = Some(url.clone());
                                     // Set Loading State
@@ -288,30 +303,6 @@ async fn main() -> Result<()> {
                                         }
                                     });
                                 }
-                            } else if is_music_no_art {
-                                // Music App + No ID.
-                                // Set Loading State
-                                app.artwork = ArtworkState::Loading;
-
-                                let tx_art = tx.clone();
-                                let (artist, album) = (track.artist.clone(), track.album.clone());
-                                
-                                tokio::spawn(async move {
-                                    let renderer = ArtworkRenderer::new();
-                                    // 1. Find URL via iTunes
-                                    match renderer.fetch_itunes_artwork(&artist, &album).await {
-                                        Ok(url) => {
-                                             // 2. Fetch Image
-                                             match renderer.fetch_image(&url).await {
-                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
-                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
-                                             }
-                                        },
-                                        Err(_) => {
-                                            let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await;
-                                        }
-                                    }
-                                });
                             }
                         }
                     } else {
