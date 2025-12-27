@@ -9,7 +9,7 @@ use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use futures::{StreamExt};
 
-use image::DynamicImage;
+
 
 mod app;
 mod artwork;
@@ -18,7 +18,7 @@ mod lyrics;
 mod player; 
 mod ui;
 
-use app::{App};
+use app::{App, ArtworkState};
 use player::{TrackInfo}; 
 use lyrics::{LyricsFetcher}; 
 use artwork::{ArtworkRenderer}; 
@@ -31,7 +31,7 @@ enum AppEvent {
     Input(Event),
     TrackUpdate(Option<TrackInfo>),
     LyricsUpdate(Option<Vec<lyrics::LyricLine>>),
-    ArtworkUpdate(Option<DynamicImage>),
+    ArtworkUpdate(ArtworkState),
     ThemeUpdate(Theme),
 }
 
@@ -251,33 +251,39 @@ async fn main() -> Result<()> {
                             if let Some(url) = target_url {
                                 if Some(url.clone()) != last_artwork_url {
                                     last_artwork_url = Some(url.clone());
-                                    // Fetch standard URL
+                                    // Set Loading State
+                                    app.artwork = ArtworkState::Loading;
+                                    
                                     let tx_art = tx.clone();
                                     tokio::spawn(async move {
                                         let renderer = ArtworkRenderer::new();
-                                        if let Ok(img) = renderer.fetch_image(&url).await {
-                                            let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(img))).await;
+                                        match renderer.fetch_image(&url).await {
+                                            Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
+                                            Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
                                         }
                                     });
                                 }
                             } else if is_music_no_art {
-                                // Music App + No ID (or fallback). use Title/Artist as ID.
-                                // We check if we already fetched for this track ID.
-                                // "last_artwork_url" is strictly URLs.
-                                // Let's use last_track_id to prevent re-fetching for same song.
-                                // Inside this block, track_id is NEW (checked above).
-                                
-                                // So we always fetch for new Music track.
+                                // Music App + No ID.
+                                // Set Loading State
+                                app.artwork = ArtworkState::Loading;
+
                                 let tx_art = tx.clone();
                                 let (artist, album) = (track.artist.clone(), track.album.clone());
                                 
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new();
                                     // 1. Find URL via iTunes
-                                    if let Ok(url) = renderer.fetch_itunes_artwork(&artist, &album).await {
-                                        // 2. Fetch Image
-                                        if let Ok(img) = renderer.fetch_image(&url).await {
-                                             let _ = tx_art.send(AppEvent::ArtworkUpdate(Some(img))).await;
+                                    match renderer.fetch_itunes_artwork(&artist, &album).await {
+                                        Ok(url) => {
+                                             // 2. Fetch Image
+                                             match renderer.fetch_image(&url).await {
+                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
+                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                             }
+                                        },
+                                        Err(_) => {
+                                            let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await;
                                         }
                                     }
                                 });
@@ -286,6 +292,7 @@ async fn main() -> Result<()> {
                     } else {
                         last_track_id.clear();
                         last_artwork_url = None;
+                        app.artwork = ArtworkState::Idle;
                     }
                 },
                 AppEvent::LyricsUpdate(lyrics) => app.lyrics = lyrics,

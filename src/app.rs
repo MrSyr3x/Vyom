@@ -7,13 +7,20 @@ use ratatui::layout::Rect;
 use crate::theme::Theme;
 
 
+pub enum ArtworkState {
+    Idle,
+    Loading,
+    Loaded(DynamicImage),
+    Failed,
+}
+
 pub struct App {
     pub theme: Theme,
 
     pub is_running: bool,
     pub track: Option<TrackInfo>,
     pub lyrics: Option<Vec<LyricLine>>,
-    pub artwork: Option<DynamicImage>,
+    pub artwork: ArtworkState,
     // Button Hit Areas
     pub prev_btn: Rect,
     pub play_btn: Rect,
@@ -41,7 +48,7 @@ impl App {
             is_running: true,
             track: None,
             lyrics: None,
-            artwork: None,
+            artwork: ArtworkState::Idle,
             prev_btn: Rect::default(),
             play_btn: Rect::default(),
             next_btn: Rect::default(),
