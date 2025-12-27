@@ -1,5 +1,6 @@
 use crate::player::{TrackInfo, PlayerTrait};
 use crate::lyrics::{LyricLine};
+use std::time::Instant;
 
 use image::DynamicImage;
 use ratatui::layout::Rect;
@@ -31,6 +32,7 @@ pub struct App {
     
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
+    pub last_scroll_time: Option<Instant>,
     
     // Display Mode
     pub app_show_lyrics: bool,
@@ -55,6 +57,7 @@ impl App {
             progress_rect: Rect::default(),
             lyrics_hitboxes: Vec::new(),
             lyrics_offset: None,
+            last_scroll_time: None,
             app_show_lyrics,
             is_tmux,
         }
