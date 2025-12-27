@@ -33,6 +33,7 @@ enum AppEvent {
     LyricsUpdate(Option<Vec<lyrics::LyricLine>>),
     ArtworkUpdate(ArtworkState),
     ThemeUpdate(Theme),
+    Tick,
 }
 
 #[tokio::main]
@@ -135,11 +136,29 @@ async fn main() -> Result<()> {
         }
     });
 
+    // 4. Animation Tick Task ⚡
+    let tx_tick = tx.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        loop {
+            interval.tick().await;
+            if tx_tick.send(AppEvent::Tick).await.is_err() { break; }
+        }
+    });
+
 
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
 
     loop {
+        // Auto-Reset Lyrics Scroll Logic
+        if let Some(t) = app.last_scroll_time {
+            if t.elapsed().as_secs() >= 3 {
+                // Time up! removing "manual mode" flag to let Tick animation take over
+                app.last_scroll_time = None;
+            }
+        }
+
         terminal.draw(|f| ui::ui(f, &mut app))?;
 
         if let Some(event) = rx.recv().await {
@@ -188,6 +207,7 @@ async fn main() -> Result<()> {
                                 if let Some(off) = &mut app.lyrics_offset {
                                     *off = off.saturating_add(1).min(lyrics.len().saturating_sub(1));
                                 }
+                                app.last_scroll_time = Some(std::time::Instant::now());
                             }
                         }
                         MouseEventKind::ScrollUp => {
@@ -203,6 +223,7 @@ async fn main() -> Result<()> {
                                 if let Some(off) = &mut app.lyrics_offset {
                                     *off = off.saturating_sub(1);
                                 }
+                                app.last_scroll_time = Some(std::time::Instant::now());
                              }
                         }
                         _ => {}
@@ -228,6 +249,10 @@ async fn main() -> Result<()> {
                         if id != last_track_id {
                             last_track_id = id.clone();
                             app.lyrics = None;
+                            // Critical Fix: Reset manual scroll state on song change
+                            app.lyrics_offset = None;
+                            app.last_scroll_time = None;
+                            
                             let tx_lyrics = tx.clone();
                             let (artist, name, dur) = (track.artist.clone(), track.name.clone(), track.duration_ms);
                             tokio::spawn(async move {
@@ -298,6 +323,30 @@ async fn main() -> Result<()> {
                 AppEvent::LyricsUpdate(lyrics) => app.lyrics = lyrics,
                 AppEvent::ArtworkUpdate(data) => app.artwork = data,
                 AppEvent::ThemeUpdate(new_theme) => app.theme = new_theme,
+                AppEvent::Tick => {
+                    // Animation Logic: Return to center
+                    if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
+                        if let (Some(lyrics), Some(track)) = (&app.lyrics, &app.track) {
+                            // 1. Calculate Target
+                            let target_idx = lyrics.iter()
+                               .position(|l| l.timestamp_ms > track.position_ms)
+                               .map(|i| if i > 0 { i - 1 } else { 0 })
+                               .unwrap_or(0);
+                            
+                            // 2. Animate Offset
+                            if let Some(curr) = &mut app.lyrics_offset {
+                                if *curr < target_idx {
+                                    *curr += 1;
+                                } else if *curr > target_idx {
+                                    *curr -= 1;
+                                } else {
+                                    // Reached target
+                                    app.lyrics_offset = None;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         
