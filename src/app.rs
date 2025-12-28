@@ -1,5 +1,6 @@
 use crate::player::{TrackInfo, PlayerTrait};
 use crate::lyrics::{LyricLine};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use image::DynamicImage;
@@ -22,6 +23,11 @@ pub struct App {
     pub track: Option<TrackInfo>,
     pub lyrics: Option<Vec<LyricLine>>,
     pub artwork: ArtworkState,
+    // Manual Scroll State (None = Auto-sync)
+    pub lyrics_offset: Option<usize>,
+    pub lyrics_cache: HashMap<String, Vec<LyricLine>>,
+    pub last_scroll_time: Option<Instant>,
+    
     // Button Hit Areas
     pub prev_btn: Rect,
     pub play_btn: Rect,
@@ -29,10 +35,6 @@ pub struct App {
     pub progress_rect: Rect,
     // (Rect, Timestamp in ms)
     pub lyrics_hitboxes: Vec<(Rect, u64)>,
-    
-    // Manual Scroll State (None = Auto-sync)
-    pub lyrics_offset: Option<usize>,
-    pub last_scroll_time: Option<Instant>,
     
     // Display Mode
     pub app_show_lyrics: bool,
@@ -57,6 +59,7 @@ impl App {
             progress_rect: Rect::default(),
             lyrics_hitboxes: Vec::new(),
             lyrics_offset: None,
+            lyrics_cache: HashMap::new(),
             last_scroll_time: None,
             app_show_lyrics,
             is_tmux,
