@@ -9,6 +9,17 @@ use ratatui::layout::Rect;
 use crate::theme::Theme;
 
 
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LyricsState {
+    Idle,
+    Loading,
+    Loaded(Vec<LyricLine>),
+    Instrumental,
+    Failed(String),
+    NotFound,
+}
+
 pub enum ArtworkState {
     Idle,
     Loading,
@@ -21,7 +32,7 @@ pub struct App {
 
     pub is_running: bool,
     pub track: Option<TrackInfo>,
-    pub lyrics: Option<Vec<LyricLine>>,
+    pub lyrics: LyricsState,       // changed from Option<Vec<LyricLine>>
     pub artwork: ArtworkState,
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
@@ -51,7 +62,7 @@ impl App {
             theme,
             is_running: true,
             track: None,
-            lyrics: None,
+            lyrics: LyricsState::Idle, // changed
             artwork: ArtworkState::Idle,
             prev_btn: Rect::default(),
             play_btn: Rect::default(),

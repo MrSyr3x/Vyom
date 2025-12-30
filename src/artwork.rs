@@ -23,10 +23,8 @@ pub struct ArtworkRenderer {
 }
 
 impl ArtworkRenderer {
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+    pub fn new(client: Client) -> Self {
+        Self { client }
     }
 
     pub async fn fetch_image(&self, url: &str) -> Result<DynamicImage> {

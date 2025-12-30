@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{block::Title, Block, Paragraph, Borders, BorderType},
     Frame,
 };
-use crate::app::{App, ArtworkState};
+use crate::app::{App, ArtworkState, LyricsState};
 use crate::player::PlayerState;
 
 
@@ -384,81 +384,101 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
         app.lyrics_hitboxes.clear(); 
         
-        if let Some(lyrics) = &app.lyrics {
-            let height = inner_lyrics_area.height as usize;
-            let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
-            
-            let current_idx = lyrics.iter()
-               .position(|l| l.timestamp_ms > track_ms)
-               .map(|i| if i > 0 { i - 1 } else { 0 })
-               .unwrap_or(lyrics.len().saturating_sub(1));
-
-            // Absolute Centering Logic (Virtual Window)
-            
-            let mut lines = Vec::new();
-            let half_height = height / 2;
-            let center_idx = app.lyrics_offset.unwrap_or(current_idx);
-
-            for row in 0..height {
-                 let dist_from_center: isize = (row as isize - half_height as isize).abs();
-                 let target_idx_isize = (center_idx as isize) - (half_height as isize) + (row as isize);
-                 
-                 // Visibility Radius: 8 lines above/below
-                 if dist_from_center <= 8 && target_idx_isize >= 0 && target_idx_isize < lyrics.len() as isize {
-                     let idx = target_idx_isize as usize;
-                     let line = &lyrics[idx];
-                     
-                     let is_active = idx == current_idx;
-                     
-                     // Gradient Logic 🎨
-                     let style = if is_active {
-                        // Center: Active Color
-                        Style::default().add_modifier(Modifier::BOLD).fg(theme.green)
-                     } else {
-                        // Gradient based on distance (1..8)
-                        match dist_from_center {
-                            1..=2 => Style::default().fg(theme.text),                                // Bright
-                            3..=4 => Style::default().fg(theme.text).add_modifier(Modifier::DIM),    // Semi-Bright
-                            5..=6 => Style::default().fg(theme.overlay),                             // Dim
-                            7..=8 => Style::default().fg(theme.surface).add_modifier(Modifier::DIM), // Dark
-                            _ => Style::default().fg(theme.base),
-                        }
-                     };
-
-                    let prefix = if is_active { "● " } else { "  " };
-                    let prefix_span = if is_active {
-                        Span::styled(prefix, Style::default().fg(theme.green))
-                    } else {
-                         Span::styled(prefix, style)
-                    };
-
-                    lines.push(Line::from(vec![
-                        prefix_span,
-                        Span::styled(line.text.clone(), style)
-                    ]));
-                    
-                    let line_y = inner_lyrics_area.y + row as u16;
-                    let hitbox = Rect::new(inner_lyrics_area.x, line_y, inner_lyrics_area.width, 1);
-                    app.lyrics_hitboxes.push((hitbox, line.timestamp_ms));
-
-                 } else {
-                     // Hidden / Out of bounds
-                     lines.push(Line::from(""));
-                 }
-            }
-            
-            let lyrics_widget = Paragraph::new(lines)
-                .alignment(Alignment::Center)
-                .wrap(ratatui::widgets::Wrap { trim: true }) 
-                .block(Block::default().style(Style::default().bg(Color::Reset)));
+        match &app.lyrics {
+            LyricsState::Loaded(lyrics) => {
+                let height = inner_lyrics_area.height as usize;
+                let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
                 
-            f.render_widget(lyrics_widget, inner_lyrics_area);
+                let current_idx = lyrics.iter()
+                   .position(|l| l.timestamp_ms > track_ms)
+                   .map(|i| if i > 0 { i - 1 } else { 0 })
+                   .unwrap_or(lyrics.len().saturating_sub(1));
 
-        } else {
-            let no_lyrics = Paragraph::new(Text::styled("\nNo Lyrics Found", Style::default().fg(theme.overlay)))
-                .alignment(Alignment::Center)
-                 .block(Block::default().style(Style::default().bg(Color::Reset)));
-             f.render_widget(no_lyrics, inner_lyrics_area);
+                // Absolute Centering Logic (Virtual Window)
+                
+                let mut lines = Vec::new();
+                let half_height = height / 2;
+                let center_idx = app.lyrics_offset.unwrap_or(current_idx);
+
+                for row in 0..height {
+                     let dist_from_center: isize = (row as isize - half_height as isize).abs();
+                     let target_idx_isize = (center_idx as isize) - (half_height as isize) + (row as isize);
+                     
+                     // Visibility Radius: 8 lines above/below
+                     if dist_from_center <= 8 && target_idx_isize >= 0 && target_idx_isize < lyrics.len() as isize {
+                         let idx = target_idx_isize as usize;
+                         let line = &lyrics[idx];
+                         
+                         let is_active = idx == current_idx;
+                         
+                         // Gradient Logic 🎨
+                         let style = if is_active {
+                            // Center: Active Color
+                            Style::default().add_modifier(Modifier::BOLD).fg(theme.green)
+                         } else {
+                            // Gradient based on distance (1..8)
+                            match dist_from_center {
+                                1..=2 => Style::default().fg(theme.text),                                // Bright
+                                3..=4 => Style::default().fg(theme.text).add_modifier(Modifier::DIM),    // Semi-Bright
+                                5..=6 => Style::default().fg(theme.overlay),                             // Dim
+                                7..=8 => Style::default().fg(theme.surface).add_modifier(Modifier::DIM), // Dark
+                                _ => Style::default().fg(theme.base),
+                            }
+                         };
+
+                        let prefix = if is_active { "● " } else { "  " };
+                        let prefix_span = if is_active {
+                            Span::styled(prefix, Style::default().fg(theme.green))
+                        } else {
+                             Span::styled(prefix, style)
+                        };
+
+                        lines.push(Line::from(vec![
+                            prefix_span,
+                            Span::styled(line.text.clone(), style)
+                        ]));
+                        
+                        let line_y = inner_lyrics_area.y + row as u16;
+                        let hitbox = Rect::new(inner_lyrics_area.x, line_y, inner_lyrics_area.width, 1);
+                        app.lyrics_hitboxes.push((hitbox, line.timestamp_ms));
+
+                     } else {
+                         // Hidden / Out of bounds
+                         lines.push(Line::from(""));
+                     }
+                }
+                
+                let lyrics_widget = Paragraph::new(lines)
+                    .alignment(Alignment::Center)
+                    .wrap(ratatui::widgets::Wrap { trim: true }) 
+                    .block(Block::default().style(Style::default().bg(Color::Reset)));
+                    
+                f.render_widget(lyrics_widget, inner_lyrics_area);
+            },
+            LyricsState::Loading => {
+                let text = Paragraph::new(Text::styled("\nFetching Lyrics...", Style::default().fg(theme.yellow)))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().style(Style::default().bg(Color::Reset)));
+                f.render_widget(text, inner_lyrics_area);
+            },
+            LyricsState::Instrumental => {
+                let text = Paragraph::new(Text::styled("\n\n\n\n♫ Instrumental ♫", Style::default().fg(theme.cyan).add_modifier(Modifier::BOLD)))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().style(Style::default().bg(Color::Reset)));
+                f.render_widget(text, inner_lyrics_area);
+            },
+            LyricsState::Failed(err) => {
+                 let text = Paragraph::new(Text::styled(format!("\nLyrics Failed: {}", err), Style::default().fg(theme.red)))
+                    .alignment(Alignment::Center)
+                     .block(Block::default().style(Style::default().bg(Color::Reset)));
+                 f.render_widget(text, inner_lyrics_area);
+            },
+            LyricsState::Idle | LyricsState::NotFound => {
+                let no_lyrics = Paragraph::new(Text::styled("\nNo Lyrics Found", Style::default().fg(theme.overlay)))
+                    .alignment(Alignment::Center)
+                     .block(Block::default().style(Style::default().bg(Color::Reset)));
+                 f.render_widget(no_lyrics, inner_lyrics_area);
+            }
         }
     }
 

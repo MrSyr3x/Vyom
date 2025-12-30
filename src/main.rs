@@ -18,9 +18,9 @@ mod lyrics;
 mod player; 
 mod ui;
 
-use app::{App, ArtworkState};
+use app::{App, ArtworkState, LyricsState};
 use player::{TrackInfo}; 
-use crate::lyrics::{LyricsFetcher, LyricLine}; 
+use crate::lyrics::{LyricsFetcher}; 
 use artwork::{ArtworkRenderer}; 
 
 
@@ -30,7 +30,7 @@ use theme::{Theme};
 enum AppEvent {
     Input(Event),
     TrackUpdate(Option<TrackInfo>),
-    LyricsUpdate(String, Option<Vec<LyricLine>>),
+    LyricsUpdate(String, LyricsState),
     ArtworkUpdate(ArtworkState),
     ThemeUpdate(Theme),
     Tick,
@@ -86,7 +86,13 @@ async fn main() -> Result<()> {
     // 1. Initial State
     let mut app = App::new(app_show_lyrics, is_tmux);
     let player = player::get_player(); // Factory Pattern
-    let (tx, mut rx) = mpsc::channel(100); // 👈 Restore Channel
+    let (tx, mut rx) = mpsc::channel(100); 
+
+    // Performance Optimization: Global HTTP Client (Reused)
+    let client = reqwest::Client::builder()
+        .user_agent("vyom-rs/1.0.1")
+        .build()
+        .unwrap_or_default();
 
 
 
@@ -112,7 +118,7 @@ async fn main() -> Result<()> {
             if let Ok(Ok(info)) = track_result {
                  if tx_spotify.send(AppEvent::TrackUpdate(info)).await.is_err() { break; }
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
     });
 
@@ -195,7 +201,7 @@ async fn main() -> Result<()> {
 
                         }
                         MouseEventKind::ScrollDown => {
-                            if let (Some(lyrics), Some(track)) = (&app.lyrics, &app.track) {
+                            if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                                 if app.lyrics_offset.is_none() {
                                     let current_idx = lyrics.iter()
                                        .position(|l| l.timestamp_ms > track.position_ms)
@@ -211,7 +217,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         MouseEventKind::ScrollUp => {
-                             if let (Some(lyrics), Some(track)) = (&app.lyrics, &app.track) {
+                             if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                                 if app.lyrics_offset.is_none() {
                                      let current_idx = lyrics.iter()
                                        .position(|l| l.timestamp_ms > track.position_ms)
@@ -248,30 +254,38 @@ async fn main() -> Result<()> {
                         let id = format!("{}{}", track.name, track.artist);
                         if id != last_track_id {
                             last_track_id = id.clone();
-                            app.lyrics = None;
+                            // Critical: Set Loading state immediately
+                            app.lyrics = LyricsState::Loading;
                             // Critical Fix: Reset manual scroll state on song change
                             app.lyrics_offset = None;
                             app.last_scroll_time = None;
                             
                             // 1. Check Cache
                             if let Some(cached) = app.lyrics_cache.get(&id) {
-                                app.lyrics = Some(cached.clone());
+                                app.lyrics = LyricsState::Loaded(cached.clone());
                             } else {
                                 // 2. If not in cache, fetch
                                 let tx_lyrics = tx.clone();
                                 let (artist, name, dur) = (track.artist.clone(), track.name.clone(), track.duration_ms);
                                 let fetch_id = id.clone();
                                 
+                                let client = client.clone();
                                 tokio::spawn(async move {
-                                    let fetcher = LyricsFetcher::new();
+                                    let fetcher = LyricsFetcher::new(client);
+                                    use crate::lyrics::LyricsFetchResult;
                                     match fetcher.fetch(&artist, &name, dur).await {
-                                        Ok(lyrics) => { 
-                                            // Send ID back with result
-                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, lyrics)).await;
+                                        Ok(LyricsFetchResult::Found(lyrics)) => { 
+                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics))).await;
                                         },
-                                        Err(_) => {
-                                            // Send None on error
-                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, None)).await;
+                                        Ok(LyricsFetchResult::Instrumental) => {
+                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Instrumental)).await;
+                                        },
+                                        Ok(LyricsFetchResult::None) => {
+                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::NotFound)).await;
+                                        }
+                                        Err(e) => {
+                                            // Send Error State
+                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Failed(e.to_string()))).await;
                                         }
                                     }
                                 });
@@ -282,8 +296,9 @@ async fn main() -> Result<()> {
                                 app.artwork = ArtworkState::Loading;
                                 let tx_art = tx.clone();
                                 let (artist, album) = (track.artist.clone(), track.album.clone());
+                                let client = client.clone();
                                 tokio::spawn(async move {
-                                    let renderer = ArtworkRenderer::new();
+                                    let renderer = ArtworkRenderer::new(client);
                                     match renderer.fetch_itunes_artwork(&artist, &album).await {
                                         Ok(url) => {
                                              match renderer.fetch_image(&url).await {
@@ -303,8 +318,9 @@ async fn main() -> Result<()> {
                                 last_artwork_url = Some(url.clone());
                                 app.artwork = ArtworkState::Loading;
                                 let tx_art = tx.clone();
+                                let client = client.clone();
                                 tokio::spawn(async move {
-                                    let renderer = ArtworkRenderer::new();
+                                    let renderer = ArtworkRenderer::new(client);
                                     match renderer.fetch_image(&url).await {
                                          Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
                                          Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
@@ -318,15 +334,15 @@ async fn main() -> Result<()> {
                         app.artwork = ArtworkState::Idle;
                     }
                 },
-                AppEvent::LyricsUpdate(id, lyrics) => {
-                    // Update cache regardless
-                    if let Some(l) = &lyrics {
-                        app.lyrics_cache.insert(id.clone(), l.clone());
+                AppEvent::LyricsUpdate(id, state) => {
+                    // Update cache if loaded
+                    if let LyricsState::Loaded(ref l) = state {
+                         app.lyrics_cache.insert(id.clone(), l.clone());
                     }
                     
                     // Only update UI if we are still on the same song
                     if id == last_track_id {
-                         app.lyrics = lyrics;
+                         app.lyrics = state;
                     }
                 },
                 AppEvent::ArtworkUpdate(data) => app.artwork = data,
@@ -334,7 +350,7 @@ async fn main() -> Result<()> {
                 AppEvent::Tick => {
                     // Animation Logic: Return to center
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
-                        if let (Some(lyrics), Some(track)) = (&app.lyrics, &app.track) {
+                        if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
                             let target_idx = lyrics.iter()
                                .position(|l| l.timestamp_ms > track.position_ms)
