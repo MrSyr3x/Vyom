@@ -18,11 +18,20 @@ pub struct TrackInfo {
     pub duration_ms: u64,
     pub position_ms: u64,
     pub state: PlayerState,
-    pub source: String, // "Spotify" or "Music"
+    pub source: String, // "Spotify", "Music", "MPD"
+    
+    // Audiophile Metadata 🎵
+    pub codec: Option<String>,      // "FLAC", "ALAC", "AAC", "MP3"
+    pub bitrate: Option<u32>,        // kbps
+    pub sample_rate: Option<u32>,    // Hz (e.g., 44100, 96000)
+    pub bit_depth: Option<u8>,       // 16, 24, 32
+    
+    /// File path for embedded artwork extraction (MPD mode)
+    pub file_path: Option<String>,
 }
 
 /// The unified interface for any OS Media Player 🎵
-pub trait PlayerTrait {
+pub trait PlayerTrait: Send + Sync {
     fn get_current_track(&self) -> Result<Option<TrackInfo>>;
     fn play_pause(&self) -> Result<()>;
     fn next(&self) -> Result<()>;
@@ -30,6 +39,20 @@ pub trait PlayerTrait {
     fn seek(&self, position_secs: f64) -> Result<()>;
     fn volume_up(&self) -> Result<()>;
     fn volume_down(&self) -> Result<()>;
+    
+    /// Get current queue/playlist (MPD only, returns empty for controller mode)
+    /// Returns: (title, artist, duration_ms, is_current, file_path)
+    fn get_queue(&self) -> Result<Vec<(String, String, u64, bool, String)>> {
+        Ok(Vec::new())
+    }
+    
+    // Extended methods for MPD features (defaults for non-MPD players)
+    fn shuffle(&self, _enable: bool) -> Result<()> { Ok(()) }
+    fn repeat(&self, _enable: bool) -> Result<()> { Ok(()) }
+    fn crossfade(&self, _secs: u32) -> Result<()> { Ok(()) }
+    fn delete_queue(&self, _pos: u32) -> Result<()> { Ok(()) }
+    fn get_shuffle(&self) -> Result<bool> { Ok(false) }
+    fn get_repeat(&self) -> Result<bool> { Ok(false) }
 }
 
 /// Factory to get the correct player for the current OS
@@ -153,6 +176,12 @@ impl PlayerTrait for MacOsPlayer {
                     state,
                     artwork_url: Some(parts[6].to_string()).filter(|s| !s.is_empty() && s != "NONE"),
                     source: app_name.to_string(),
+                    // Controller mode: no audiophile metadata
+                    codec: None,
+                    bitrate: None,
+                    sample_rate: None,
+                    bit_depth: None,
+                    file_path: None,
                 }))
             },
             Err(_) => Ok(None)

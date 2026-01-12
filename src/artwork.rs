@@ -32,6 +32,29 @@ impl ArtworkRenderer {
         let img = image::load_from_memory(&bytes)?;
         Ok(img)
     }
+    
+    /// Extract embedded album art from audio file (FLAC, MP3, etc.)
+    #[cfg(feature = "mpd")]
+    pub fn extract_embedded_art(file_path: &str) -> Result<DynamicImage> {
+        use lofty::file::TaggedFileExt;
+        use lofty::picture::PictureType;
+        
+        let tagged_file = lofty::read_from_path(file_path)?;
+        
+        // Try primary tag first, then all tags
+        for tag in tagged_file.tags() {
+            for picture in tag.pictures() {
+                if picture.pic_type() == PictureType::CoverFront 
+                    || picture.pic_type() == PictureType::Other {
+                    let img = image::load_from_memory(picture.data())?;
+                    return Ok(img);
+                }
+            }
+        }
+        
+        // If no cover found in tags, return error
+        anyhow::bail!("No embedded artwork found in {}", file_path)
+    }
 
     fn clean_string(s: &str) -> String {
         // Remove content in (), [], and "feat."
@@ -101,5 +124,108 @@ impl ArtworkRenderer {
         }
         
         anyhow::bail!("No results found on iTunes")
+    }
+    
+    /// Convert image to terminal-renderable lines using half-block characters
+    /// Each terminal cell represents 2 vertical pixels using ▀ (upper half block)
+    /// with foreground color for top pixel and background for bottom
+    pub fn render_to_lines(img: &DynamicImage, target_width: u32, target_height: u32) -> Vec<(String, Vec<(u8, u8, u8, u8, u8, u8)>)> {
+        use image::GenericImageView;
+        
+        // Resize image to target dimensions (height should be even for half-blocks)
+        let actual_height = target_height * 2; // 2 pixels per terminal row
+        let resized = img.resize_exact(target_width, actual_height, image::imageops::FilterType::Triangle);
+        
+        let mut lines: Vec<(String, Vec<(u8, u8, u8, u8, u8, u8)>)> = Vec::new();
+        
+        // Process 2 rows at a time
+        for y in (0..actual_height).step_by(2) {
+            let mut line_chars = String::new();
+            let mut line_colors: Vec<(u8, u8, u8, u8, u8, u8)> = Vec::new();
+            
+            for x in 0..target_width {
+                let top_pixel = resized.get_pixel(x, y);
+                let bottom_pixel = if y + 1 < actual_height {
+                    resized.get_pixel(x, y + 1)
+                } else {
+                    top_pixel
+                };
+                
+                // Get RGB values
+                let (tr, tg, tb) = (top_pixel[0], top_pixel[1], top_pixel[2]);
+                let (br, bg, bb) = (bottom_pixel[0], bottom_pixel[1], bottom_pixel[2]);
+                
+                // Use upper half block (▀) with fg=top, bg=bottom
+                line_chars.push('▀');
+                line_colors.push((tr, tg, tb, br, bg, bb));
+            }
+            
+            lines.push((line_chars, line_colors));
+        }
+        
+        lines
+    }
+    
+    /// Render a tiny thumbnail (4 chars wide, 2 lines tall) for inline display
+    /// Returns Vec of ratatui Lines ready for rendering
+    pub fn render_tiny(img: &DynamicImage) -> Vec<ratatui::text::Line<'static>> {
+        use image::GenericImageView;
+        use ratatui::style::{Color, Style};
+        use ratatui::text::{Line, Span};
+        
+        // Resize to 4x4 pixels (2 lines of 4 chars each using half-blocks)
+        let resized = img.resize_exact(4, 4, image::imageops::FilterType::Triangle);
+        
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        
+        // Process 2 rows at a time (4 pixels → 2 lines)
+        for y in (0..4).step_by(2) {
+            let mut spans: Vec<Span> = Vec::new();
+            
+            for x in 0..4 {
+                let top = resized.get_pixel(x, y);
+                let bottom = if y + 1 < 4 { resized.get_pixel(x, y + 1) } else { top };
+                
+                let fg = Color::Rgb(top[0], top[1], top[2]);
+                let bg = Color::Rgb(bottom[0], bottom[1], bottom[2]);
+                
+                spans.push(Span::styled("▀", Style::default().fg(fg).bg(bg)));
+            }
+            
+            lines.push(Line::from(spans));
+        }
+        
+        lines
+    }
+    
+    /// Render a small thumbnail (8 chars wide, 4 lines tall)
+    /// Better quality than tiny, still compact
+    pub fn render_small(img: &DynamicImage) -> Vec<ratatui::text::Line<'static>> {
+        use image::GenericImageView;
+        use ratatui::style::{Color, Style};
+        use ratatui::text::{Line, Span};
+        
+        // Resize to 8x8 pixels (4 lines of 8 chars each)
+        let resized = img.resize_exact(8, 8, image::imageops::FilterType::Triangle);
+        
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        
+        for y in (0..8).step_by(2) {
+            let mut spans: Vec<Span> = Vec::new();
+            
+            for x in 0..8 {
+                let top = resized.get_pixel(x, y);
+                let bottom = if y + 1 < 8 { resized.get_pixel(x, y + 1) } else { top };
+                
+                let fg = Color::Rgb(top[0], top[1], top[2]);
+                let bg = Color::Rgb(bottom[0], bottom[1], bottom[2]);
+                
+                spans.push(Span::styled("▀", Style::default().fg(fg).bg(bg)));
+            }
+            
+            lines.push(Line::from(spans));
+        }
+        
+        lines
     }
 }

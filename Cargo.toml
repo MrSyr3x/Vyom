@@ -1,6 +1,6 @@
 [package]
 name = "vyom"
-version = "1.0.1"
+version = "1.0.11"
 edition = "2021"
 description = "A minimalist, transparent Spotify music player for tmux with Catppuccin theming."
 license = "MIT"
@@ -13,11 +13,34 @@ exclude = ["images/*", ".github/*"]
 ratatui = { version = "0.29.0", features = ["serde"] }
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 tokio = { version = "1.42.0", features = ["full"] }
-reqwest = { version = "0.12.9", features = ["json"] }
+reqwest = { version = "0.12.9", features = ["json", "blocking"] }
 image = "0.25"
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.134"
 anyhow = "1.0.94"
 futures = "0.3.31"
 toml = "0.9.10"
+clap = { version = "4.4", features = ["derive"] }
+dirs = "5"  # Config directory paths
 
+# Optional MPD support
+mpd = { version = "0.1", optional = true }
+lofty = { version = "0.22", optional = true }
+
+# Optional EQ support (audio device info + DSP)
+cpal = { version = "0.15", optional = true }
+biquad = { version = "0.4", optional = true }
+
+# Direct CoreAudio for bit-perfect output (macOS only)
+coreaudio-rs = { version = "0.11", optional = true }
+
+# Unix file operations (for FIFO)
+libc = { version = "0.2", optional = true }
+
+# FFT for spectrum analyzer
+rustfft = { version = "6.2", optional = true }
+
+[features]
+default = []
+mpd = ["dep:mpd", "dep:lofty"]
+eq = ["dep:cpal", "dep:biquad", "dep:coreaudio-rs", "dep:libc", "dep:rustfft"]
