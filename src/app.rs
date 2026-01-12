@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use image::DynamicImage;
-use ratatui::layout::Rect;
+
 
 use crate::theme::Theme;
 use crate::audio_device;
@@ -155,8 +155,6 @@ pub struct App {
     pub lyrics_cache: HashMap<String, Vec<LyricLine>>,
     pub last_scroll_time: Option<Instant>,
     
-    // Button Hit Areas
-    // Mouse fields removed
 
     
     // Display Mode
