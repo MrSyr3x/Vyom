@@ -869,11 +869,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 f.render_widget(library_widget, inner_lyrics_area);
             },
             ViewMode::EQ => {
-                // 🎛️ Beautiful 10-Band Equalizer with Axes
+                // 🎛️ EQ Card - User's Design with Dotted Grid & Filled Curve
                 let w = inner_lyrics_area.width as usize;
                 let h = inner_lyrics_area.height as usize;
                 
-                if h < 12 || w < 30 {
+                if h < 14 || w < 40 {
                     let msg = Paragraph::new("♪ Resize for EQ")
                         .alignment(Alignment::Center)
                         .style(Style::default().fg(theme.overlay));
@@ -881,282 +881,227 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 } else {
                     let mut lines: Vec<Line> = Vec::new();
                     
-                    // Config
-                    let bands = 10;
+                    // Color palette
+                    let green = Color::Rgb(166, 218, 149);
+                    let pink = Color::Rgb(243, 139, 168);
+                    let blue = Color::Rgb(137, 180, 250);
+                    let lavender = Color::Rgb(180, 142, 255);
+                    let cream = Color::Rgb(245, 224, 220);
+                    let grid_dim = Color::Rgb(55, 55, 65);
+                    let muted = theme.overlay;
+                    
                     let freqs = ["32", "64", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
+                    let bands = 10;
                     
-                    // Colors
-                    let _purple = Color::Rgb(180, 142, 255);  // Purple axis (reserved)
-                    let blue = Color::Rgb(137, 180, 250);    // Blue curve
-                    let green = Color::Rgb(166, 218, 149);   // Green boost
-                    let pink = Color::Rgb(243, 139, 168);    // Pink cut
-                    let cream = Color::Rgb(245, 224, 220);   // Cream selected
-                    let dim = theme.surface;
+                    // ━━━ BALANCE SLIDER ━━━
+                    let slider_w = (w * 50 / 100).max(20);
+                    let pad = (w.saturating_sub(slider_w + 6)) / 2;
+                    let bal_pos = ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32) as usize;
                     
-                    // ─────────────────────────────────────
-                    // CLEAN MINIMAL FREQUENCY RESPONSE
-                    // ─────────────────────────────────────
-                    let label_width = 4;
-                    let actual_graph_cols = w.saturating_sub(label_width);
-                    let graph_rows = (h * 45 / 100).max(6);
-                    
-                    // Grid line positions for each band
-                    let band_positions: Vec<usize> = (0..bands)
-                        .map(|i| (actual_graph_cols * (2 * i + 1)) / (2 * bands))
-                        .collect();
-                    
-                    // Calculate smooth curve positions
-                    let mut curve_y: Vec<usize> = vec![graph_rows / 2; actual_graph_cols];
-                    for col in 0..actual_graph_cols {
-                        let mut band_idx = 0;
-                        for i in 0..bands {
-                            if col >= band_positions[i] {
-                                band_idx = i;
-                            }
-                        }
-                        
-                        if col <= band_positions[0] {
-                            curve_y[col] = ((1.0 - app.eq_bands[0]) * (graph_rows - 1) as f32).round() as usize;
-                        } else if col >= band_positions[bands - 1] {
-                            curve_y[col] = ((1.0 - app.eq_bands[bands - 1]) * (graph_rows - 1) as f32).round() as usize;
+                    let mut bal: Vec<Span> = Vec::new();
+                    bal.push(Span::raw(" ".repeat(pad)));
+                    bal.push(Span::styled("L ", Style::default().fg(muted)));
+                    for i in 0..slider_w {
+                        if i == bal_pos {
+                            bal.push(Span::styled("○", Style::default().fg(green)));
                         } else {
-                            let next_band = (band_idx + 1).min(bands - 1);
-                            let x1 = band_positions[band_idx];
-                            let x2 = band_positions[next_band];
-                            let y1 = (1.0 - app.eq_bands[band_idx]) * (graph_rows - 1) as f32;
-                            let y2 = (1.0 - app.eq_bands[next_band]) * (graph_rows - 1) as f32;
-                            
+                            bal.push(Span::styled("·", Style::default().fg(grid_dim)));
+                        }
+                    }
+                    bal.push(Span::styled(" R", Style::default().fg(muted)));
+                    lines.push(Line::from(bal));
+                    lines.push(Line::from(Span::styled("BALANCE", Style::default().fg(muted))).alignment(Alignment::Center));
+                    lines.push(Line::from(""));
+                    
+                    // ━━━ EQ GRAPH with High Resolution ━━━
+                    // Use 7-13 rows based on available space
+                    let available_rows = h.saturating_sub(14); // Reserve space for other elements
+                    let graph_h = available_rows.max(7).min(13);
+                    let label_w = 5;
+                    let graph_w = w.saturating_sub(label_w + 1);
+                    
+                    // Band X positions
+                    let band_x: Vec<usize> = (0..bands).map(|i| (graph_w * (i * 2 + 1)) / (bands * 2)).collect();
+                    
+                    // Calculate Y for each band with higher precision
+                    // Convert eq value (0.0-1.0) to row position
+                    // v=1.0 -> top (row 0, +12dB), v=0.5 -> center (0dB), v=0.0 -> bottom (-12dB)
+                    let center_row = graph_h / 2;
+                    
+                    // Store precise Y values as floats first
+                    let band_y_precise: Vec<f32> = app.eq_bands.iter().map(|&v| {
+                        (1.0 - v) * (graph_h - 1) as f32
+                    }).collect();
+                    
+                    // Interpolate curve Y for each column (with sub-row precision)
+                    let mut curve_y_precise: Vec<f32> = vec![center_row as f32; graph_w];
+                    for col in 0..graph_w {
+                        let mut left_band = 0;
+                        for i in 0..bands {
+                            if col >= band_x[i] { left_band = i; }
+                        }
+                        let right_band = (left_band + 1).min(bands - 1);
+                        
+                        if col <= band_x[0] {
+                            curve_y_precise[col] = band_y_precise[0];
+                        } else if col >= band_x[bands - 1] {
+                            curve_y_precise[col] = band_y_precise[bands - 1];
+                        } else {
+                            let x1 = band_x[left_band];
+                            let x2 = band_x[right_band];
                             if x2 > x1 {
                                 let t = (col - x1) as f32 / (x2 - x1) as f32;
-                                let t_smooth = t * t * (3.0 - 2.0 * t);
-                                curve_y[col] = (y1 + t_smooth * (y2 - y1)).round() as usize;
+                                let t = t * t * (3.0 - 2.0 * t); // smoothstep
+                                curve_y_precise[col] = band_y_precise[left_band] * (1.0 - t) + band_y_precise[right_band] * t;
                             }
                         }
                     }
                     
-                    let center_row = graph_rows / 2;
+                    // Generate dB labels based on graph height
+                    let db_step = 24.0 / (graph_h - 1) as f32; // dB per row
                     
-                    // Render clean graph
-                    for row in 0..graph_rows {
+                    for row in 0..graph_h {
                         let mut spans: Vec<Span> = Vec::new();
                         
-                        // dB labels - subtle
-                        let db_label = if row == 0 {
-                            "+12"
-                        } else if row == center_row {
-                            "  0"
-                        } else if row == graph_rows - 1 {
-                            "-12"
+                        // Y-axis label
+                        let db_val = 12.0 - (row as f32 * db_step);
+                        let db_label = if db_val.abs() < 0.1 {
+                            "0dB ".to_string()
+                        } else if db_val > 0.0 {
+                            format!("{:+.0} ", db_val)
                         } else {
-                            "   "
+                            format!("{:.0} ", db_val)
                         };
+                        spans.push(Span::styled(format!("{:>4}", db_label), Style::default().fg(muted)));
                         
-                        spans.push(Span::styled(db_label, Style::default().fg(dim)));
-                        spans.push(Span::styled("│", Style::default().fg(dim)));
-                        
-                        for col in 0..actual_graph_cols {
-                            let is_on_curve = row == curve_y[col];
-                            let is_band_point = band_positions.contains(&col) && is_on_curve;
-                            let is_center = row == center_row;
+                        for col in 0..graph_w {
+                            let cy = curve_y_precise[col];
+                            let cy_row = cy.round() as usize;
+                            let is_on_curve = row == cy_row;
+                            let is_band_col = band_x.contains(&col);
+                            let is_band_point = is_band_col && is_on_curve;
+                            let is_center_row = row == center_row;
+                            
+                            // Fill regions - check if this row is between curve and center
+                            let is_boost_fill = cy < center_row as f32 && (row as f32) > cy && row <= center_row;
+                            let is_cut_fill = cy > center_row as f32 && (row as f32) < cy && row >= center_row;
+                            
+                            // Check if selected band
+                            let band_idx = band_x.iter().position(|&x| x == col);
+                            let is_selected = band_idx.map(|i| i == app.eq_selected).unwrap_or(false);
                             
                             if is_band_point {
-                                // Band control points - slightly larger
-                                spans.push(Span::styled("●", Style::default().fg(blue)));
+                                // Circle marker at band points
+                                let marker_col = if is_selected { cream } else { 
+                                    if cy <= center_row as f32 { green } else { pink } 
+                                };
+                                spans.push(Span::styled("○", Style::default().fg(marker_col)));
                             } else if is_on_curve {
-                                // Smooth curve line
-                                spans.push(Span::styled("─", Style::default().fg(blue)));
-                            } else if is_center {
-                                // Center line - very subtle dotted
-                                if col % 4 == 0 {
-                                    spans.push(Span::styled("·", Style::default().fg(dim)));
-                                } else {
-                                    spans.push(Span::raw(" "));
-                                }
+                                // Bold curve line - use bullet for thicker dots
+                                let curve_col = if cy <= center_row as f32 { green } else { pink };
+                                spans.push(Span::styled("•", Style::default().fg(curve_col)));
+                            } else if is_boost_fill {
+                                // Solid fill for boost
+                                spans.push(Span::styled("░", Style::default().fg(green)));
+                            } else if is_cut_fill {
+                                // Solid fill for cut
+                                spans.push(Span::styled("░", Style::default().fg(pink)));
+                            } else if is_band_col {
+                                // Dotted vertical grid line at band positions
+                                spans.push(Span::styled("┊", Style::default().fg(grid_dim)));
+                            } else if is_center_row {
+                                // Dashed horizontal 0dB line
+                                spans.push(Span::styled("─", Style::default().fg(grid_dim)));
                             } else {
                                 spans.push(Span::raw(" "));
                             }
                         }
-                        
                         lines.push(Line::from(spans));
                     }
                     
-                    // Bottom axis - simple line
-                    let mut axis_spans: Vec<Span> = Vec::new();
-                    axis_spans.push(Span::styled(" Hz ", Style::default().fg(dim)));
-                    axis_spans.push(Span::styled("─".repeat(actual_graph_cols), Style::default().fg(dim)));
-                    lines.push(Line::from(axis_spans));
-                    
-                    // Frequency labels - clean and aligned
-                    let mut freq_spans: Vec<Span> = Vec::new();
-                    freq_spans.push(Span::raw("    "));
-                    
-                    for i in 0..bands {
-                        let pos = band_positions[i];
-                        let label = freqs[i];
-                        let label_len = label.len();
-                        
-                        let prev_end = if i == 0 { 0 } else { 
-                            band_positions[i - 1] + freqs[i - 1].len() / 2 + 1 
-                        };
-                        let spaces_before = pos.saturating_sub(label_len / 2).saturating_sub(prev_end);
-                        
-                        if spaces_before > 0 {
-                            freq_spans.push(Span::raw(" ".repeat(spaces_before)));
-                        }
-                        freq_spans.push(Span::styled(label, Style::default().fg(theme.overlay)));
-                    }
-                    lines.push(Line::from(freq_spans));
-                    
-                    // Simple spacer
-                    lines.push(Line::from(""));
-                    
-                    // ─────────────────────────────────────
-                    // CLEAN MINIMAL SLIDERS
-                    // ─────────────────────────────────────
-                    let slider_rows = (h * 30 / 100).max(5);
-                    let center = slider_rows / 2;
-                    
-                    for row in 0..slider_rows {
-                        let mut chars: Vec<char> = vec![' '; w];
-                        let mut colors: Vec<Color> = vec![theme.base; w];
-                        
-                        // Center line - subtle dots
-                        if row == center {
-                            for c in 0..w {
-                                if c % 4 == 0 {
-                                    chars[c] = '·';
-                                    colors[c] = dim;
-                                }
-                            }
-                        }
-                        
-                        // Sliders - clean minimal colors
-                        for band in 0..bands {
-                            let graph_cols = w.saturating_sub(2);
-                            let x = 2 + (graph_cols * (2 * band + 1)) / (2 * bands);
-                            if x >= w { continue; }
-                            
-                            let val = app.eq_bands[band];
-                            let knob_row = ((1.0 - val) * (slider_rows - 1) as f32).round() as usize;
-                            let is_sel = band == app.eq_selected;
-                            
-                            if row == knob_row {
-                                // Knob
-                                chars[x] = if is_sel { '◉' } else { '●' };
-                                colors[x] = if is_sel { cream } else { blue };
-                            } else if val > 0.5 && row > knob_row && row <= center {
-                                // Boost - green
-                                chars[x] = '│';
-                                colors[x] = green;
-                            } else if val < 0.5 && row < knob_row && row >= center {
-                                // Cut - pink
-                                chars[x] = '│';
-                                colors[x] = pink;
-                            } else {
-                                // Track
-                                chars[x] = '│';
-                                colors[x] = dim;
-                            }
-                        }
-                        
-                        let spans: Vec<Span> = chars.iter().zip(colors.iter())
-                            .map(|(c, col)| Span::styled(c.to_string(), Style::default().fg(*col)))
-                            .collect();
-                        lines.push(Line::from(spans));
-                    }
-                    
-                    // ─────────────────────────────────────
-                    // CLEAN FREQUENCY LABELS
-                    // ─────────────────────────────────────
-                    let mut lbl_spans: Vec<Span> = Vec::new();
+                    // Frequency labels
+                    let mut freq_line: Vec<Span> = Vec::new();
+                    freq_line.push(Span::raw(" ".repeat(label_w)));
                     let mut pos = 0;
-                    let graph_cols = w.saturating_sub(2);
                     for (i, freq) in freqs.iter().enumerate() {
-                        let target = 2 + (graph_cols * (2 * i + 1)) / (2 * bands);
-                        let start = target.saturating_sub(freq.len() / 2);
-                        
-                        while pos < start {
-                            lbl_spans.push(Span::raw(" "));
+                        let target = band_x[i];
+                        while pos < target.saturating_sub(freq.len() / 2) && pos < graph_w {
+                            freq_line.push(Span::raw(" "));
                             pos += 1;
                         }
-                        
-                        let is_sel = i == app.eq_selected;
-                        let style = if is_sel {
-                            Style::default().fg(cream).add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(theme.overlay)
-                        };
-                        lbl_spans.push(Span::styled(*freq, style));
+                        let style = if i == app.eq_selected { Style::default().fg(cream).add_modifier(Modifier::BOLD) } else { Style::default().fg(muted) };
+                        freq_line.push(Span::styled(*freq, style));
                         pos += freq.len();
                     }
-                    lines.push(Line::from(lbl_spans));
+                    lines.push(Line::from(freq_line));
                     
-                    // Bottom divider
-                    lines.push(Line::from(Span::styled("─".repeat(w), Style::default().fg(dim))));
+                    // ━━━ EQUALISER + PRESET ━━━
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled("EQUALISER", Style::default().fg(muted))).alignment(Alignment::Center));
+                    let preset = format!("PRESET: {}", app.get_preset_name());
+                    lines.push(Line::from(Span::styled(preset, Style::default().fg(if app.eq_enabled { green } else { muted }))).alignment(Alignment::Center));
                     
-                    // Audiophile Controls Row 🎚️
-                    let preamp_str = format!("Preamp {:+.0}dB", app.preamp_db);
-                    let balance_str = if app.balance.abs() < 0.05 { 
-                        "Balance ◉".to_string() 
-                    } else if app.balance > 0.0 {
-                        format!("Balance ─{}▶", "●".repeat((app.balance * 5.0) as usize))
-                    } else {
-                        format!("Balance ◀{}─", "●".repeat((-app.balance * 5.0) as usize))
-                    };
-                    let xfade_str = if app.crossfade_secs > 0 {
-                        format!("Xfade {}s", app.crossfade_secs)
-                    } else {
-                        "Xfade Off".to_string()
-                    };
-                    let rg_str = match app.replay_gain_mode {
-                        1 => "RG Track",
-                        2 => "RG Album",
-                        3 => "RG Auto",
-                        _ => "RG Off",
-                    };
+                    // ━━━ PREAMP SLIDER ━━━
+                    lines.push(Line::from(""));
+                    let pre_w = (w * 45 / 100).max(16);
+                    let pre_pad = (w.saturating_sub(pre_w + 10)) / 2;
+                    let pre_norm = (app.preamp_db + 12.0) / 24.0;
+                    let pre_pos = (pre_norm * (pre_w - 1) as f32) as usize;
                     
-                    let total_ctl_len = preamp_str.len() + balance_str.chars().count() + xfade_str.len() + rg_str.len() + 9;
-                    let ctl_pad = (w.saturating_sub(total_ctl_len)) / 5;
-                    lines.push(Line::from(vec![
-                        Span::raw(" ".repeat(ctl_pad)),
-                        Span::styled(&preamp_str, Style::default().fg(if app.preamp_db != 0.0 { green } else { theme.overlay })),
-                        Span::raw("  "),
-                        Span::styled(&balance_str, Style::default().fg(if app.balance != 0.0 { pink } else { theme.overlay })),
-                        Span::raw("  "),
-                        Span::styled(&xfade_str, Style::default().fg(if app.crossfade_secs > 0 { blue } else { theme.overlay })),
-                        Span::raw("  "),
-                        Span::styled(rg_str, Style::default().fg(if app.replay_gain_mode > 0 { green } else { theme.overlay })),
-                    ]));
+                    let mut pre: Vec<Span> = Vec::new();
+                    pre.push(Span::raw(" ".repeat(pre_pad)));
+                    pre.push(Span::styled("+12 ", Style::default().fg(muted)));
+                    for i in 0..pre_w {
+                        if i == pre_pos {
+                            pre.push(Span::styled("○", Style::default().fg(green)));
+                        } else {
+                            pre.push(Span::styled("·", Style::default().fg(grid_dim)));
+                        }
+                    }
+                    pre.push(Span::styled(" -12", Style::default().fg(muted)));
+                    lines.push(Line::from(pre));
+                    lines.push(Line::from(Span::styled("PREAMP", Style::default().fg(muted))).alignment(Alignment::Center));
                     
-                    // Device name (from actual audio output)
-                    let device = format!("🔊 {}", app.output_device);
+                    // ━━━ CROSSFADE (own line) ━━━
+                    lines.push(Line::from(""));
+                    let xf_opts = ["Off", "2s", "4s", "6s"];
+                    let xf_sel = match app.crossfade_secs { 2 => 1, 4 => 2, 6 => 3, _ => 0 };
                     
-                    // Preset name
-                    let preset = format!(" [{}]", app.get_preset_name());
+                    let mut xf_line: Vec<Span> = Vec::new();
+                    xf_line.push(Span::styled("CROSSFADE:  ", Style::default().fg(muted)));
+                    for (i, o) in xf_opts.iter().enumerate() {
+                        let s = if i == xf_sel { Style::default().fg(green) } else { Style::default().fg(grid_dim) };
+                        xf_line.push(Span::styled(*o, s));
+                        xf_line.push(Span::raw("  "));
+                    }
+                    lines.push(Line::from(xf_line).alignment(Alignment::Center));
                     
-                    // DSP EQ status indicator
+                    // ━━━ REPLAYGAIN (own line) ━━━
+                    let rg_opts = ["Off", "Track", "Album", "Auto"];
+                    let rg_sel = app.replay_gain_mode as usize;
+                    
+                    let mut rg_line: Vec<Span> = Vec::new();
+                    rg_line.push(Span::styled("REPLAYGAIN:  ", Style::default().fg(muted)));
+                    for (i, o) in rg_opts.iter().enumerate() {
+                        let s = if i == rg_sel { Style::default().fg(green) } else { Style::default().fg(grid_dim) };
+                        rg_line.push(Span::styled(*o, s));
+                        rg_line.push(Span::raw("  "));
+                    }
+                    lines.push(Line::from(rg_line).alignment(Alignment::Center));
+                    
+                    // ━━━ DEVICE PILL ━━━
+                    lines.push(Line::from(""));
                     let status = if app.dsp_available {
-                        if app.eq_enabled { " ● ON" } else { " ○ OFF" }
-                    } else {
-                        " ⚠ N/A"
-                    };
-                    let status_color = if app.dsp_available {
-                        if app.eq_enabled { green } else { theme.overlay }
-                    } else {
-                        pink
-                    };
+                        if app.eq_enabled { ("● ON", green) } else { ("○ OFF", muted) }
+                    } else { ("⚠ N/A", pink) };
                     
-                    let total_len = device.chars().count() + preset.len() + status.len();
-                    let device_pad = (w.saturating_sub(total_len)) / 2;
                     lines.push(Line::from(vec![
-                        Span::raw(" ".repeat(device_pad)),
-                        Span::styled(device, Style::default().fg(green)),
-                        Span::styled(preset, Style::default().fg(blue)),
-                        Span::styled(status, Style::default().fg(status_color)),
-                    ]));
+                        Span::styled(format!(" {} ", app.output_device), Style::default().fg(theme.base).bg(green)),
+                        Span::raw("  "),
+                        Span::styled(status.0, Style::default().fg(status.1)),
+                    ]).alignment(Alignment::Center));
                     
-                    let widget = Paragraph::new(lines)
-                        .block(Block::default().style(Style::default().bg(Color::Reset)));
+                    let widget = Paragraph::new(lines).block(Block::default().style(Style::default().bg(Color::Reset)));
                     f.render_widget(widget, inner_lyrics_area);
                 }
             },

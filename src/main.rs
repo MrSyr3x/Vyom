@@ -505,10 +505,19 @@ async fn main() -> Result<()> {
                                         target = target.max(0.0);
                                     }
                                     
-                                    // Non-blocking seek! 🚀
+                                    // Non-blocking seek with track verification! 🚀
                                     let player_bg = player.clone();
+                                    // Use name+artist as unique track identifier
+                                    let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
                                     tokio::task::spawn_blocking(move || {
-                                        let _ = player_bg.seek(target);
+                                        // Verify we're still on the same track before seeking
+                                        if let Ok(Some(current_track)) = player_bg.get_current_track() {
+                                            let current_key = (current_track.name.clone(), current_track.artist.clone());
+                                            if original_track_key.as_ref() == Some(&current_key) {
+                                                let _ = player_bg.seek(target);
+                                            }
+                                            // If track changed, skip the seek silently
+                                        }
                                     });
                                     app.toast = Some((format!("⏪ Seek: {:+.0}s", app.seek_accumulator), now));
                                 }
@@ -542,10 +551,19 @@ async fn main() -> Result<()> {
                                         target = target.max(0.0);
                                     }
                                     
-                                    // Non-blocking seek! 🚀
+                                    // Non-blocking seek with track verification! 🚀
                                     let player_bg = player.clone();
+                                    // Use name+artist as unique track identifier
+                                    let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
                                     tokio::task::spawn_blocking(move || {
-                                        let _ = player_bg.seek(target);
+                                        // Verify we're still on the same track before seeking
+                                        if let Ok(Some(current_track)) = player_bg.get_current_track() {
+                                            let current_key = (current_track.name.clone(), current_track.artist.clone());
+                                            if original_track_key.as_ref() == Some(&current_key) {
+                                                let _ = player_bg.seek(target);
+                                            }
+                                            // If track changed, skip the seek silently
+                                        }
                                     });
                                     app.toast = Some((format!("⏩ Seek: {:+.0}s", app.seek_accumulator), now));
                                 }
@@ -1299,6 +1317,10 @@ async fn main() -> Result<()> {
                             // Critical Fix: Reset manual scroll state on song change
                             app.lyrics_offset = None;
                             app.last_scroll_time = None;
+                            // Critical Fix: Reset seek state on song change to prevent seeks carrying over
+                            app.seek_accumulator = 0.0;
+                            app.seek_initial_pos = None;
+                            app.last_seek_time = None;
                             
                             // 1. Check Cache
                             if let Some(cached) = app.lyrics_cache.get(&id) {
