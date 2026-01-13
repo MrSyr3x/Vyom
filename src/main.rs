@@ -471,12 +471,114 @@ async fn main() -> Result<()> {
                                 app.toast = Some(("⏮ Previous Track".to_string(), std::time::Instant::now()));
                             },
                             KeyCode::Char('+') | KeyCode::Char('=') => { 
-                                // Note: Volume is hardware/DAC controlled in bit-perfect mode
-                                let _ = player.volume_up();
-                            },
-                            KeyCode::Char('-') | KeyCode::Char('_') => { 
-                                // Note: Volume is hardware/DAC controlled in bit-perfect mode
+                            // Note: Volume is hardware/DAC controlled in bit-perfect mode
                                 let _ = player.volume_down();
+                            },
+                            // Seek Controls (cumulative & safe) ⏩
+                            KeyCode::Char('h') => {
+                                let now = std::time::Instant::now();
+                                let is_new_sequence = if let Some(last) = app.last_seek_time {
+                                    now.duration_since(last).as_millis() >= 500
+                                } else { true };
+                                
+                                if is_new_sequence {
+                                    if let Some(track) = &app.track {
+                                        app.seek_initial_pos = Some(track.position_ms as f64 / 1000.0);
+                                    } else {
+                                        app.seek_initial_pos = Some(0.0);
+                                    }
+                                    app.seek_accumulator = -5.0;
+                                } else {
+                                    app.seek_accumulator -= 5.0;
+                                }
+                                app.last_seek_time = Some(now);
+                                
+                                if let Some(start_pos) = app.seek_initial_pos {
+                                    let mut target = start_pos + app.seek_accumulator;
+                                    
+                                    // Clamp to safe range (0.0 to Duration) to prevent panic
+                                    if let Some(track) = &app.track {
+                                        let duration = track.duration_ms as f64 / 1000.0;
+                                        // Ensure positive and within bounds
+                                        target = target.max(0.0).min(duration);
+                                    } else {
+                                        target = target.max(0.0);
+                                    }
+                                    
+                                    // Non-blocking seek! 🚀
+                                    let player_bg = player.clone();
+                                    tokio::task::spawn_blocking(move || {
+                                        let _ = player_bg.seek(target);
+                                    });
+                                    app.toast = Some((format!("⏪ Seek: {:+.0}s", app.seek_accumulator), now));
+                                }
+                            },
+                            KeyCode::Char('l') => {
+                                let now = std::time::Instant::now();
+                                let is_new_sequence = if let Some(last) = app.last_seek_time {
+                                    now.duration_since(last).as_millis() >= 500
+                                } else { true };
+                                
+                                if is_new_sequence {
+                                    if let Some(track) = &app.track {
+                                        app.seek_initial_pos = Some(track.position_ms as f64 / 1000.0);
+                                    } else {
+                                        app.seek_initial_pos = Some(0.0);
+                                    }
+                                    app.seek_accumulator = 5.0;
+                                } else {
+                                    app.seek_accumulator += 5.0;
+                                }
+                                app.last_seek_time = Some(now);
+                                
+                                if let Some(start_pos) = app.seek_initial_pos {
+                                    let mut target = start_pos + app.seek_accumulator;
+                                    
+                                    // Clamp to safe range (0.0 to Duration)
+                                    if let Some(track) = &app.track {
+                                        let duration = track.duration_ms as f64 / 1000.0;
+                                        target = target.max(0.0).min(duration);
+                                    } else {
+                                        target = target.max(0.0);
+                                    }
+                                    
+                                    // Non-blocking seek! 🚀
+                                    let player_bg = player.clone();
+                                    tokio::task::spawn_blocking(move || {
+                                        let _ = player_bg.seek(target);
+                                    });
+                                    app.toast = Some((format!("⏩ Seek: {:+.0}s", app.seek_accumulator), now));
+                                }
+                            },
+                            
+                            // Queue Reordering with J/K (Shift+j/k) 🔄
+                            KeyCode::Char('J') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
+                                if app.library_selected < app.queue.len().saturating_sub(1) {
+                                    #[cfg(feature = "mpd")]
+                                    if args.mpd {
+                                        if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                            let current_pos = app.library_selected as u32;
+                                            let new_pos = current_pos + 1;
+                                            if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                                 app.library_selected = new_pos as usize;
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            KeyCode::Char('K') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
+                                if app.library_selected > 0 {
+                                    #[cfg(feature = "mpd")]
+                                    if args.mpd {
+                                        if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                            let current_pos = app.library_selected as u32;
+                                            let new_pos = current_pos - 1;
+                                            if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                                 app.library_selected = new_pos as usize;
+                                            }
+                                        }
+                                    }
+                                }
                             },
                             // View Mode Switching 🎛️
                             KeyCode::Char('1') => app.view_mode = app::ViewMode::Lyrics,
@@ -484,6 +586,74 @@ async fn main() -> Result<()> {
                             KeyCode::Char('3') => app.view_mode = app::ViewMode::Library,
                             KeyCode::Char('4') => app.view_mode = app::ViewMode::EQ,
                         
+                        // Lyrics Navigation (j/k scroll, Enter to seek) 📜
+                        KeyCode::Char('j') if app.view_mode == app::ViewMode::Lyrics => {
+                            if let LyricsState::Loaded(ref lines) = &app.lyrics {
+                                let max = lines.len().saturating_sub(1);
+                                
+                                // If no selection yet, start from current playing line
+                                let current_playing = {
+                                    let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
+                                    lines.iter()
+                                        .position(|l| l.timestamp_ms > track_ms)
+                                        .map(|i| if i > 0 { i - 1 } else { 0 })
+                                        .unwrap_or(max)
+                                };
+                                
+                                let current = app.lyrics_selected.unwrap_or(current_playing);
+                                let new_sel = (current + 1).min(max);
+                                app.lyrics_selected = Some(new_sel);
+                                app.lyrics_offset = Some(new_sel);
+                                
+                                // CRITICAL: Mark scroll time to prevent auto-recenter!
+                                app.last_scroll_time = Some(std::time::Instant::now());
+                            }
+                        },
+                        KeyCode::Char('k') if app.view_mode == app::ViewMode::Lyrics => {
+                            if let LyricsState::Loaded(ref lines) = &app.lyrics {
+                                let max = lines.len().saturating_sub(1);
+                                
+                                // If no selection yet, start from current playing line
+                                let current_playing = {
+                                    let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
+                                    lines.iter()
+                                        .position(|l| l.timestamp_ms > track_ms)
+                                        .map(|i| if i > 0 { i - 1 } else { 0 })
+                                        .unwrap_or(max)
+                                };
+                                
+                                let current = app.lyrics_selected.unwrap_or(current_playing);
+                                let new_sel = current.saturating_sub(1);
+                                app.lyrics_selected = Some(new_sel);
+                                app.lyrics_offset = Some(new_sel);
+                                
+                                // CRITICAL: Mark scroll time to prevent auto-recenter!
+                                app.last_scroll_time = Some(std::time::Instant::now());
+                            }
+                        },
+                        KeyCode::Enter if app.view_mode == app::ViewMode::Lyrics => {
+                            if let LyricsState::Loaded(ref lines) = &app.lyrics {
+                                if let Some(idx) = app.lyrics_selected {
+                                    if idx < lines.len() {
+                                        let target_ms = lines[idx].timestamp_ms;
+                                        let target_secs = target_ms as f64 / 1000.0;
+                                        
+                                        // Non-blocking seek! 🚀
+                                        let player_bg = player.clone();
+                                        tokio::task::spawn_blocking(move || {
+                                            let _ = player_bg.seek(target_secs);
+                                        });
+                                        
+                                        let mins = target_ms / 60000;
+                                        let secs = (target_ms % 60000) / 1000;
+                                        app.toast = Some((format!("🎤 Jump to {}:{:02}", mins, secs), std::time::Instant::now()));
+                                        app.lyrics_selected = None; // Exit selection mode
+                                        app.lyrics_offset = None; // Return to auto-sync
+                                        app.last_scroll_time = None; // Allow immediate auto-follow
+                                    }
+                                }
+                            }
+                        },
                         // EQ Controls (only when in EQ view) 🎚️
                         KeyCode::Left if app.view_mode == app::ViewMode::EQ => {
                             app.eq_selected = app.eq_selected.saturating_sub(1);
@@ -1262,8 +1432,9 @@ async fn main() -> Result<()> {
                                 } else if *curr > target_idx {
                                     *curr -= 1;
                                 } else {
-                                    // Reached target
+                                    // Reached target - reset selection too!
                                     app.lyrics_offset = None;
+                                    app.lyrics_selected = None; // Clear selection for fresh start
                                 }
                             }
                         }

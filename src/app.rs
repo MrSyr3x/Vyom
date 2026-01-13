@@ -152,8 +152,14 @@ pub struct App {
     pub artwork: ArtworkState,
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
+    pub lyrics_selected: Option<usize>, // Manual selection for j/k navigation
     pub lyrics_cache: HashMap<String, Vec<LyricLine>>,
     pub last_scroll_time: Option<Instant>,
+    
+    // Seek Accumulation State ⏩
+    pub seek_accumulator: f64,
+    pub last_seek_time: Option<Instant>,
+    pub seek_initial_pos: Option<f64>,
     
 
     
@@ -309,8 +315,12 @@ impl App {
             artwork: ArtworkState::Idle,
 
             lyrics_offset: None,
+            lyrics_selected: None,
             lyrics_cache: HashMap::new(),
             last_scroll_time: None,
+            seek_accumulator: 0.0,
+            last_seek_time: None,
+            seek_initial_pos: None,
             app_show_lyrics,
             is_tmux,
             view_mode: ViewMode::default(),

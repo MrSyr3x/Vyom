@@ -60,16 +60,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
              (chunks[0], Some(chunks[1]), true)
         } else {
             // Vertical Mode
-            if height < 40 {
-                // Too short for stack -> Hide Lyrics
+            if height < 30 {
+                // Too short for stack -> Hide Lyrics (Compressed)
                 (body_area, None, false)
             } else {
-                // Stack Mode: Music Top (36), Lyrics Bottom
+                // Stack Mode: User requested 45% Top, 55% Bottom
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Length(36),
-                        Constraint::Min(0),
+                        Constraint::Percentage(45),
+                        Constraint::Percentage(55),
                     ])
                     .split(body_area);
                 (chunks[0], Some(chunks[1]), false)
@@ -505,8 +505,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                  let line = &lyrics[idx];
                                  
                                  let is_active = idx == current_idx;
+                                 let is_selected = app.lyrics_selected == Some(idx);
                                  
-                                 let style = if is_active {
+                                 let style = if is_selected {
+                                    // User-selected line (j/k navigation)
+                                    Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED).fg(theme.yellow)
+                                 } else if is_active {
                                     Style::default().add_modifier(Modifier::BOLD).fg(theme.green)
                                  } else {
                                     match dist_from_center {
@@ -518,8 +522,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                     }
                                  };
 
-                                let prefix = if is_active { "● " } else { "  " };
-                                let prefix_span = if is_active {
+                                let prefix = if is_selected { "▶ " } else if is_active { "● " } else { "  " };
+                                let prefix_span = if is_selected {
+                                    Span::styled(prefix, Style::default().fg(theme.yellow))
+                                } else if is_active {
                                     Span::styled(prefix, Style::default().fg(theme.green))
                                 } else {
                                      Span::styled(prefix, style)
@@ -1504,9 +1510,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("s", "💾", "Save playlist"),
                 ("d", "🗑️", "Delete/Remove"),
                 ("t", "🏷️", "Edit tags"),
+                ("J/K", "🔃", "Reorder"),
             ]),
             ViewMode::Lyrics => ("Lyrics", vec![
-                ("↑/↓", "📜", "Scroll lyrics"),
+                ("j/k", "📜", "Scroll lyrics"),
+                ("Enter", "🎤", "Jump to line"),
             ]),
             ViewMode::Cava => ("Visualizer", vec![]),
         };
@@ -1521,12 +1529,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ("x", "🔁", "Repeat"),
             ("1-4", "🖼️", "View modes"),
             ("q", "🚪", "Quit"),
+            ("h/l", "⏩", "Seek ±5s"),
         ];
         
         // Calculate popup size - fit content exactly (no extra space)
-        let total_items = keys.len() + global_keys.len() + 3; // +3 for title, empty line, global header
-        let popup_height = (total_items as u16 + 2).min(22); // +2 for top/bottom borders
-        let popup_width = 32u16;
+        // Calculate popup size - fit content exactly (no extra space)
+        // Calculate popup size - fit content exactly (no extra space)
+        let mut total_items = keys.len() + global_keys.len() + 3; // +3 for title, empty line, global header
+        if !keys.is_empty() { total_items += 1; } // +1 for separator between sections
+        // Use 80% of screen height as max, or at least fit content if possible
+        let max_height = (f.area().height as u16).saturating_sub(4); 
+        let popup_height = (total_items as u16 + 2).min(max_height); // +2 for borders
+        let popup_width = 32u16.min(f.area().width.saturating_sub(2)); // Clamp to window width
         
         // Position at bottom-right (like Neovim which-key)
         let popup_x = f.area().width.saturating_sub(popup_width + 1);
