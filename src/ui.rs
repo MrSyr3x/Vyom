@@ -881,36 +881,59 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 } else {
                     let mut lines: Vec<Line> = Vec::new();
                     
-                    // Color palette
-                    let green = Color::Rgb(166, 218, 149);
-                    let pink = Color::Rgb(243, 139, 168);
-                    let blue = Color::Rgb(137, 180, 250);
-                    let lavender = Color::Rgb(180, 142, 255);
-                    let cream = Color::Rgb(245, 224, 220);
-                    let grid_dim = Color::Rgb(55, 55, 65);
+                    // Color palette from theme
+                    let green = theme.green;
+                    let pink = theme.red;       // Catppuccin red = pink
+                    let blue = theme.blue;
+                    let lavender = theme.magenta;
+                    let cream = theme.yellow;   // Use yellow as highlight/cream
+                    let grid_dim = theme.surface;
                     let muted = theme.overlay;
+                    // Dynamic label color based on EQ state
+                    let label_color = if app.eq_enabled { green } else { muted };
                     
                     let freqs = ["32", "64", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
                     let bands = 10;
+                    
+                    // ━━━ TOP PADDING ━━━
+                    lines.push(Line::from(""));
                     
                     // ━━━ BALANCE SLIDER ━━━
                     let slider_w = (w * 50 / 100).max(20);
                     let pad = (w.saturating_sub(slider_w + 6)) / 2;
                     let bal_pos = ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32) as usize;
+                    let center_pos = slider_w / 2;
+                    let show_center_marker = (bal_pos as i32 - center_pos as i32).abs() > 2;
+                    
+                    // Label colors based on balance direction - use actual value to avoid resize rounding issues
+                    let is_panned_left = app.balance < -0.02;
+                    let is_panned_right = app.balance > 0.02;
+                    let l_color = if is_panned_left { green } else { muted };
+                    let r_color = if is_panned_right { pink } else { muted };
+                    let bal_label_color = if is_panned_left { green } else if is_panned_right { pink } else { muted };
                     
                     let mut bal: Vec<Span> = Vec::new();
                     bal.push(Span::raw(" ".repeat(pad)));
-                    bal.push(Span::styled("L ", Style::default().fg(muted)));
+                    bal.push(Span::styled("L ", Style::default().fg(l_color)));
                     for i in 0..slider_w {
                         if i == bal_pos {
-                            bal.push(Span::styled("○", Style::default().fg(green)));
+                            // Current position marker - colored based on actual value
+                            let color = if is_panned_left { green } else if is_panned_right { pink } else { cream };
+                            bal.push(Span::styled("○", Style::default().fg(color)));
+                        } else if i == center_pos && show_center_marker {
+                            // Center marker - only show when away from center
+                            bal.push(Span::styled("│", Style::default().fg(muted)));
                         } else {
-                            bal.push(Span::styled("·", Style::default().fg(grid_dim)));
+                            // Color dots between slider and center - use actual value
+                            let is_left_fill = is_panned_left && i > bal_pos && i < center_pos;
+                            let is_right_fill = is_panned_right && i < bal_pos && i > center_pos;
+                            let dot_color = if is_left_fill { green } else if is_right_fill { pink } else { grid_dim };
+                            bal.push(Span::styled("·", Style::default().fg(dot_color)));
                         }
                     }
-                    bal.push(Span::styled(" R", Style::default().fg(muted)));
+                    bal.push(Span::styled(" R", Style::default().fg(r_color)));
                     lines.push(Line::from(bal));
-                    lines.push(Line::from(Span::styled("BALANCE", Style::default().fg(muted))).alignment(Alignment::Center));
+                    lines.push(Line::from(Span::styled("BALANCE", Style::default().fg(bal_label_color))).alignment(Alignment::Center));
                     lines.push(Line::from(""));
                     
                     // ━━━ EQ GRAPH with High Resolution ━━━
@@ -992,13 +1015,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                             
                             if is_band_point {
                                 // Circle marker at band points
+                                // Use epsilon for floating point comparison at center
+                                let at_or_above_center = (cy - center_row as f32) < 0.1;
                                 let marker_col = if is_selected { cream } else { 
-                                    if cy <= center_row as f32 { green } else { pink } 
+                                    if at_or_above_center { green } else { pink } 
                                 };
                                 spans.push(Span::styled("○", Style::default().fg(marker_col)));
                             } else if is_on_curve {
                                 // Bold curve line - use bullet for thicker dots
-                                let curve_col = if cy <= center_row as f32 { green } else { pink };
+                                let at_or_above_center = (cy - center_row as f32) < 0.1;
+                                let curve_col = if at_or_above_center { green } else { pink };
                                 spans.push(Span::styled("•", Style::default().fg(curve_col)));
                             } else if is_boost_fill {
                                 // Solid fill for boost
@@ -1047,20 +1073,39 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     let pre_pad = (w.saturating_sub(pre_w + 10)) / 2;
                     let pre_norm = (app.preamp_db + 12.0) / 24.0;
                     let pre_pos = (pre_norm * (pre_w - 1) as f32) as usize;
-                    
+                    let pre_center = pre_w / 2;
+                    let show_pre_center = (pre_pos as i32 - pre_center as i32).abs() > 2;
+                    // Label colors based on preamp direction - use actual value to avoid resize rounding issues
+                    // Preamp: positive dB = boosting = towards +12 (right) = green
+                    // Preamp: negative dB = cutting = towards -12 (left) = pink
+                    let is_boosting = app.preamp_db > 0.5;
+                    let is_cutting = app.preamp_db < -0.5;
+                    let plus12_color = if is_boosting { green } else { muted };
+                    let minus12_color = if is_cutting { pink } else { muted };
+                    let pre_label_color = if is_boosting { green } else if is_cutting { pink } else { muted };
                     let mut pre: Vec<Span> = Vec::new();
                     pre.push(Span::raw(" ".repeat(pre_pad)));
-                    pre.push(Span::styled("+12 ", Style::default().fg(muted)));
+                    // Labels swapped: moving RIGHT = boosting (+12), moving LEFT = cutting (-12)
+                    pre.push(Span::styled("-12 ", Style::default().fg(plus12_color)));
                     for i in 0..pre_w {
                         if i == pre_pos {
-                            pre.push(Span::styled("○", Style::default().fg(green)));
+                            // Current position marker - colored based on actual value
+                            let color = if is_boosting { green } else if is_cutting { pink } else { cream };
+                            pre.push(Span::styled("○", Style::default().fg(color)));
+                        } else if i == pre_center && show_pre_center {
+                            // Center marker (0dB) - only show when away from center
+                            pre.push(Span::styled("│", Style::default().fg(muted)));
                         } else {
-                            pre.push(Span::styled("·", Style::default().fg(grid_dim)));
+                            // Color dots between slider and center - use actual value
+                            let is_right_fill = is_boosting && i < pre_pos && i > pre_center;
+                            let is_left_fill = is_cutting && i > pre_pos && i < pre_center;
+                            let dot_color = if is_right_fill { green } else if is_left_fill { pink } else { grid_dim };
+                            pre.push(Span::styled("·", Style::default().fg(dot_color)));
                         }
                     }
-                    pre.push(Span::styled(" -12", Style::default().fg(muted)));
+                    pre.push(Span::styled(" +12", Style::default().fg(minus12_color)));
                     lines.push(Line::from(pre));
-                    lines.push(Line::from(Span::styled("PREAMP", Style::default().fg(muted))).alignment(Alignment::Center));
+                    lines.push(Line::from(Span::styled("PREAMP", Style::default().fg(pre_label_color))).alignment(Alignment::Center));
                     
                     // ━━━ CROSSFADE (own line) ━━━
                     lines.push(Line::from(""));
@@ -1096,7 +1141,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     } else { ("⚠ N/A", pink) };
                     
                     lines.push(Line::from(vec![
-                        Span::styled(format!(" {} ", app.output_device), Style::default().fg(theme.base).bg(green)),
+                        Span::styled(format!(" {} ", app.output_device), Style::default().fg(theme.base).bg(green).add_modifier(ratatui::style::Modifier::BOLD)),
                         Span::raw("  "),
                         Span::styled(status.0, Style::default().fg(status.1)),
                     ]).alignment(Alignment::Center));
