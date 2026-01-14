@@ -165,7 +165,9 @@ pub struct App {
     
     // Display Mode
     pub app_show_lyrics: bool,
-    pub is_tmux: bool, // New field for layout logic
+    pub is_tmux: bool,      // Layout logic
+    pub is_mpd: bool,       // MPD backend mode
+    pub source_app: String, // "MPD", "Spotify", "Apple Music"
     
     /// Current panel view mode (Lyrics/Cava/Queue/EQ) 🎛️
     pub view_mode: ViewMode,
@@ -302,8 +304,9 @@ pub const EQ_PRESETS: &[(&str, [f32; 10])] = &[
 
 
 
+
 impl App {
-    pub fn new(app_show_lyrics: bool, is_tmux: bool) -> Self {
+    pub fn new(app_show_lyrics: bool, is_tmux: bool, is_mpd: bool, source_app: &str) -> Self {
         let theme = crate::theme::load_current_theme();
         let eq_gains = EqGains::new();
         
@@ -323,6 +326,8 @@ impl App {
             seek_initial_pos: None,
             app_show_lyrics,
             is_tmux,
+            is_mpd,
+            source_app: source_app.to_string(),
             view_mode: ViewMode::default(),
             queue: Vec::new(),
             _queue_scroll: 0,

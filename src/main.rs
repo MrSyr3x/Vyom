@@ -144,8 +144,19 @@ async fn main() -> Result<()> {
     // In Standalone, strict mode applies.
     let app_show_lyrics = want_lyrics || is_tmux;
 
+    // Determine backend mode and source app name
+    #[cfg(feature = "mpd")]
+    let (is_mpd_mode, source_app) = if args.mpd {
+        (true, "MPD")
+    } else {
+        // Controller mode - detect which streaming app
+        (false, "Spotify / Apple Music")
+    };
+    #[cfg(not(feature = "mpd"))]
+    let (is_mpd_mode, source_app) = (false, "Spotify / Apple Music");
+
     // 1. Initial State
-    let mut app = App::new(app_show_lyrics, is_tmux);
+    let mut app = App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app);
     
     // Start Audio Pipeline 🔊 (FIFO → DSP EQ → Speakers)
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
@@ -225,41 +236,44 @@ async fn main() -> Result<()> {
         }
     });
 
-    // 4a. Cava Integration Task 📊 (real audio visualization)
-    let tx_cava = tx.clone();
-    tokio::spawn(async move {
-        use tokio::process::Command;
-        use tokio::io::{AsyncBufReadExt, BufReader};
-        
-        // Spawn cava with our custom config
-        let cava_config = format!("{}/.config/cava/vyom_config", std::env::var("HOME").unwrap_or_default());
-        let child = Command::new("cava")
-            .arg("-p")
-            .arg(&cava_config)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-        
-        if let Ok(mut child) = child {
-            if let Some(stdout) = child.stdout.take() {
-                let mut reader = BufReader::new(stdout).lines();
-                
-                while let Ok(Some(line)) = reader.next_line().await {
-                    // Parse ASCII values (semicolon-separated)
-                    let bars: Vec<f32> = line.split(';')
-                        .filter(|s| !s.is_empty())
-                        .filter_map(|s| s.trim().parse::<f32>().ok())
-                        .map(|v| v / 1000.0) // Normalize to 0.0-1.0
-                        .collect();
+    // 4a. Cava Integration Task 📊 (MPD mode only - needs FIFO audio input)
+    #[cfg(feature = "mpd")]
+    if args.mpd {
+        let tx_cava = tx.clone();
+        tokio::spawn(async move {
+            use tokio::process::Command;
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            
+            // Use MPD FIFO config for visualization
+            let cava_config = format!("{}/.config/cava/vyom_config", std::env::var("HOME").unwrap_or_default());
+            let child = Command::new("cava")
+                .arg("-p")
+                .arg(&cava_config)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            
+            if let Ok(mut child) = child {
+                if let Some(stdout) = child.stdout.take() {
+                    let mut reader = BufReader::new(stdout).lines();
                     
-                    if !bars.is_empty() {
-                        if tx_cava.send(AppEvent::CavaUpdate(bars)).await.is_err() { break; }
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        // Parse ASCII values (semicolon-separated)
+                        let bars: Vec<f32> = line.split(';')
+                            .filter(|s| !s.is_empty())
+                            .filter_map(|s| s.trim().parse::<f32>().ok())
+                            .map(|v| v / 1000.0) // Normalize to 0.0-1.0
+                            .collect();
+                        
+                        if !bars.is_empty() {
+                            if tx_cava.send(AppEvent::CavaUpdate(bars)).await.is_err() { break; }
+                        }
                     }
                 }
+                let _ = child.kill().await;
             }
-            let _ = child.kill().await;
-        }
-    });
+        });
+    }
 
     // 4. Animation Tick Task ⚡
     let tx_tick = tx.clone();
@@ -457,7 +471,16 @@ async fn main() -> Result<()> {
                     } else {
                         // Normal key handling when NOT typing in search
                         match key.code {
-                            KeyCode::Char('q') => app.is_running = false,
+                            KeyCode::Char('q') => {
+                                // Close popups first, then quit (Neovim-style)
+                                if app.show_keyhints {
+                                    app.show_keyhints = false;
+                                } else if app.show_audio_info {
+                                    app.show_audio_info = false;
+                                } else {
+                                    app.is_running = false;
+                                }
+                            },
                             KeyCode::Char(' ') => { 
                                 let _ = player.play_pause();
                                 app.toast = Some(("⏯ Play/Pause".to_string(), std::time::Instant::now()));
@@ -599,10 +622,15 @@ async fn main() -> Result<()> {
                                 }
                             },
                             // View Mode Switching 🎛️
+                            // Controller mode: Lyrics only (no audio input for Cava)
+                            // MPD mode: All cards (Lyrics, Cava, Library, EQ)
                             KeyCode::Char('1') => app.view_mode = app::ViewMode::Lyrics,
-                            KeyCode::Char('2') => app.view_mode = app::ViewMode::Cava,
-                            KeyCode::Char('3') => app.view_mode = app::ViewMode::Library,
-                            KeyCode::Char('4') => app.view_mode = app::ViewMode::EQ,
+                            #[cfg(feature = "mpd")]
+                            KeyCode::Char('2') if args.mpd => app.view_mode = app::ViewMode::Cava,
+                            #[cfg(feature = "mpd")]
+                            KeyCode::Char('3') if args.mpd => app.view_mode = app::ViewMode::Library,
+                            #[cfg(feature = "mpd")]
+                            KeyCode::Char('4') if args.mpd => app.view_mode = app::ViewMode::EQ,
                         
                         // Lyrics Navigation (j/k scroll, Enter to seek) 📜
                         KeyCode::Char('j') if app.view_mode == app::ViewMode::Lyrics => {
@@ -769,6 +797,13 @@ async fn main() -> Result<()> {
                         KeyCode::Char('i') => {
                             app.show_audio_info = !app.show_audio_info;
                         },
+                        // Global search: / to jump to search from anywhere (MPD only)
+                        #[cfg(feature = "mpd")]
+                        KeyCode::Char('/') if args.mpd => {
+                            app.view_mode = app::ViewMode::Library;
+                            app.library_mode = app::LibraryMode::Search;
+                            app.search_active = true;
+                        },
                         KeyCode::Esc => {
                             if app.show_keyhints {
                                 app.show_keyhints = false;
@@ -856,11 +891,6 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                        },
-                        KeyCode::Char('/') if app.view_mode == app::ViewMode::Library => {
-                            // Jump to search mode and activate search input
-                            app.library_mode = app::LibraryMode::Search;
-                            app.search_active = true;
                         },
                         // Save queue as playlist (Library view, Playlists mode)
                         KeyCode::Char('s') if app.view_mode == app::ViewMode::Library => {

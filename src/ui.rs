@@ -500,7 +500,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                              let dist_from_center: isize = (row as isize - half_height as isize).abs();
                              let target_idx_isize = (center_idx as isize) - (half_height as isize) + (row as isize);
                              
-                             if dist_from_center <= 8 && target_idx_isize >= 0 && target_idx_isize < lyrics.len() as isize {
+                             if dist_from_center <= 6 && target_idx_isize >= 0 && target_idx_isize < lyrics.len() as isize {
                                  let idx = target_idx_isize as usize;
                                  let line = &lyrics[idx];
                                  
@@ -517,7 +517,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                         1..=2 => Style::default().fg(theme.text),
                                         3..=4 => Style::default().fg(theme.text).add_modifier(Modifier::DIM),
                                         5..=6 => Style::default().fg(theme.overlay),
-                                        7..=8 => Style::default().fg(theme.surface).add_modifier(Modifier::DIM),
                                         _ => Style::default().fg(theme.base),
                                     }
                                  };
@@ -592,9 +591,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     // Use single-char bars for cleaner look
                     let bar_count = (width / 2).max(8).min(64);
                     
-                    // Split height: main bars (75%) + reflection (25%)
-                    let main_height = (height * 75 / 100).max(2);
-                    let reflection_height = height.saturating_sub(main_height + 1);
+                    // Split height: main bars (65%) + reflection (35%) for balanced fullscreen look
+                    let main_height = (height * 65 / 100).max(2);
+                    let reflection_height = height.saturating_sub(main_height);
                     
                     let mut lines = Vec::new();
                     
@@ -652,16 +651,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         lines.push(Line::from(spans));
                     }
                     
-                    // === CENTER LINE ===
-                    let center_width = bar_count * 3 - 1;
-                    let center_padding = (width.saturating_sub(center_width)) / 2;
-                    let center_line = format!("{}{}",
-                        " ".repeat(center_padding),
-                        "─".repeat(center_width.min(width.saturating_sub(center_padding)))
-                    );
-                    lines.push(Line::from(Span::styled(center_line, Style::default().fg(theme.magenta))));
-                    
-                    // === REFLECTION (dimmed, inverted) ===
+                    // === REFLECTION (dimmed, mirrored from center) ===
                     for row in 0..reflection_height {
                         let mut spans = Vec::new();
                         // Inverted threshold for mirror effect
@@ -937,9 +927,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     lines.push(Line::from(""));
                     
                     // ━━━ EQ GRAPH with High Resolution ━━━
-                    // Use 7-13 rows based on available space
+                    // Scale graph height based on available space (7-25 rows)
                     let available_rows = h.saturating_sub(14); // Reserve space for other elements
-                    let graph_h = available_rows.max(7).min(13);
+                    // Smart scaling: compact for tmux (7-13), expanded for fullscreen (up to 25)
+                    let max_graph_h = if h >= 40 { 25 } else { 13 };
+                    let graph_h = available_rows.max(7).min(max_graph_h);
                     let label_w = 5;
                     let graph_w = w.saturating_sub(label_w + 1);
                     
@@ -1076,17 +1068,17 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     let pre_center = pre_w / 2;
                     let show_pre_center = (pre_pos as i32 - pre_center as i32).abs() > 2;
                     // Label colors based on preamp direction - use actual value to avoid resize rounding issues
-                    // Preamp: positive dB = boosting = towards +12 (right) = green
-                    // Preamp: negative dB = cutting = towards -12 (left) = pink
+                    // Slider layout: -12 (left) ----center---- +12 (right)
+                    // Boosting = positive dB = slider moves RIGHT towards +12 = green
+                    // Cutting = negative dB = slider moves LEFT towards -12 = pink
                     let is_boosting = app.preamp_db > 0.5;
                     let is_cutting = app.preamp_db < -0.5;
-                    let plus12_color = if is_boosting { green } else { muted };
-                    let minus12_color = if is_cutting { pink } else { muted };
+                    let left_label_color = if is_cutting { pink } else { muted };   // -12 label
+                    let right_label_color = if is_boosting { green } else { muted }; // +12 label
                     let pre_label_color = if is_boosting { green } else if is_cutting { pink } else { muted };
                     let mut pre: Vec<Span> = Vec::new();
                     pre.push(Span::raw(" ".repeat(pre_pad)));
-                    // Labels swapped: moving RIGHT = boosting (+12), moving LEFT = cutting (-12)
-                    pre.push(Span::styled("-12 ", Style::default().fg(plus12_color)));
+                    pre.push(Span::styled("-12 ", Style::default().fg(left_label_color)));
                     for i in 0..pre_w {
                         if i == pre_pos {
                             // Current position marker - colored based on actual value
@@ -1103,7 +1095,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                             pre.push(Span::styled("·", Style::default().fg(dot_color)));
                         }
                     }
-                    pre.push(Span::styled(" +12", Style::default().fg(minus12_color)));
+                    pre.push(Span::styled(" +12", Style::default().fg(right_label_color)));
                     lines.push(Line::from(pre));
                     lines.push(Line::from(Span::styled("PREAMP", Style::default().fg(pre_label_color))).alignment(Alignment::Center));
                     
@@ -1240,17 +1232,20 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Span::styled(status, Style::default().fg(if is_paused { theme.yellow } else { theme.green })),
         ]));
         
-        let shuffle_str = if app.shuffle { "ON" } else { "OFF" };
-        lines.push(Line::from(vec![
-            Span::styled("  Shuffle: ", Style::default().fg(theme.overlay)),
-            Span::styled(shuffle_str, Style::default().fg(if app.shuffle { theme.green } else { theme.overlay })),
-        ]));
-        
-        let repeat_str = if app.repeat { "ON" } else { "OFF" };
-        lines.push(Line::from(vec![
-            Span::styled("  Repeat: ", Style::default().fg(theme.overlay)),
-            Span::styled(repeat_str, Style::default().fg(if app.repeat { theme.green } else { theme.overlay })),
-        ]));
+        // Shuffle/Repeat only shown in MPD mode (not available in controller)
+        if app.is_mpd {
+            let shuffle_str = if app.shuffle { "ON" } else { "OFF" };
+            lines.push(Line::from(vec![
+                Span::styled("  Shuffle: ", Style::default().fg(theme.overlay)),
+                Span::styled(shuffle_str, Style::default().fg(if app.shuffle { theme.green } else { theme.overlay })),
+            ]));
+            
+            let repeat_str = if app.repeat { "ON" } else { "OFF" };
+            lines.push(Line::from(vec![
+                Span::styled("  Repeat: ", Style::default().fg(theme.overlay)),
+                Span::styled(repeat_str, Style::default().fg(if app.repeat { theme.green } else { theme.overlay })),
+            ]));
+        }
         
         let gapless_str = if app.gapless_mode { "Active" } else { "OFF" };
         lines.push(Line::from(vec![
@@ -1260,45 +1255,64 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         
         lines.push(Line::from(""));
         
-        // DSP/EQ Section
-        lines.push(Line::from(vec![
-            Span::styled("🎛 ", Style::default().fg(theme.blue)),
-            Span::styled("DSP / EQ", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
-        ]));
-        
-        let eq_status = if app.eq_enabled { "Enabled" } else { "Disabled" };
-        lines.push(Line::from(vec![
-            Span::styled("  Equalizer: ", Style::default().fg(theme.overlay)),
-            Span::styled(eq_status, Style::default().fg(if app.eq_enabled { theme.green } else { theme.overlay })),
-        ]));
-        
-        lines.push(Line::from(vec![
-            Span::styled("  Preset: ", Style::default().fg(theme.overlay)),
-            Span::styled(app.get_preset_name(), Style::default().fg(theme.magenta)),
-        ]));
-        
-        lines.push(Line::from(""));
-        
-        // Output Section
-        lines.push(Line::from(vec![
-            Span::styled("🔊 ", Style::default().fg(theme.yellow)),
-            Span::styled("Output", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
-        ]));
-        
-        let (mode_text, mode_color) = if app.eq_enabled {
-            ("DSP Active (EQ Enabled)", theme.yellow)
+        // Mode-specific section
+        if app.is_mpd {
+            // DSP/EQ Section (MPD mode only)
+            lines.push(Line::from(vec![
+                Span::styled("🎛 ", Style::default().fg(theme.blue)),
+                Span::styled("DSP / EQ", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
+            ]));
+            
+            let eq_status = if app.eq_enabled { "Enabled" } else { "Disabled" };
+            lines.push(Line::from(vec![
+                Span::styled("  Equalizer: ", Style::default().fg(theme.overlay)),
+                Span::styled(eq_status, Style::default().fg(if app.eq_enabled { theme.green } else { theme.overlay })),
+            ]));
+            
+            lines.push(Line::from(vec![
+                Span::styled("  Preset: ", Style::default().fg(theme.overlay)),
+                Span::styled(app.get_preset_name(), Style::default().fg(theme.magenta)),
+            ]));
+            
+            lines.push(Line::from(""));
+            
+            // Output Section
+            lines.push(Line::from(vec![
+                Span::styled("🔊 ", Style::default().fg(theme.yellow)),
+                Span::styled("Output", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
+            ]));
+            
+            let (mode_text, mode_color) = if app.eq_enabled {
+                ("DSP Active (EQ Enabled)", theme.yellow)
+            } else {
+                ("Bit-Perfect (No DSP)", theme.green)
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  Mode: ", Style::default().fg(theme.overlay)),
+                Span::styled(mode_text, Style::default().fg(mode_color)),
+            ]));
+            
+            lines.push(Line::from(vec![
+                Span::styled("  Backend: ", Style::default().fg(theme.overlay)),
+                Span::styled("MPD", Style::default().fg(theme.text)),
+            ]));
         } else {
-            ("Bit-Perfect (No DSP)", theme.green)
-        };
-        lines.push(Line::from(vec![
-            Span::styled("  Mode: ", Style::default().fg(theme.overlay)),
-            Span::styled(mode_text, Style::default().fg(mode_color)),
-        ]));
-        
-        lines.push(Line::from(vec![
-            Span::styled("  Backend: ", Style::default().fg(theme.overlay)),
-            Span::styled("MPD", Style::default().fg(theme.text)),
-        ]));
+            // Streaming Source Section (Controller mode)
+            lines.push(Line::from(vec![
+                Span::styled("📡 ", Style::default().fg(theme.blue)),
+                Span::styled("Source", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
+            ]));
+            
+            lines.push(Line::from(vec![
+                Span::styled("  Streaming: ", Style::default().fg(theme.overlay)),
+                Span::styled(&app.source_app, Style::default().fg(theme.green)),
+            ]));
+            
+            lines.push(Line::from(vec![
+                Span::styled("  Mode: ", Style::default().fg(theme.overlay)),
+                Span::styled("Controller", Style::default().fg(theme.magenta)),
+            ]));
+        }
         
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
@@ -1509,18 +1523,34 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ViewMode::Cava => ("Visualizer", vec![]),
         };
         
-        // Global keys with icons
-        let global_keys: Vec<(&str, &str, &str)> = vec![
-            ("Space", "▶️", "Play/Pause"),
-            ("n", "⏭️", "Next track"),
-            ("p", "⏮️", "Previous track"),
-            ("+/-", "🔊", "Volume"),
-            ("z", "🔀", "Shuffle"),
-            ("x", "🔁", "Repeat"),
-            ("1-4", "🖼️", "View modes"),
-            ("q", "🚪", "Quit"),
-            ("h/l", "⏩", "Seek ±5s"),
-        ];
+        // Global keys - mode-specific
+        let global_keys: Vec<(&str, &str, &str)> = if app.is_mpd {
+            // MPD mode: full feature set
+            vec![
+                ("Space", "▶️", "Play/Pause"),
+                ("n", "⏭️", "Next track"),
+                ("p", "⏮️", "Previous track"),
+                ("/", "🔍", "Search"),
+                ("+/-", "🔊", "Volume"),
+                ("z", "🔀", "Shuffle"),
+                ("x", "🔁", "Repeat"),
+                ("1-4", "🖼️", "View modes"),
+                ("h/l", "⏩", "Seek ±5s"),
+                ("i", "ℹ️", "Audio info"),
+                ("q", "🚪", "Quit"),
+            ]
+        } else {
+            // Controller mode: limited keys (no shuffle/repeat - not available)
+            vec![
+                ("Space", "▶️", "Play/Pause"),
+                ("n", "⏭️", "Next track"),
+                ("p", "⏮️", "Previous track"),
+                ("+/-", "🔊", "Volume"),
+                ("h/l", "⏩", "Seek ±5s"),
+                ("i", "ℹ️", "Audio info"),
+                ("q", "🚪", "Quit"),
+            ]
+        };
         
         // Calculate popup size - fit content exactly (no extra space)
         // Calculate popup size - fit content exactly (no extra space)
