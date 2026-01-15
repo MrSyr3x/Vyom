@@ -706,149 +706,333 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 let h = inner_lyrics_area.height as usize;
                 let mut lines: Vec<Line> = Vec::new();
                 
-                // Mode tabs at top
-                let queue_tab = if app.library_mode == LibraryMode::Queue { "│ ▶ Queue │" } else { "  Queue  " };
-                let browse_tab = if app.library_mode == LibraryMode::Browse { "│ 📂 Browse │" } else { "  Browse  " };
-                let search_tab = if app.library_mode == LibraryMode::Search { "│ 🔍 Search │" } else { "  Search  " };
-                let playlist_tab = if app.library_mode == LibraryMode::Playlists { "│ 📋 Playlists │" } else { "  Playlists  " };
+                // ═══════════════════════════════════════════════════════════════
+                // BEAUTIFUL HEADER DESIGN
+                // ═══════════════════════════════════════════════════════════════
                 
-                // Calculate tab widths for hitboxes (unicode-width accounting)
-                let tab_y = inner_lyrics_area.y;
-
+                // Search bar with elegant styling
+                let search_text = if app.search_active {
+                    format!(" {}▏", &app.search_query)
+                } else if !app.search_query.is_empty() {
+                    format!(" {}", &app.search_query)
+                } else {
+                    " Press / to search...".to_string()
+                };
+                let search_color = if app.search_active { theme.green } else { theme.overlay };
                 
                 lines.push(Line::from(vec![
-                    Span::styled(queue_tab, Style::default().fg(if app.library_mode == LibraryMode::Queue { theme.green } else { theme.overlay })),
-                    Span::styled(browse_tab, Style::default().fg(if app.library_mode == LibraryMode::Browse { theme.blue } else { theme.overlay })),
-                    Span::styled(search_tab, Style::default().fg(if app.library_mode == LibraryMode::Search { theme.magenta } else { theme.overlay })),
-                    Span::styled(playlist_tab, Style::default().fg(if app.library_mode == LibraryMode::Playlists { theme.text } else { theme.overlay })),
+                    Span::styled("  ", Style::default().fg(search_color)),
+                    Span::styled(search_text, Style::default().fg(search_color)),
                 ]));
-                lines.push(Line::from(Span::styled("─".repeat(w), Style::default().fg(theme.overlay))));
+                
+                // Elegant thin separator - centered
+                lines.push(Line::from(Span::styled(
+                    "─".repeat(w.min(60)), // Slightly wider
+                    Style::default().fg(theme.surface)
+                )).alignment(Alignment::Center));
+                
+                // Tab bar with filled dot indicators
+                let queue_active = app.library_mode == LibraryMode::Queue;
+                let dir_active = app.library_mode == LibraryMode::Directory;
+                let pl_active = app.library_mode == LibraryMode::Playlists;
+                
+                // Use filled dots for active, empty for inactive
+                let q_dot = if queue_active { "●" } else { "○" };
+                let d_dot = if dir_active { "●" } else { "○" };
+                let p_dot = if pl_active { "●" } else { "○" };
+                
+                // Center tabs by adding padding logic or just centering the line
+                
+                lines.push(Line::from(vec![
+                    // Queue
+                    Span::styled(format!("{} ", q_dot), 
+                        Style::default().fg(if queue_active { theme.green } else { theme.green })), // Always green, just dimmed if inactive? No, let's keep it clean.
+                    Span::styled("Queue", 
+                        if queue_active { Style::default().fg(theme.green).add_modifier(Modifier::BOLD) } 
+                        else { Style::default().fg(theme.green) }), // Inactive is now dimmed green instead of gray
+                    Span::styled("      ", Style::default()),
+                    
+                    // Directory
+                    Span::styled(format!("{} ", d_dot), 
+                        Style::default().fg(if dir_active { theme.blue } else { theme.blue })),
+                    Span::styled("Directory", 
+                        if dir_active { Style::default().fg(theme.blue).add_modifier(Modifier::BOLD) } 
+                        else { Style::default().fg(theme.blue) }), // Inactive is dimmed blue
+                    Span::styled("      ", Style::default()),
+                    
+                    // Playlists
+                    Span::styled(format!("{} ", p_dot), 
+                        Style::default().fg(if pl_active { theme.magenta } else { theme.magenta })),
+                    Span::styled("Playlists", 
+                        if pl_active { Style::default().fg(theme.magenta).add_modifier(Modifier::BOLD) } 
+                        else { Style::default().fg(theme.magenta) }), // Inactive is dimmed magenta
+                ]).alignment(Alignment::Center)); // Use center alignment!
+                
+                lines.push(Line::from(""));
                 
                 match app.library_mode {
                     LibraryMode::Queue => {
-                        // Queue View
-
+                        // Unified aesthetic: spacious, centered, clean
+                        let time_w = 6;
+                        let artist_w = w / 4;
+                        let title_w = w.saturating_sub(artist_w + time_w + 10);
+                        let content_h = h.saturating_sub(5);
+                        
+                        let green = theme.green;
+                        let pink = theme.red;
+                        let cream = theme.yellow;
+                        let muted = theme.overlay;
+                        let grid = theme.surface;
+                        
+                        // ━━━ CENTERED TITLE ━━━
+                        lines.push(Line::from(""));
+                        let queue_count = app.queue.len();
+                        lines.push(Line::from(Span::styled(
+                            format!("  QUEUE  ·  {} songs  ", queue_count), 
+                            Style::default().fg(green)
+                        )).alignment(Alignment::Center));
+                        lines.push(Line::from(""));
+                        
+                        // ━━━ CONTENT ━━━
                         if app.queue.is_empty() {
-                            lines.push(Line::from(""));
-                            lines.push(Line::from(Span::styled("📋 Queue Empty", Style::default().fg(theme.overlay))));
-                            lines.push(Line::from(Span::styled("Add songs from Browse or Search", Style::default().fg(theme.overlay))));
+                            lines.push(Line::from(Span::styled("Empty queue", Style::default().fg(muted))).alignment(Alignment::Center));
+                            lines.push(Line::from(Span::styled("Browse Directory to add songs", Style::default().fg(grid))).alignment(Alignment::Center));
                         } else {
-                            let content_height = h.saturating_sub(3);
-                            let start_idx = app.library_selected.saturating_sub(content_height / 2);
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
                             
-                            for (display_idx, (i, item)) in app.queue.iter().enumerate().skip(start_idx).take(content_height).enumerate() {
+                            for (display_idx, (_, item)) in app.queue.iter().enumerate().skip(start_idx).take(content_h).enumerate() {
                                 let actual_idx = start_idx + display_idx;
-                                let is_selected = actual_idx == app.library_selected;
-                                let prefix = if item.is_current { "▶ " } else if is_selected { "› " } else { "  " };
+                                let is_sel = actual_idx == app.library_selected;
+                                let num = actual_idx + 1;
                                 
-                                // Add hitbox for this queue item
-                                let item_y = inner_lyrics_area.y + 2 + display_idx as u16; // +2 for tabs and separator
-
+                                let title = if item.title.len() > title_w.saturating_sub(2) { format!("{}…", &item.title[..title_w.saturating_sub(3)]) } else { item.title.clone() };
+                                let artist = if item.artist.len() > artist_w.saturating_sub(1) { format!("{}…", &item.artist[..artist_w.saturating_sub(2)]) } else { item.artist.clone() };
+                                let time = { let s = item.duration_ms / 1000; format!("{}:{:02}", s / 60, s % 60) };
                                 
-                                // Highlight selected item, show playing item differently
-                                let title_style = if is_selected {
-                                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
+                                // Selection markers: ● for selected, ◉ for playing, ○ for normal
+                                let (marker, m_color, t_style, a_style, tm_style) = if is_sel {
+                                    ("●", cream, Style::default().fg(theme.text).add_modifier(Modifier::BOLD), Style::default().fg(theme.text), Style::default().fg(green))
                                 } else if item.is_current {
-                                    Style::default().fg(theme.magenta)
+                                    ("◉", pink, Style::default().fg(pink), Style::default().fg(pink), Style::default().fg(pink))
                                 } else {
-                                    Style::default().fg(theme.text)
+                                    ("○", grid, Style::default().fg(theme.text), Style::default().fg(muted), Style::default().fg(muted))
                                 };
-                                let max_len = w.saturating_sub(10);
-                                let title = if item.title.len() > max_len {
-                                    format!("{}...", &item.title[..max_len.saturating_sub(3)])
-                                } else {
-                                    item.title.clone()
-                                };
+                                
                                 lines.push(Line::from(vec![
-                                    Span::styled(prefix, title_style),
-                                    Span::styled(title, title_style),
+                                    Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                                    Span::styled(format!("{:>2}  ", num), Style::default().fg(if is_sel { green } else { muted })),
+                                    Span::styled(format!("{:title_w$}", title, title_w = title_w), t_style),
+                                    Span::styled(format!("{:artist_w$}", artist, artist_w = artist_w), a_style),
+                                    Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
                                 ]));
                             }
                         }
                     }
-                    LibraryMode::Browse => {
-                        // Browse View
-                        if app.browse_path.is_empty() {
-                            // Show root categories
-                            let categories = ["🎤 Artists", "💿 Albums", "🎭 Genres", "📁 Folders"];
-                            lines.push(Line::from(""));
-                            for (i, cat) in categories.iter().enumerate() {
-                                let is_sel = i == app.library_selected;
-                                let style = if is_sel {
-                                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
-                                } else {
-                                    Style::default().fg(theme.text)
-                                };
-                                let prefix = if is_sel { "▶ " } else { "  " };
-                                lines.push(Line::from(Span::styled(format!("{}{}", prefix, cat), style)));
-                            }
+                    LibraryMode::Directory => {
+                        // Unified aesthetic: simple list, no split
+                        let time_w = 6;
+                        let artist_w = w / 4;
+                        let title_w = w.saturating_sub(artist_w + time_w + 10);
+                        let content_h = h.saturating_sub(5);
+                        
+                        let blue = theme.blue;
+                        let green = theme.green;
+                        let cream = theme.yellow;
+                        let muted = theme.overlay;
+                        let grid = theme.surface;
+                        
+                        // Path breadcrumb
+                        let path = if app.browse_path.is_empty() { 
+                            "Root".to_string() 
+                        } else { 
+                            app.browse_path.join(" › ")
+                        };
+                        
+                        // ━━━ CENTERED TITLE ━━━
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(Span::styled(
+                            format!("  DIRECTORY  ·  {}  ", path), 
+                            Style::default().fg(blue)
+                        )).alignment(Alignment::Center));
+                        lines.push(Line::from(""));
+                        
+                        // ━━━ CONTENT ━━━
+                        if app.library_items.is_empty() {
+                            lines.push(Line::from(Span::styled("Empty folder", Style::default().fg(muted))).alignment(Alignment::Center));
                         } else {
-                            // Show current path as breadcrumb
-                            let path = app.browse_path.join(" > ");
-                            lines.push(Line::from(Span::styled(format!("📂 {}", path), Style::default().fg(theme.blue))));
-                            lines.push(Line::from(""));
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
                             
-                            // Show items
-                            let content_height = h.saturating_sub(5);
-                            for (i, item) in app.library_items.iter().take(content_height).enumerate() {
-                                let is_sel = i == app.library_selected;
-                                let style = if is_sel {
-                                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
-                                } else {
-                                    Style::default().fg(theme.text)
+                            for (display_idx, item) in app.library_items.iter().skip(start_idx).take(content_h).enumerate() {
+                                let actual_idx = start_idx + display_idx;
+                                let is_sel = actual_idx == app.library_selected;
+                                let is_folder = matches!(item.item_type, crate::app::LibraryItemType::Folder);
+                                
+                                let name = if item.name.len() > title_w.saturating_sub(2) { 
+                                    format!("{}…", &item.name[..title_w.saturating_sub(3)]) 
+                                } else { 
+                                    item.name.clone() 
                                 };
-                                let prefix = if is_sel { "▶ " } else { "  " };
-                                lines.push(Line::from(Span::styled(format!("{}{}", prefix, item.name), style)));
+                                
+                                if is_folder {
+                                    // Folder row
+                                    let (marker, m_color, n_style) = if is_sel {
+                                        ("●", cream, Style::default().fg(blue).add_modifier(Modifier::BOLD))
+                                    } else {
+                                        ("○", grid, Style::default().fg(theme.text))
+                                    };
+                                    let icon = if is_sel { "▶" } else { "" };
+                                    
+                                    lines.push(Line::from(vec![
+                                        Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                                        Span::styled(format!("{} ", icon), Style::default().fg(blue)),
+                                        Span::styled(name, n_style),
+                                    ]));
+                                } else {
+                                    // Song row
+                                    let artist = item.artist.clone().unwrap_or_default();
+                                    let artist_disp = if artist.len() > artist_w.saturating_sub(1) { 
+                                        format!("{}…", &artist[..artist_w.saturating_sub(2)]) 
+                                    } else { 
+                                        artist 
+                                    };
+                                    let time = item.duration_ms.map(|ms| { 
+                                        let s = ms / 1000; 
+                                        format!("{}:{:02}", s / 60, s % 60) 
+                                    }).unwrap_or_default();
+                                    
+                                    let (marker, m_color, t_style, a_style, tm_style) = if is_sel {
+                                        ("●", cream, Style::default().fg(theme.text).add_modifier(Modifier::BOLD), Style::default().fg(theme.text), Style::default().fg(green))
+                                    } else {
+                                        ("○", grid, Style::default().fg(theme.text), Style::default().fg(muted), Style::default().fg(muted))
+                                    };
+                                    let icon = if is_sel { "" } else { "" };
+                                    
+                                    lines.push(Line::from(vec![
+                                        Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                                        Span::styled(format!("{} ", icon), Style::default().fg(green)),
+                                        Span::styled(format!("{:title_w$}", name, title_w = title_w), t_style),
+                                        Span::styled(format!("{:artist_w$}", artist_disp, artist_w = artist_w), a_style),
+                                        Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
+                                    ]));
+                                }
                             }
                         }
                     }
                     LibraryMode::Search => {
-                        // Search View
-                        let search_box = if app.search_active {
-                            format!("🔍 [{}▌]", app.search_query)
+                        // Unified aesthetic for Search
+                        let time_w = 6;
+                        let artist_w = w / 4;
+                        let title_w = w.saturating_sub(artist_w + time_w + 10);
+                        let content_h = h.saturating_sub(5);
+                        
+                        let lavender = theme.magenta;
+                        let green = theme.green;
+                        let cream = theme.yellow;
+                        let muted = theme.overlay;
+                        let grid = theme.surface;
+                        
+                        // ━━━ CENTERED TITLE ━━━
+                        lines.push(Line::from(""));
+                        let result_count = app.library_items.len();
+                        let title = if app.search_query.is_empty() {
+                            "  SEARCH  ".to_string()
                         } else {
-                            format!("🔍 [{}] (press / to search)", app.search_query)
+                            format!("  \"{}\"  ·  {} results  ", app.search_query, result_count)
                         };
-                        lines.push(Line::from(Span::styled(search_box, Style::default().fg(theme.magenta))));
+                        lines.push(Line::from(Span::styled(title, Style::default().fg(lavender))).alignment(Alignment::Center));
                         lines.push(Line::from(""));
                         
+                        // ━━━ CONTENT ━━━
                         if app.library_items.is_empty() && !app.search_query.is_empty() {
-                            lines.push(Line::from(Span::styled("No results", Style::default().fg(theme.overlay))));
+                            lines.push(Line::from(Span::styled("No results found", Style::default().fg(muted))).alignment(Alignment::Center));
+                            lines.push(Line::from(Span::styled("Try a different search", Style::default().fg(grid))).alignment(Alignment::Center));
+                        } else if app.library_items.is_empty() {
+                            lines.push(Line::from(Span::styled("Type to search your library", Style::default().fg(muted))).alignment(Alignment::Center));
                         } else {
-                            let content_height = h.saturating_sub(4);
-                            for (i, item) in app.library_items.iter().take(content_height).enumerate() {
-                                let is_sel = i == app.library_selected;
-                                let style = if is_sel {
-                                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
-                                } else {
-                                    Style::default().fg(theme.text)
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            
+                            for (display_idx, item) in app.library_items.iter().skip(start_idx).take(content_h).enumerate() {
+                                let actual_idx = start_idx + display_idx;
+                                let is_sel = actual_idx == app.library_selected;
+                                
+                                let name = if item.name.len() > title_w.saturating_sub(2) { 
+                                    format!("{}…", &item.name[..title_w.saturating_sub(3)]) 
+                                } else { 
+                                    item.name.clone() 
                                 };
-                                let prefix = if is_sel { "▶ " } else { "  " };
-                                let artist = item.artist.as_deref().unwrap_or("");
+                                let artist = item.artist.clone().unwrap_or_default();
+                                let artist_disp = if artist.len() > artist_w.saturating_sub(1) { 
+                                    format!("{}…", &artist[..artist_w.saturating_sub(2)]) 
+                                } else { 
+                                    artist 
+                                };
+                                let time = item.duration_ms.map(|ms| { 
+                                    let s = ms / 1000; 
+                                    format!("{}:{:02}", s / 60, s % 60) 
+                                }).unwrap_or_default();
+                                
+                                let (marker, m_color, t_style, a_style, tm_style) = if is_sel {
+                                    ("●", cream, Style::default().fg(theme.text).add_modifier(Modifier::BOLD), Style::default().fg(theme.text), Style::default().fg(green))
+                                } else {
+                                    ("○", grid, Style::default().fg(theme.text), Style::default().fg(muted), Style::default().fg(muted))
+                                };
+                                
                                 lines.push(Line::from(vec![
-                                    Span::styled(prefix, style),
-                                    Span::styled(&item.name, style),
-                                    Span::styled(format!(" - {}", artist), Style::default().fg(theme.overlay)),
+                                    Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                                    Span::styled(format!("♪ {:title_w$}", name, title_w = title_w), t_style),
+                                    Span::styled(format!("{:artist_w$}", artist_disp, artist_w = artist_w), a_style),
+                                    Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
                                 ]));
                             }
                         }
                     }
                     LibraryMode::Playlists => {
-                        // Playlists View
+                        // Unified aesthetic for Playlists
+                        let content_h = h.saturating_sub(5);
+                        let playlist_count = app.playlists.len();
+                        
+                        let magenta = theme.magenta;
+                        let green = theme.green;
+                        let cream = theme.yellow;
+                        let muted = theme.overlay;
+                        let grid = theme.surface;
+                        
+                        // ━━━ CENTERED TITLE ━━━
                         lines.push(Line::from(""));
+                        lines.push(Line::from(Span::styled(
+                            format!("  PLAYLISTS  ·  {} saved  ", playlist_count), 
+                            Style::default().fg(magenta)
+                        )).alignment(Alignment::Center));
+                        lines.push(Line::from(""));
+                        
+                        // ━━━ CONTENT ━━━
                         if app.playlists.is_empty() {
-                            lines.push(Line::from(Span::styled("📋 No saved playlists", Style::default().fg(theme.overlay))));
-                            lines.push(Line::from(Span::styled("Press 's' to save current queue", Style::default().fg(theme.overlay))));
+                            lines.push(Line::from(Span::styled("No playlists", Style::default().fg(muted))).alignment(Alignment::Center));
+                            lines.push(Line::from(Span::styled("Press 's' to save queue as playlist", Style::default().fg(grid))).alignment(Alignment::Center));
                         } else {
-                            for (i, pl) in app.playlists.iter().enumerate() {
-                                let is_sel = i == app.library_selected;
-                                let style = if is_sel {
-                                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            
+                            for (display_idx, pl) in app.playlists.iter().skip(start_idx).take(content_h).enumerate() {
+                                let actual_idx = start_idx + display_idx;
+                                let is_sel = actual_idx == app.library_selected;
+                                let num = actual_idx + 1;
+                                
+                                let name_max = w.saturating_sub(12);
+                                let name = if pl.len() > name_max { format!("{}…", &pl[..name_max.saturating_sub(1)]) } else { pl.clone() };
+                                
+                                let (marker, m_color, n_style) = if is_sel {
+                                    ("●", cream, Style::default().fg(magenta).add_modifier(Modifier::BOLD))
                                 } else {
-                                    Style::default().fg(theme.text)
+                                    ("○", grid, Style::default().fg(theme.text))
                                 };
-                                let prefix = if is_sel { "▶ " } else { "  " };
-                                lines.push(Line::from(Span::styled(format!("{}📋 {}", prefix, pl), style)));
+                                let icon = if is_sel { "▶" } else { "" };
+                                
+                                lines.push(Line::from(vec![
+                                    Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                                    Span::styled(format!("{:>2}  ", num), Style::default().fg(if is_sel { green } else { muted })),
+                                    Span::styled(format!("{} ", icon), Style::default().fg(magenta)),
+                                    Span::styled(name, n_style),
+                                ]));
                             }
                         }
                     }

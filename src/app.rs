@@ -44,7 +44,7 @@ pub enum ViewMode {
 pub enum LibraryMode {
     #[default]
     Queue,      // Current queue
-    Browse,     // Artist/Album/Genre browser
+    Directory,  // Neo-tree style music folder browser
     Search,     // Search library
     Playlists,  // Saved playlists
 }

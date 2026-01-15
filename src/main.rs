@@ -845,11 +845,11 @@ async fn main() -> Result<()> {
 
                         // Library Panel Controls (when in Library view) 📚
                         KeyCode::Tab if app.view_mode == app::ViewMode::Library => {
-                            // Cycle library modes
+                            // Cycle library modes: Queue → Directory → Playlists
                             app.library_mode = match app.library_mode {
-                                app::LibraryMode::Queue => app::LibraryMode::Browse,
-                                app::LibraryMode::Browse => app::LibraryMode::Search,
-                                app::LibraryMode::Search => app::LibraryMode::Playlists,
+                                app::LibraryMode::Queue => app::LibraryMode::Directory,
+                                app::LibraryMode::Directory => app::LibraryMode::Playlists,
+                                app::LibraryMode::Search => app::LibraryMode::Playlists, // Search via bar, not tab
                                 app::LibraryMode::Playlists => app::LibraryMode::Queue,
                             };
                             // Clear state when switching modes
@@ -857,6 +857,7 @@ async fn main() -> Result<()> {
                             app.library_items.clear();
                             app.browse_path.clear();
                             app.search_query.clear();
+                            app.search_active = false;
                             
                             // Load playlists when entering Playlists mode
                             #[cfg(feature = "mpd")]
@@ -867,14 +868,72 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            
+                            // Load root directory when entering Directory mode
+                            #[cfg(feature = "mpd")]
+                            if app.library_mode == app::LibraryMode::Directory && args.mpd {
+                                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                    // Get directories from listfiles, songs with metadata from lsinfo
+                                    let mut items: Vec<app::LibraryItem> = Vec::new();
+                                    
+                                    // Get directories
+                                    if let Ok(files) = mpd.listfiles("") {
+                                        for (kind, path) in files {
+                                            let name = path.split('/').last().unwrap_or(&path).to_string();
+                                            if name.starts_with('.') { continue; }
+                                            
+                                            if kind == "directory" {
+                                                items.push(app::LibraryItem {
+                                                    name,
+                                                    item_type: app::LibraryItemType::Folder,
+                                                    artist: None,
+                                                    duration_ms: None,
+                                                    path: Some(path),
+                                                });
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Get songs with metadata from lsinfo
+                                    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: "".to_string(), ..Default::default() }) {
+                                        for song in songs {
+                                            let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                            if filename.starts_with('.') { continue; }
+                                            
+                                            // Use metadata title, fallback to filename without extension
+                                            let title = song.title.clone().unwrap_or_else(|| {
+                                                filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
+                                            });
+                                            
+                                            items.push(app::LibraryItem {
+                                                name: title,
+                                                item_type: app::LibraryItemType::Song,
+                                                artist: song.artist.clone(),
+                                                duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                                                path: Some(song.file),
+                                            });
+                                        }
+                                    }
+                                    
+                                    // Sort: folders first, then songs alphabetically
+                                    items.sort_by(|a, b| {
+                                        match (&a.item_type, &b.item_type) {
+                                            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+                                            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+                                            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                        }
+                                    });
+                                    app.library_items = items;
+                                }
+                            }
                         },
                         KeyCode::BackTab if app.view_mode == app::ViewMode::Library => {
-                            // Reverse cycle
+                            // Reverse cycle: Playlists → Directory → Queue
                             app.library_mode = match app.library_mode {
                                 app::LibraryMode::Queue => app::LibraryMode::Playlists,
-                                app::LibraryMode::Browse => app::LibraryMode::Queue,
-                                app::LibraryMode::Search => app::LibraryMode::Browse,
-                                app::LibraryMode::Playlists => app::LibraryMode::Search,
+                                app::LibraryMode::Directory => app::LibraryMode::Queue,
+                                app::LibraryMode::Search => app::LibraryMode::Directory, // Search via bar, not tab
+                                app::LibraryMode::Playlists => app::LibraryMode::Directory,
                             };
                             // Clear state when switching modes
                             app.library_selected = 0;
@@ -971,7 +1030,7 @@ async fn main() -> Result<()> {
                             }
                         },
                         // Add to Queue: 'a' key ➕
-                        KeyCode::Char('a') if app.view_mode == app::ViewMode::Library && (app.library_mode == app::LibraryMode::Browse || app.library_mode == app::LibraryMode::Search) => {
+                        KeyCode::Char('a') if app.view_mode == app::ViewMode::Library && (app.library_mode == app::LibraryMode::Directory || app.library_mode == app::LibraryMode::Search) => {
                              #[cfg(feature = "mpd")]
                              if args.mpd {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
@@ -1017,156 +1076,75 @@ async fn main() -> Result<()> {
                                             // Play selected song in queue
                                             let _ = mpd.switch(app.library_selected as u32);
                                         }
-                                        app::LibraryMode::Browse => {
-                                            if app.browse_path.is_empty() {
-                                                // Enter root category
-                                                let categories = ["Artists", "Albums", "Genres", "Folders"];
-                                                if let Some(cat) = categories.get(app.library_selected) {
-                                                    app.browse_path.push(cat.to_string());
-                                                    app.library_selected = 0;
-                                                    
-                                                    // Load items for the selected category
-                                                    // Use generic MPD commands instead of inefficient listall
-                                                    let items = match *cat {
-                                                        "Artists" => {
-                                                            mpd.list(&Term::Tag("Artist".into()), &Query::new()).ok()
-                                                                .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                                    name, item_type: app::LibraryItemType::Artist, 
-                                                                    artist: None, duration_ms: None, path: None 
-                                                                }).collect::<Vec<_>>())
-                                                        },
-                                                        "Albums" => {
-                                                            mpd.list(&Term::Tag("Album".into()), &Query::new()).ok()
-                                                                .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                                    name, item_type: app::LibraryItemType::Album, 
-                                                                    artist: None, duration_ms: None, path: None 
-                                                                }).collect::<Vec<_>>())
-                                                        },
-                                                        "Genres" => {
-                                                            mpd.list(&Term::Tag("Genre".into()), &Query::new()).ok()
-                                                                .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                                    name, item_type: app::LibraryItemType::Genre, 
-                                                                    artist: None, duration_ms: None, path: None 
-                                                                }).collect::<Vec<_>>())
-                                                        },
-                                                        "Folders" => {
-                                                            mpd.listfiles("/").ok().map(|pairs| {
-                                                                pairs.into_iter().map(|(kind, name)| {
-                                                                    match kind.as_str() {
-                                                                        "directory" => app::LibraryItem {
-                                                                            name: name.clone(),
+                                        app::LibraryMode::Directory => {
+                                            // Direct folder navigation using listfiles
+                                            if let Some(item) = app.library_items.get(app.library_selected) {
+                                                match &item.item_type {
+                                                    app::LibraryItemType::Folder => {
+                                                        // Navigate into folder
+                                                        if let Some(path) = &item.path {
+                                                            app.browse_path.push(item.name.clone());
+                                                            app.library_selected = 0;
+                                                            
+                                                            // Get directories from listfiles
+                                                            let mut new_items: Vec<app::LibraryItem> = Vec::new();
+                                                            
+                                                            if let Ok(pairs) = mpd.listfiles(path) {
+                                                                for (kind, name) in pairs {
+                                                                    let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                                    if display_name.starts_with('.') { continue; }
+                                                                    
+                                                                    if kind == "directory" {
+                                                                        let full_path = format!("{}/{}", path, name);
+                                                                        new_items.push(app::LibraryItem {
+                                                                            name: display_name,
                                                                             item_type: app::LibraryItemType::Folder,
-                                                                            artist: None, duration_ms: None, path: Some(name)
-                                                                        },
-                                                                        "file" => app::LibraryItem {
-                                                                            name: name.clone(),
-                                                                            item_type: app::LibraryItemType::Song,
-                                                                            artist: None, duration_ms: None, path: Some(name)
-                                                                        },
-                                                                        _ => app::LibraryItem {
-                                                                            name,
-                                                                            item_type: app::LibraryItemType::Song,
-                                                                            artist: None, duration_ms: None, path: None
-                                                                        }
+                                                                            artist: None, duration_ms: None, path: Some(full_path)
+                                                                        });
                                                                     }
-                                                                }).collect::<Vec<_>>()
-                                                            })
-                                                        },
-                                                        _ => None
-                                                    };
-                                                    
-                                                    if let Some(mut i) = items {
-                                                        i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                        app.library_items = i;
-                                                    }
-                                                }
-                                            } else {
-                                                // DRILL DOWN LOGIC
-                                                let root = app.browse_path[0].as_str();
-                                                if let Some(item) = app.library_items.get(app.library_selected) {
-                                                    match (root, &item.item_type) {
-                                                        // Entering a Folder
-                                                        ("Folders", app::LibraryItemType::Folder) => {
-                                                            if let Some(path) = &item.path {
-                                                                let path_str = path.clone();
-                                                                app.browse_path.push(item.name.clone()); 
-                                                                app.library_selected = 0;
-                                                                
-                                                                if let Ok(pairs) = mpd.listfiles(&path_str) {
-                                                                    let mut new_items: Vec<app::LibraryItem> = pairs.into_iter().map(|(kind, name)| {
-                                                                        let full_path = if path_str == "/" { name.clone() } else { format!("{}/{}", path_str, name) };
-                                                                        match kind.as_str() {
-                                                                            "directory" => app::LibraryItem {
-                                                                                name,
-                                                                                item_type: app::LibraryItemType::Folder,
-                                                                                artist: None, duration_ms: None, path: Some(full_path)
-                                                                            },
-                                                                            "file" => app::LibraryItem {
-                                                                                name,
-                                                                                item_type: app::LibraryItemType::Song,
-                                                                                artist: None, duration_ms: None, path: Some(full_path)
-                                                                            },
-                                                                            _ => app::LibraryItem { name, item_type: app::LibraryItemType::Song, artist: None, duration_ms: None, path: None }
-                                                                        }
-                                                                    }).collect();
-                                                                    new_items.sort_by(|a, b| a.name.cmp(&b.name));
-                                                                    app.library_items = new_items;
                                                                 }
                                                             }
-                                                        },
-                                                        
-                                                        // Artist -> Album List
-                                                        ("Artists", app::LibraryItemType::Artist) => {
-                                                            let artist = item.name.clone();
-                                                            app.browse_path.push(artist.clone());
-                                                            app.library_selected = 0;
                                                             
-                                                            let mut q = Query::new();
-                                                            q.and(Term::Tag("Artist".into()), artist);
-                                                            if let Ok(albums) = mpd.list(&Term::Tag("Album".into()), &q) {
-                                                                 let mut i: Vec<app::LibraryItem> = albums.into_iter().map(|name| app::LibraryItem {
-                                                                     name, item_type: app::LibraryItemType::Album,
-                                                                     artist: None, duration_ms: None, path: None
-                                                                 }).collect();
-                                                                 i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                                 app.library_items = i;
-                                                            }
-                                                        },
-
-                                                        // Album -> Song List
-                                                        (_, app::LibraryItemType::Album) => {
-                                                            let album = item.name.clone();
-                                                            app.browse_path.push(album.clone());
-                                                            app.library_selected = 0;
-                                                            
-                                                            let mut q = Query::new();
-                                                            q.and(Term::Tag("Album".into()), album);
-                                                            // Use None for window range (all)
-                                                            if let Ok(songs) = mpd.find(&q, Option::<(u32, u32)>::None) {
-                                                                 let mut i: Vec<app::LibraryItem> = songs.into_iter().map(|s| app::LibraryItem {
-                                                                     name: s.title.clone().unwrap_or(s.file.clone()),
-                                                                     item_type: app::LibraryItemType::Song,
-                                                                     artist: Some(s.tags.iter().find(|(k, _)| k == "Artist").map(|(_, v)| v.clone()).unwrap_or_default()),
-                                                                     duration_ms: s.duration.map(|d| d.as_secs() * 1000),
-                                                                     path: Some(s.file)
-                                                                 }).collect();
-                                                                 app.library_items = i;
-                                                            }
-                                                        },
-
-                                                        // Playing a Song (from Browse view) - Add and play immediately
-                                                        (_, app::LibraryItemType::Song) => {
-                                                            if let Some(path) = &item.path {
-                                                                let song = mpd::Song { file: path.clone(), ..Default::default() };
-                                                                // Add to queue and play immediately
-                                                                if let Ok(id) = mpd.push(&song) {
-                                                                    let _ = mpd.switch(id);
+                                                            // Get songs with metadata from lsinfo
+                                                            if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.clone(), ..Default::default() }) {
+                                                                for song in songs {
+                                                                    let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                                    if filename.starts_with('.') { continue; }
+                                                                    
+                                                                    let title = song.title.clone().unwrap_or_else(|| {
+                                                                        filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
+                                                                    });
+                                                                    
+                                                                    new_items.push(app::LibraryItem {
+                                                                        name: title,
+                                                                        item_type: app::LibraryItemType::Song,
+                                                                        artist: song.artist.clone(),
+                                                                        duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                                                                        path: Some(song.file),
+                                                                    });
                                                                 }
                                                             }
-                                                        },
-                                                        
-                                                        _ => {}
-                                                    }
+                                                            
+                                                            // Sort: folders first
+                                                            new_items.sort_by(|a, b| {
+                                                                match (&a.item_type, &b.item_type) {
+                                                                    (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+                                                                    (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+                                                                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                                                }
+                                                            });
+                                                            app.library_items = new_items;
+                                                        }
+                                                    },
+                                                    app::LibraryItemType::Song => {
+                                                        // Clear queue and play this song
+                                                        if let Some(path) = &item.path {
+                                                            let _ = mpd.clear();
+                                                            let _ = mpd.push(mpd::song::Song { file: path.clone(), ..Default::default() });
+                                                            let _ = mpd.play();
+                                                        }
+                                                    },
+                                                    _ => {}
                                                 }
                                             }
                                         }
@@ -1192,117 +1170,70 @@ async fn main() -> Result<()> {
                             }
                         },
                         // Backspace to go back in Browse
-                        KeyCode::Backspace | KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Browse => {
+                        KeyCode::Backspace | KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
                             app.browse_path.pop();
                             app.library_items.clear();
                             app.library_selected = 0;
                             
-                            // Re-fetch items for the parent level if not root
-                            if !app.browse_path.is_empty() {
-                                #[cfg(feature = "mpd")]
-                                if args.mpd {
-                                    if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                                        let root_cat = app.browse_path[0].as_str();
-                                        
-                                        // Level 1: Listing Categories (Artists, Albums, etc.)
-                                        if app.browse_path.len() == 1 {
-                                            let items = match root_cat {
-                                                "Artists" => {
-                                                    mpd.list(&Term::Tag("Artist".into()), &Query::new()).ok()
-                                                        .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                            name, item_type: app::LibraryItemType::Artist, 
-                                                            artist: None, duration_ms: None, path: None 
-                                                        }).collect::<Vec<_>>())
-                                                },
-                                                "Albums" => {
-                                                    mpd.list(&Term::Tag("Album".into()), &Query::new()).ok()
-                                                        .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                            name, item_type: app::LibraryItemType::Album, 
-                                                            artist: None, duration_ms: None, path: None 
-                                                        }).collect::<Vec<_>>())
-                                                },
-                                                "Genres" => {
-                                                    mpd.list(&Term::Tag("Genre".into()), &Query::new()).ok()
-                                                        .map(|v| v.into_iter().map(|name| app::LibraryItem {
-                                                            name, item_type: app::LibraryItemType::Genre, 
-                                                            artist: None, duration_ms: None, path: None 
-                                                        }).collect::<Vec<_>>())
-                                                },
-                                                "Folders" => {
-                                                    mpd.listfiles("").ok().map(|files| {
-                                                        files.into_iter().filter_map(|f| {
-                                                            if f.0 == "file" || f.0 == "directory" {
-                                                                let name = f.1;
-                                                                Some(app::LibraryItem {
-                                                                    name: name.clone(),
-                                                                    item_type: app::LibraryItemType::Folder,
-                                                                    artist: None, duration_ms: None, path: Some(name)
-                                                                })
-                                                            } else {
-                                                                None
-                                                            }
-                                                        }).collect::<Vec<_>>()
-                                                    })
-                                                },
-                                                _ => None,
-                                            };
+                            // Re-fetch items for the parent level
+                            #[cfg(feature = "mpd")]
+                            if args.mpd {
+                                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                    // Build the path from browse_path
+                                    let parent_path = if app.browse_path.is_empty() {
+                                        "".to_string()
+                                    } else {
+                                        app.browse_path.join("/")
+                                    };
+                                    
+                                    // Get directories from listfiles
+                                    let mut new_items: Vec<app::LibraryItem> = Vec::new();
+                                    
+                                    if let Ok(files) = mpd.listfiles(&parent_path) {
+                                        for (kind, name) in files {
+                                            let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                            if display_name.starts_with('.') { continue; }
                                             
-                                            if let Some(mut i) = items {
-                                                i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                i.dedup_by(|a, b| a.name == b.name);
-                                                app.library_items = i;
-                                            }
-                                        } 
-                                        // Level 2: Inside a Category (Songs of Artist, etc.)
-                                        else if app.browse_path.len() == 2 {
-                                            let parent_name = app.browse_path[1].as_str();
-                                            match root_cat {
-                                                "Artists" => {
-                                                    let mut q = Query::new();
-                                                    q.and(Term::Tag("Artist".into()), parent_name);
-                                                    if let Ok(albums) = mpd.list(&Term::Tag("Album".into()), &q) {
-                                                         let mut i: Vec<app::LibraryItem> = albums.into_iter().map(|name| app::LibraryItem {
-                                                             name, item_type: app::LibraryItemType::Album,
-                                                             artist: None, duration_ms: None, path: None
-                                                         }).collect();
-                                                         i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                         app.library_items = i;
-                                                    }
-                                                },
-                                                "Genres" => {
-                                                     let mut q = Query::new();
-                                                     q.and(Term::Tag("Genre".into()), parent_name);
-                                                     if let Ok(artists) = mpd.list(&Term::Tag("Artist".into()), &q) {
-                                                         let mut i: Vec<app::LibraryItem> = artists.into_iter().map(|name| app::LibraryItem {
-                                                             name, item_type: app::LibraryItemType::Artist,
-                                                             artist: None, duration_ms: None, path: None
-                                                         }).collect();
-                                                         i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                         app.library_items = i;
-                                                     }
-                                                },
-                                                "Folders" => {
-                                                    if let Ok(files) = mpd.listfiles(parent_name) {
-                                                        let mut i: Vec<app::LibraryItem> = files.into_iter().filter_map(|f| {
-                                                            if f.0 == "file" || f.0 == "directory" {
-                                                                let name = f.1;
-                                                                Some(app::LibraryItem {
-                                                                    name: name.split('/').last().unwrap_or(&name).to_string(),
-                                                                    item_type: app::LibraryItemType::Folder,
-                                                                    artist: None, duration_ms: None, path: Some(name)
-                                                                })
-                                                            } else {
-                                                                None
-                                                            }
-                                                        }).collect();
-                                                        i.sort_by(|a, b| a.name.cmp(&b.name));
-                                                        app.library_items = i;
-                                                    }
-                                                },
-                                                _ => {}
+                                            if kind == "directory" {
+                                                let full_path = if parent_path.is_empty() { name.clone() } else { format!("{}/{}", parent_path, name) };
+                                                new_items.push(app::LibraryItem {
+                                                    name: display_name,
+                                                    item_type: app::LibraryItemType::Folder,
+                                                    artist: None, duration_ms: None, path: Some(full_path)
+                                                });
                                             }
                                         }
                                     }
+                                    
+                                    // Get songs with metadata from lsinfo
+                                    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: parent_path.clone(), ..Default::default() }) {
+                                        for song in songs {
+                                            let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                            if filename.starts_with('.') { continue; }
+                                            
+                                            let title = song.title.clone().unwrap_or_else(|| {
+                                                filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
+                                            });
+                                            
+                                            new_items.push(app::LibraryItem {
+                                                name: title,
+                                                item_type: app::LibraryItemType::Song,
+                                                artist: song.artist.clone(),
+                                                duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                                                path: Some(song.file),
+                                            });
+                                        }
+                                    }
+                                    
+                                    // Sort: folders first
+                                    new_items.sort_by(|a, b| {
+                                        match (&a.item_type, &b.item_type) {
+                                            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+                                            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+                                            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                        }
+                                    });
+                                    app.library_items = new_items;
                                 }
                             }
                         },
@@ -1313,7 +1244,7 @@ async fn main() -> Result<()> {
                         KeyCode::Down if app.view_mode == app::ViewMode::Library => {
                             let max_items = match app.library_mode {
                                 app::LibraryMode::Queue => app.queue.len().max(1),
-                                app::LibraryMode::Browse if app.browse_path.is_empty() => 4,
+                                app::LibraryMode::Directory if app.browse_path.is_empty() => 4,
                                 app::LibraryMode::Playlists => app.playlists.len().max(1),
                                 _ => app.library_items.len().max(1),
                             };
