@@ -151,6 +151,10 @@ async fn main() -> Result<()> {
     // Determine backend mode and source app name
     #[cfg(feature = "mpd")]
     let (is_mpd_mode, source_app) = if args.controller {
+        // Auto-Pause MPD to prevent concurrent audio ⏸️
+        if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+            let _ = mpd.pause(true); 
+        }
         (false, "Spotify / Apple Music")
     } else {
         // Default mode - MPD
