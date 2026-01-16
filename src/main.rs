@@ -63,10 +63,9 @@ struct Args {
     #[arg(long)]
     lyrics: bool,
     
-    /// Use MPD backend instead of Spotify/Music.app
-    #[cfg(feature = "mpd")]
-    #[arg(long)]
-    mpd: bool,
+    /// Play MP3/FLAC music (Defaults to MPD Client mode)
+    #[arg(long, short = 'c')]
+    controller: bool,
     
     /// MPD host (default: localhost)
     #[cfg(feature = "mpd")]
@@ -103,13 +102,18 @@ async fn main() -> Result<()> {
             child_args.push("--lyrics".to_string());
         }
         
-        #[cfg(feature = "mpd")]
-        if args.mpd {
-            child_args.push("--mpd".to_string());
-            child_args.push("--mpd-host".to_string());
-            child_args.push(args.mpd_host.clone());
-            child_args.push("--mpd-port".to_string());
-            child_args.push(args.mpd_port.to_string());
+        // Pass controller flag if present
+        if args.controller {
+            child_args.push("--controller".to_string());
+        } else {
+            // Default is MPD, pass args if needed
+            #[cfg(feature = "mpd")]
+            {
+                child_args.push("--mpd-host".to_string());
+                child_args.push(args.mpd_host.clone());
+                child_args.push("--mpd-port".to_string());
+                child_args.push(args.mpd_port.to_string());
+            }
         }
         
         let child_cmd = format!("{} {}", exe_path, child_args.join(" "));
@@ -146,11 +150,11 @@ async fn main() -> Result<()> {
 
     // Determine backend mode and source app name
     #[cfg(feature = "mpd")]
-    let (is_mpd_mode, source_app) = if args.mpd {
-        (true, "MPD")
-    } else {
-        // Controller mode - detect which streaming app
+    let (is_mpd_mode, source_app) = if args.controller {
         (false, "Spotify / Apple Music")
+    } else {
+        // Default mode - MPD
+        (true, "MPD")
     };
     #[cfg(not(feature = "mpd"))]
     let (is_mpd_mode, source_app) = (false, "Spotify / Apple Music");
@@ -167,7 +171,7 @@ async fn main() -> Result<()> {
     
     // Player Backend Selection 🎛️
     #[cfg(feature = "mpd")]
-    let player: std::sync::Arc<dyn player::PlayerTrait> = if args.mpd {
+    let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
         std::sync::Arc::new(mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port))
     } else {
         std::sync::Arc::from(player::get_player())
@@ -238,7 +242,7 @@ async fn main() -> Result<()> {
 
     // 4a. Cava Integration Task 📊 (MPD mode only - needs FIFO audio input)
     #[cfg(feature = "mpd")]
-    if args.mpd {
+    if !args.controller {
         let tx_cava = tx.clone();
         tokio::spawn(async move {
             use tokio::process::Command;
@@ -319,7 +323,7 @@ async fn main() -> Result<()> {
                                         let name = input.value.trim().to_string();
                                         if !name.is_empty() {
                                             #[cfg(feature = "mpd")]
-                                            if args.mpd {
+                                            if !args.controller {
                                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                                     let _ = mpd.save(&name);
                                                     // Refresh playlists
@@ -432,7 +436,7 @@ async fn main() -> Result<()> {
                                 app.search_active = false;
                                 // Perform MPD search
                                 #[cfg(feature = "mpd")]
-                                if args.mpd && !app.search_query.is_empty() {
+                                if !args.controller && !app.search_query.is_empty() {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         if let Ok(songs) = mpd.listall() {
                                             let query_lower = app.search_query.to_lowercase();
@@ -596,10 +600,11 @@ async fn main() -> Result<()> {
                             KeyCode::Char('J') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                                 if app.library_selected < app.queue.len().saturating_sub(1) {
                                     #[cfg(feature = "mpd")]
-                                    if args.mpd {
+                                    if !args.controller {
                                         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                             let current_pos = app.library_selected as u32;
                                             let new_pos = current_pos + 1;
+
                                             if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
                                                  app.library_selected = new_pos as usize;
                                             }
@@ -610,11 +615,12 @@ async fn main() -> Result<()> {
                             KeyCode::Char('K') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                                 if app.library_selected > 0 {
                                     #[cfg(feature = "mpd")]
-                                    if args.mpd {
+                                    if !args.controller {
                                         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                             let current_pos = app.library_selected as u32;
                                             let new_pos = current_pos - 1;
                                             if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+
                                                  app.library_selected = new_pos as usize;
                                             }
                                         }
@@ -626,11 +632,11 @@ async fn main() -> Result<()> {
                             // MPD mode: All cards (Lyrics, Cava, Library, EQ)
                             KeyCode::Char('1') => app.view_mode = app::ViewMode::Lyrics,
                             #[cfg(feature = "mpd")]
-                            KeyCode::Char('2') if args.mpd => app.view_mode = app::ViewMode::Cava,
+                            KeyCode::Char('2') if !args.controller => app.view_mode = app::ViewMode::Cava,
                             #[cfg(feature = "mpd")]
-                            KeyCode::Char('3') if args.mpd => app.view_mode = app::ViewMode::Library,
+                            KeyCode::Char('3') if !args.controller => app.view_mode = app::ViewMode::Library,
                             #[cfg(feature = "mpd")]
-                            KeyCode::Char('4') if args.mpd => app.view_mode = app::ViewMode::EQ,
+                            KeyCode::Char('4') if !args.controller => app.view_mode = app::ViewMode::EQ,
                         
                         // Lyrics Navigation (j/k scroll, Enter to seek) 📜
                         KeyCode::Char('j') if app.view_mode == app::ViewMode::Lyrics => {
@@ -767,7 +773,7 @@ async fn main() -> Result<()> {
                             app.toggle_crossfade();
                             // Send crossfade command to MPD
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     let _ = mpd.crossfade(app.crossfade_secs as i64);
                                 }
@@ -777,7 +783,7 @@ async fn main() -> Result<()> {
                         KeyCode::Char('R') if app.view_mode == app::ViewMode::EQ => {
                             app.replay_gain_mode = (app.replay_gain_mode + 1) % 4;
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 let mode = match app.replay_gain_mode {
                                     1 => mpd::status::ReplayGain::Track,
                                     2 => mpd::status::ReplayGain::Album,
@@ -799,7 +805,7 @@ async fn main() -> Result<()> {
                         },
                         // Global search: / to jump to search from anywhere (MPD only)
                         #[cfg(feature = "mpd")]
-                        KeyCode::Char('/') if args.mpd => {
+                        KeyCode::Char('/') if !args.controller => {
                             app.view_mode = app::ViewMode::Library;
                             app.library_mode = app::LibraryMode::Search;
                             app.search_active = true;
@@ -817,7 +823,7 @@ async fn main() -> Result<()> {
                         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                             if app.library_selected > 0 {
                                 #[cfg(feature = "mpd")]
-                                if args.mpd {
+                                if !args.controller {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         let current_pos = app.library_selected as u32;
                                         let new_pos = current_pos - 1;
@@ -831,7 +837,7 @@ async fn main() -> Result<()> {
                         KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) && app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                              if app.library_selected < app.queue.len().saturating_sub(1) {
                                 #[cfg(feature = "mpd")]
-                                if args.mpd {
+                                if !args.controller {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         let current_pos = app.library_selected as u32;
                                         let new_pos = current_pos + 1;
@@ -861,7 +867,7 @@ async fn main() -> Result<()> {
                             
                             // Load playlists when entering Playlists mode
                             #[cfg(feature = "mpd")]
-                            if app.library_mode == app::LibraryMode::Playlists && args.mpd {
+                            if app.library_mode == app::LibraryMode::Playlists && !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(pls) = mpd.playlists() {
                                         app.playlists = pls.iter().map(|p| p.name.clone()).collect();
@@ -871,7 +877,7 @@ async fn main() -> Result<()> {
                             
                             // Load root directory when entering Directory mode
                             #[cfg(feature = "mpd")]
-                            if app.library_mode == app::LibraryMode::Directory && args.mpd {
+                            if app.library_mode == app::LibraryMode::Directory && !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     // Get directories from listfiles, songs with metadata from lsinfo
                                     let mut items: Vec<app::LibraryItem> = Vec::new();
@@ -943,7 +949,7 @@ async fn main() -> Result<()> {
                             
                             // Load playlists when entering Playlists mode
                             #[cfg(feature = "mpd")]
-                            if app.library_mode == app::LibraryMode::Playlists && args.mpd {
+                            if app.library_mode == app::LibraryMode::Playlists && !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(pls) = mpd.playlists() {
                                         app.playlists = pls.iter().map(|p| p.name.clone()).collect();
@@ -976,7 +982,7 @@ async fn main() -> Result<()> {
                         // Delete: d to delete playlist or remove song from queue
                         KeyCode::Char('d') if app.view_mode == app::ViewMode::Library => {
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     match app.library_mode {
                                         app::LibraryMode::Queue => {
@@ -1004,7 +1010,7 @@ async fn main() -> Result<()> {
                         // Shuffle toggle: z
                         KeyCode::Char('z') => {
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(status) = mpd.status() {
                                         let new_state = !status.random;
@@ -1018,7 +1024,7 @@ async fn main() -> Result<()> {
                         // Repeat toggle: x
                         KeyCode::Char('x') => {
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(status) = mpd.status() {
                                         let new_state = !status.repeat;
@@ -1032,7 +1038,7 @@ async fn main() -> Result<()> {
                         // Add to Queue: 'a' key ➕
                         KeyCode::Char('a') if app.view_mode == app::ViewMode::Library && (app.library_mode == app::LibraryMode::Directory || app.library_mode == app::LibraryMode::Search) => {
                              #[cfg(feature = "mpd")]
-                             if args.mpd {
+                             if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if !app.library_items.is_empty() {
                                          if let Some(item) = app.library_items.get(app.library_selected) {
@@ -1069,7 +1075,7 @@ async fn main() -> Result<()> {
                         // Enter key for Library actions
                         KeyCode::Enter if app.view_mode == app::ViewMode::Library => {
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     match app.library_mode {
                                         app::LibraryMode::Queue => {
@@ -1177,7 +1183,7 @@ async fn main() -> Result<()> {
                             
                             // Re-fetch items for the parent level
                             #[cfg(feature = "mpd")]
-                            if args.mpd {
+                            if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     // Build the path from browse_path
                                     let parent_path = if app.browse_path.is_empty() {
