@@ -208,7 +208,8 @@ impl PlayerTrait for MpdPlayer {
         let items: Vec<(String, String, u64, bool, String)> = queue.iter().enumerate().map(|(i, song)| {
             let title = song.title.clone()
                 .unwrap_or_else(|| song.file.clone());
-            let artist = find_tag(&song.tags, "Artist")
+            let artist = song.artist.clone()
+                .or_else(|| find_tag(&song.tags, "Artist"))
                 .or_else(|| find_tag(&song.tags, "AlbumArtist"))
                 .or_else(|| find_tag(&song.tags, "Composer"))
                 .unwrap_or_else(|| "Unknown Artist".to_string());

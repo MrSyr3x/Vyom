@@ -434,7 +434,97 @@ async fn main() -> Result<()> {
                     // When search is active, capture ALL character input (except special keys)
                     else if app.search_active {
                         match key.code {
-                            KeyCode::Esc => app.search_active = false,
+                            KeyCode::Esc => {
+                                app.search_active = false;
+                                // Restore previous mode or default to Directory
+                                let target_mode = app.previous_library_mode.take().unwrap_or(app::LibraryMode::Directory);
+                                app.library_mode = target_mode;
+                                app.search_query.clear();
+                                
+                                // Reset selection
+                                app.library_selected = 0;
+                                
+                                #[cfg(feature = "mpd")]
+                                if !args.controller {
+                                    if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                        match target_mode {
+                                            app::LibraryMode::Directory => {
+                                                // Restore Directory view (refresh from current path)
+                                                let current_path = app.browse_path.join("/");
+                                                let mut new_items: Vec<app::LibraryItem> = Vec::new();
+                                                
+                                                // 1. Folders
+                                                if let Ok(files) = mpd.listfiles(&current_path) {
+                                                    for (kind, name) in files {
+                                                        let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                        if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
+                                                        
+                                                        if kind == "directory" {
+                                                            let full_path = if current_path.is_empty() { name.clone() } else { format!("{}/{}", current_path, name) };
+                                                            new_items.push(app::LibraryItem {
+                                                                name: display_name,
+                                                                item_type: app::LibraryItemType::Folder,
+                                                                artist: None, duration_ms: None, path: Some(full_path)
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // 2. Songs
+                                                if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
+                                                    for song in songs {
+                                                        let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                        if filename.starts_with('.') || filename.trim().is_empty() { continue; }
+                                                        
+                                                        let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                                                            Some(t) => t.clone(),
+                                                            None => filename.clone(),
+                                                        };
+                                                        
+                                                        new_items.push(app::LibraryItem {
+                                                            name: title,
+                                                            item_type: app::LibraryItemType::Song,
+                                                            artist: song.artist.clone(),
+                                                            duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                                                            path: Some(song.file),
+                                                        });
+                                                    }
+                                                }
+                                                
+                                                new_items.sort_by(|a, b| {
+                                                    match (&a.item_type, &b.item_type) {
+                                                        (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+                                                        (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+                                                        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                                    }
+                                                });
+                                                app.library_items = new_items;
+                                            },
+                                            app::LibraryMode::Playlists => {
+                                                // Refresh playlists
+                                                if let Ok(playlists) = mpd.playlists() {
+                                                    app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                                                    app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
+                                                        name: p.clone(),
+                                                        item_type: app::LibraryItemType::Playlist,
+                                                        artist: None, duration_ms: None, path: None
+                                                    }).collect();
+                                                }
+                                            },
+                                            app::LibraryMode::Queue => {
+                                                // Queue is updated via idle/status logic, but we can ensure items match queue
+                                                // Repopulating library_items from queue is optional if UI uses app.queue directly
+                                                // But usually Queue view uses app.queue.
+                                                // ensure library items is cleared so we dont show search results in queue mode
+                                                app.library_items.clear();
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            },
+                                
+
                             KeyCode::Backspace => { app.search_query.pop(); },
                             KeyCode::Enter => {
                                 app.search_active = false;
@@ -811,10 +901,14 @@ async fn main() -> Result<()> {
                         #[cfg(feature = "mpd")]
                         KeyCode::Char('/') if !args.controller => {
                             app.view_mode = app::ViewMode::Library;
+                            // Save current mode before switching to Search, unless we are already searching
+                            if app.library_mode != app::LibraryMode::Search {
+                                app.previous_library_mode = Some(app.library_mode);
+                            }
                             app.library_mode = app::LibraryMode::Search;
                             app.search_active = true;
                         },
-                        KeyCode::Esc => {
+                        KeyCode::Esc if app.show_keyhints || app.show_audio_info => {
                             if app.show_keyhints {
                                 app.show_keyhints = false;
                             }
@@ -908,12 +1002,14 @@ async fn main() -> Result<()> {
                                     if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: "".to_string(), ..Default::default() }) {
                                         for song in songs {
                                             let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
-                                            if filename.starts_with('.') { continue; }
+                                            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                             
                                             // Use metadata title, fallback to filename without extension
-                                            let title = song.title.clone().unwrap_or_else(|| {
-                                                filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
-                                            });
+                                            // Use metadata title (ignore empty), fallback to RAW filename
+                                            let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                                                Some(t) => t.clone(),
+                                                None => filename.clone(), // Nuclear option: Just show the raw filename string
+                                            };
                                             
                                             items.push(app::LibraryItem {
                                                 name: title,
@@ -1102,7 +1198,7 @@ async fn main() -> Result<()> {
                                                             if let Ok(pairs) = mpd.listfiles(path) {
                                                                 for (kind, name) in pairs {
                                                                     let display_name = name.split('/').last().unwrap_or(&name).to_string();
-                                                                    if display_name.starts_with('.') { continue; }
+                                                                    if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                                                     
                                                                     if kind == "directory" {
                                                                         let full_path = format!("{}/{}", path, name);
@@ -1119,11 +1215,13 @@ async fn main() -> Result<()> {
                                                             if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.clone(), ..Default::default() }) {
                                                                 for song in songs {
                                                                     let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
-                                                                    if filename.starts_with('.') { continue; }
+                                                                    if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                                                     
-                                                                    let title = song.title.clone().unwrap_or_else(|| {
-                                                                        filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
-                                                                    });
+                                                                    // Use metadata title (ignore empty), fallback to RAW filename
+                                                                    let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                                                                        Some(t) => t.clone(),
+                                                                        None => filename.clone(),
+                                                                    };
                                                                     
                                                                     new_items.push(app::LibraryItem {
                                                                         name: title,
@@ -1179,6 +1277,90 @@ async fn main() -> Result<()> {
                                 }
                             }
                         },
+                        // Exit Search Mode (Viewing Results) 🔍
+                        KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Search => {
+                            // Restore previous mode or default to Directory
+                            let target_mode = app.previous_library_mode.take().unwrap_or(app::LibraryMode::Directory);
+                            app.library_mode = target_mode;
+                            app.search_query.clear();
+                            app.library_selected = 0;
+                            
+                            #[cfg(feature = "mpd")]
+                            if !args.controller {
+                                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                    match target_mode {
+                                        app::LibraryMode::Directory => {
+                                            // Restore Directory view
+                                            let current_path = app.browse_path.join("/");
+                                            let mut new_items: Vec<app::LibraryItem> = Vec::new();
+                                            
+                                            // 1. Folders
+                                            if let Ok(files) = mpd.listfiles(&current_path) {
+                                                for (kind, name) in files {
+                                                    let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                    if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
+                                                    
+                                                    if kind == "directory" {
+                                                        let full_path = if current_path.is_empty() { name.clone() } else { format!("{}/{}", current_path, name) };
+                                                        new_items.push(app::LibraryItem {
+                                                            name: display_name,
+                                                            item_type: app::LibraryItemType::Folder,
+                                                            artist: None, duration_ms: None, path: Some(full_path)
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // 2. Songs
+                                            if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
+                                                for song in songs {
+                                                    let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                    if filename.starts_with('.') || filename.trim().is_empty() { continue; }
+                                                    
+                                                    let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                                                        Some(t) => t.clone(),
+                                                        None => filename.clone(),
+                                                    };
+                                                    
+                                                    new_items.push(app::LibraryItem {
+                                                        name: title,
+                                                        item_type: app::LibraryItemType::Song,
+                                                        artist: song.artist.clone(),
+                                                        duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                                                        path: Some(song.file),
+                                                    });
+                                                }
+                                            }
+                                            
+                                            new_items.sort_by(|a, b| {
+                                                match (&a.item_type, &b.item_type) {
+                                                    (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+                                                    (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+                                                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                                                }
+                                            });
+                                            app.library_items = new_items;
+                                        },
+                                        app::LibraryMode::Playlists => {
+                                            // Refresh playlists
+                                            if let Ok(playlists) = mpd.playlists() {
+                                                app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                                                app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
+                                                    name: p.clone(),
+                                                    item_type: app::LibraryItemType::Playlist,
+                                                    artist: None, duration_ms: None, path: None
+                                                }).collect();
+                                            }
+                                        },
+                                        app::LibraryMode::Queue => {
+                                            app.library_items.clear();
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        },
+
                         // Backspace to go back in Browse
                         KeyCode::Backspace | KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
                             app.browse_path.pop();
@@ -1202,7 +1384,7 @@ async fn main() -> Result<()> {
                                     if let Ok(files) = mpd.listfiles(&parent_path) {
                                         for (kind, name) in files {
                                             let display_name = name.split('/').last().unwrap_or(&name).to_string();
-                                            if display_name.starts_with('.') { continue; }
+                                            if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                             
                                             if kind == "directory" {
                                                 let full_path = if parent_path.is_empty() { name.clone() } else { format!("{}/{}", parent_path, name) };
@@ -1219,11 +1401,13 @@ async fn main() -> Result<()> {
                                     if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: parent_path.clone(), ..Default::default() }) {
                                         for song in songs {
                                             let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
-                                            if filename.starts_with('.') { continue; }
+                                            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                             
-                                            let title = song.title.clone().unwrap_or_else(|| {
-                                                filename.rsplit('.').skip(1).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".")
-                                            });
+                                            // Use metadata title (ignore empty), fallback to RAW filename
+                                            let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                                                Some(t) => t.clone(),
+                                                None => filename.clone(),
+                                            };
                                             
                                             new_items.push(app::LibraryItem {
                                                 name: title,

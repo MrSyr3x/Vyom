@@ -178,6 +178,7 @@ pub struct App {
     
     /// Smart Library Panel 📚
     pub library_mode: LibraryMode,
+    pub previous_library_mode: Option<LibraryMode>, // Track previous mode for search exit
     pub library_items: Vec<LibraryItem>,
     pub library_selected: usize,
     pub browse_path: Vec<String>,    // Breadcrumb navigation
@@ -332,6 +333,7 @@ impl App {
             queue: Vec::new(),
             _queue_scroll: 0,
             library_mode: LibraryMode::default(),
+            previous_library_mode: None,
             library_items: Vec::new(),
             library_selected: 0,
             browse_path: Vec::new(),

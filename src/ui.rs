@@ -98,28 +98,35 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // Inner Music Layout
     let m_height = inner_music_area.height;
-    let is_cramped = m_height < 30; 
+    let is_cramped = m_height < 10; // Redefined threshold for Tiny Mode
 
-    let music_constraints = if is_cramped {
-         vec![
-            Constraint::Min(10),    // 0: Artwork (Shrinkable)
-            Constraint::Length(4),  // 1: Info 
-            Constraint::Length(1),  // 2: Gauge
-            Constraint::Length(1),  // 3: Time
-            Constraint::Length(1),  // 4: Controls
-         ]
+    
+    // Elastic Priority Stack 🧠
+    // We strictly prioritize: Controls > Info > Gauge > Time > Artwork
+    // Artwork gets whatever is left (Constraint::Min(0)).
+    
+    let mut music_constraints = Vec::new();
+    
+    // Extremely small height (< 10): Show only essentials
+    if m_height < 10 {
+         // Tiny Mode: Artwork 0, Info 1, Controls 1
+         music_constraints.push(Constraint::Min(0));    // 0: Artwork (Hidden)
+         music_constraints.push(Constraint::Length(m_height.saturating_sub(2).max(1)));  // 1: Info (Takes remaining)
+         music_constraints.push(Constraint::Length(0));  // 2: Gauge (Hidden)
+         music_constraints.push(Constraint::Length(0));  // 3: Time (Hidden)
+         music_constraints.push(Constraint::Length(0));  // 4: Spacer (Hidden)
+         music_constraints.push(Constraint::Length(1));  // 5: Controls
+         music_constraints.push(Constraint::Length(0));  // 6: Bottom Padding
     } else {
-        // Normal
-         vec![
-            Constraint::Min(20),    // 0: Artwork (Takes available space!)
-            Constraint::Length(4),  // 1: Info 
-            Constraint::Length(1),  // 2: Gauge
-            Constraint::Length(1),  // 3: Time
-            Constraint::Length(1),  // 4: Spacer
-            Constraint::Length(1),  // 5: Controls
-            Constraint::Length(1),  // 6: Bottom Padding
-        ]
-    };
+        // Normal Mode: Artwork takes ALL available space
+        music_constraints.push(Constraint::Min(0));     // 0: Artwork (Elastic!)
+        music_constraints.push(Constraint::Length(4));  // 1: Info 
+        music_constraints.push(Constraint::Length(1));  // 2: Gauge
+        music_constraints.push(Constraint::Length(1));  // 3: Time
+        music_constraints.push(Constraint::Length(1));  // 4: Spacer
+        music_constraints.push(Constraint::Length(1));  // 5: Controls
+        music_constraints.push(Constraint::Length(1));  // 6: Bottom Padding
+    }
 
     let music_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -127,23 +134,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         .split(inner_music_area);
 
     // 1. Artwork
-    let _art_idx = 0;
-    
-    // Add 2 lines of padding at top of artwork chunk itself to separate from Border Title (Vyom)
-    let artwork_area = if music_chunks.len() > 0 {
+    let artwork_area = if music_chunks.len() > 0 && music_chunks[0].height > 1 {
+         // Only render art if we have at least 2 lines
          let area = music_chunks[0];
-         // Only shrink if we have space, else use as is
-         if area.height > 2 {
-             Layout::default()
-                 .direction(Direction::Vertical)
-                 .constraints([
-                     Constraint::Length(1), // Top Padding
-                     Constraint::Min(1),    // Art
-                 ])
-                 .split(area)[1]
-         } else {
-             area
-         }
+         Layout::default()
+             .direction(Direction::Vertical)
+             .constraints([
+                 Constraint::Length(1), // Top Padding
+                 Constraint::Min(0),    // Art
+             ])
+             .split(area)[1]
     } else {
         Rect::default()
     };
@@ -591,12 +591,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     // Use single-char bars for cleaner look
                     let bar_count = (width / 2).max(8).min(64);
                     
-                    // Split height: main bars (65%) + reflection (35%) for balanced fullscreen look
-                    let main_height = (height * 65 / 100).max(2);
-                    let reflection_height = height.saturating_sub(main_height);
-                    
-                    let mut lines = Vec::new();
-                    
                     // 8-color gradient for smooth transitions 🌈
                     let gradient = [
                         Color::Rgb(237, 135, 150), // Red/Pink
@@ -608,6 +602,20 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         Color::Rgb(183, 189, 248), // Lavender
                         Color::Rgb(198, 160, 246), // Mauve
                     ];
+                    
+                    let mut lines = Vec::new();
+
+                    // PADDING TOP: Push the visualizer down (15% air)
+                    let padding_top = (height * 15 / 100).max(1);
+                    for _ in 0..padding_top {
+                        lines.push(Line::default());
+                    }
+                    
+                    let available_height = height.saturating_sub(padding_top);
+                    
+                    // Split remaining height: main bars (65%) + reflection (35%)
+                    let main_height = (available_height * 65 / 100).max(2);
+                    let reflection_height = available_height.saturating_sub(main_height);
                     
                     // === MAIN BARS (grow upward from center) ===
                     for row in 0..main_height {
@@ -776,7 +784,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         let time_w = 6;
                         let artist_w = w / 4;
                         let title_w = w.saturating_sub(artist_w + time_w + 10);
-                        let content_h = h.saturating_sub(5);
+                        let content_h = h.saturating_sub(8);
                         
                         let green = theme.green;
                         let pink = theme.red;
@@ -798,7 +806,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                             lines.push(Line::from(Span::styled("Empty queue", Style::default().fg(muted))).alignment(Alignment::Center));
                             lines.push(Line::from(Span::styled("Browse Directory to add songs", Style::default().fg(grid))).alignment(Alignment::Center));
                         } else {
-                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2).min(app.queue.len().saturating_sub(content_h));
                             
                             for (display_idx, (_, item)) in app.queue.iter().enumerate().skip(start_idx).take(content_h).enumerate() {
                                 let actual_idx = start_idx + display_idx;
@@ -821,7 +829,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 lines.push(Line::from(vec![
                                     Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
                                     Span::styled(format!("{:>2}  ", num), Style::default().fg(if is_sel { green } else { muted })),
-                                    Span::styled(format!("{:title_w$}", title, title_w = title_w), t_style),
+                                    Span::styled("♪ ", Style::default().fg(if item.is_current { pink } else { green })), 
+                                    Span::styled(format!("{:title_w$}", title, title_w = title_w.saturating_sub(2)), t_style), 
                                     Span::styled(format!("{:artist_w$}", artist, artist_w = artist_w), a_style),
                                     Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
                                 ]));
@@ -833,7 +842,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         let time_w = 6;
                         let artist_w = w / 4;
                         let title_w = w.saturating_sub(artist_w + time_w + 10);
-                        let content_h = h.saturating_sub(5);
+                        let content_h = h.saturating_sub(8);
                         
                         let blue = theme.blue;
                         let green = theme.green;
@@ -860,17 +869,23 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         if app.library_items.is_empty() {
                             lines.push(Line::from(Span::styled("Empty folder", Style::default().fg(muted))).alignment(Alignment::Center));
                         } else {
-                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2).min(app.library_items.len().saturating_sub(content_h));
                             
                             for (display_idx, item) in app.library_items.iter().skip(start_idx).take(content_h).enumerate() {
                                 let actual_idx = start_idx + display_idx;
                                 let is_sel = actual_idx == app.library_selected;
                                 let is_folder = matches!(item.item_type, crate::app::LibraryItemType::Folder);
                                 
-                                let name = if item.name.len() > title_w.saturating_sub(2) { 
-                                    format!("{}…", &item.name[..title_w.saturating_sub(3)]) 
+                                let raw_name = if item.name.trim().is_empty() {
+                                    item.path.clone().unwrap_or_else(|| "[Unnamed]".to_string())
+                                } else {
+                                    item.name.clone()
+                                };
+                                
+                                let name = if raw_name.len() > title_w.saturating_sub(2) { 
+                                    format!("{}…", &raw_name[..title_w.saturating_sub(3)]) 
                                 } else { 
-                                    item.name.clone() 
+                                    raw_name
                                 };
                                 
                                 if is_folder {
@@ -880,7 +895,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                     } else {
                                         ("○", grid, Style::default().fg(theme.text))
                                     };
-                                    let icon = if is_sel { "▶" } else { "" };
+                                    let icon = "📁";
                                     
                                     lines.push(Line::from(vec![
                                         Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
@@ -905,7 +920,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                     } else {
                                         ("○", grid, Style::default().fg(theme.text), Style::default().fg(muted), Style::default().fg(muted))
                                     };
-                                    let icon = if is_sel { "" } else { "" };
+                                    let icon = "♪";
                                     
                                     lines.push(Line::from(vec![
                                         Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
@@ -923,7 +938,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         let time_w = 6;
                         let artist_w = w / 4;
                         let title_w = w.saturating_sub(artist_w + time_w + 10);
-                        let content_h = h.saturating_sub(5);
+                        let content_h = h.saturating_sub(8);
                         
                         let lavender = theme.magenta;
                         let green = theme.green;
@@ -949,7 +964,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         } else if app.library_items.is_empty() {
                             lines.push(Line::from(Span::styled("Type to search your library", Style::default().fg(muted))).alignment(Alignment::Center));
                         } else {
-                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2).min(app.library_items.len().saturating_sub(content_h));
                             
                             for (display_idx, item) in app.library_items.iter().skip(start_idx).take(content_h).enumerate() {
                                 let actual_idx = start_idx + display_idx;
@@ -977,9 +992,17 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                     ("○", grid, Style::default().fg(theme.text), Style::default().fg(muted), Style::default().fg(muted))
                                 };
                                 
+                                // Only show ♪ for songs
+                                let icon = match item.item_type {
+                                    crate::app::LibraryItemType::Song => "♪",
+                                    crate::app::LibraryItemType::Folder => "📁",
+                                    crate::app::LibraryItemType::Playlist => "📜",
+                                    _ => " "
+                                };
+
                                 lines.push(Line::from(vec![
                                     Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
-                                    Span::styled(format!("♪ {:title_w$}", name, title_w = title_w), t_style),
+                                    Span::styled(format!("{} {:title_w$}", icon, name, title_w = title_w.saturating_sub(2)), t_style),
                                     Span::styled(format!("{:artist_w$}", artist_disp, artist_w = artist_w), a_style),
                                     Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
                                 ]));
@@ -988,7 +1011,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     }
                     LibraryMode::Playlists => {
                         // Unified aesthetic for Playlists
-                        let content_h = h.saturating_sub(5);
+                        let content_h = h.saturating_sub(8);
                         let playlist_count = app.playlists.len();
                         
                         let magenta = theme.magenta;
@@ -1010,7 +1033,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                             lines.push(Line::from(Span::styled("No playlists", Style::default().fg(muted))).alignment(Alignment::Center));
                             lines.push(Line::from(Span::styled("Press 's' to save queue as playlist", Style::default().fg(grid))).alignment(Alignment::Center));
                         } else {
-                            let start_idx = app.library_selected.saturating_sub(content_h / 2);
+                            let start_idx = app.library_selected.saturating_sub(content_h / 2).min(app.playlists.len().saturating_sub(content_h));
                             
                             for (display_idx, pl) in app.playlists.iter().skip(start_idx).take(content_h).enumerate() {
                                 let actual_idx = start_idx + display_idx;
@@ -1025,7 +1048,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 } else {
                                     ("○", grid, Style::default().fg(theme.text))
                                 };
-                                let icon = if is_sel { "▶" } else { "" };
+                                let icon = "📜"; // Standard playlist icon
                                 
                                 lines.push(Line::from(vec![
                                     Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
@@ -1810,5 +1833,41 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         ]);
         let footer = Paragraph::new(hint).alignment(Alignment::Right);
         f.render_widget(footer, footer_area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_scroll_clamping() {
+        // Simulation parameters
+        let list_len: usize = 50;
+        let h: usize = 30; // Virtual terminal height
+        let header_footer: usize = 8;
+        let content_h: usize = h - header_footer; // 22 items visible
+        
+        // Scenario 1: Select last item (49)
+        let selected: usize = 49;
+        
+        // Old Logic replication
+        let old_start = selected.saturating_sub(content_h / 2); // 49 - 11 = 38
+        let old_visible_count = list_len - old_start; // 50 - 38 = 12 items
+        
+        // New Logic replication
+        let new_start = selected.saturating_sub(content_h / 2).min(list_len.saturating_sub(content_h)); 
+        // term1 = 38
+        // term2 = 50 - 22 = 28
+        // min(38, 28) = 28
+        
+        let new_visible_count = list_len - new_start; // 50 - 28 = 22 items
+        
+        println!("Content Height Capacity: {}", content_h);
+        println!("Old Logic: Start {}, Items Visible: {} ({} empty spaces)", old_start, old_visible_count, content_h - old_visible_count);
+        println!("New Logic: Start {}, Items Visible: {} ({} empty spaces)", new_start, new_visible_count, content_h - new_visible_count);
+        
+        // Assertions
+        assert_eq!(new_visible_count, content_h, "List should be fully filled");
+        assert!(new_start <= selected, "Start index must be before or equal to selected");
+        assert!(new_start + content_h > selected, "Selected item must be within view");
     }
 }
