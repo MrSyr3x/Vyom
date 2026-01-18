@@ -12,9 +12,9 @@ Vyom isn't just a TUI; it's the "Poweramp of the Terminal." It’s designed to b
 
 ## ✨ Features
 
-- **Dual-Engine Architecture**:
-    - **MPD Mode**: High-fidelity local playback with queue management, search, and directory browsing.
-    - **Controller Mode**: Tactile remote control for **Spotify** and **Apple Music** (macOS native).
+- **Dual Operation Modes**:
+    - **MPD Mode** (Default): High-fidelity local playback with queue management, search, and directory browsing.
+    - **Controller Mode** (`--controller`): Tactile remote control for **Spotify** and **Apple Music** (macOS native).
 - **Hi-Res Audio Pipeline** 🔊:
     - Support for **24/32-bit** audio via FIFO.
     - **10-Band DSP Equalizer**: Integrated parametric EQ for fine-tuning your sound.
