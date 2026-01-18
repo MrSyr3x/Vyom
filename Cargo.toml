@@ -45,4 +45,4 @@ walkdir = "2.5.0"
 [features]
 default = []
 mpd = ["dep:mpd", "dep:lofty"]
-eq = ["dep:cpal", "dep:biquad", "dep:coreaudio-rs", "dep:libc", "dep:rustfft"]
+eq = ["dep:cpal", "dep:biquad", "dep:libc", "dep:rustfft"]

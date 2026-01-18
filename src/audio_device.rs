@@ -57,6 +57,7 @@ pub fn get_output_device_name() -> String {
 
 /// Switch to a specific audio output device (macOS)
 /// Returns true if successful
+#[cfg(target_os = "macos")]
 pub fn switch_audio_device(device_name: &str) -> bool {
     // Try using SwitchAudioSource (must be installed via: brew install switchaudio-osx)
     let result = Command::new("SwitchAudioSource")
@@ -70,7 +71,14 @@ pub fn switch_audio_device(device_name: &str) -> bool {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn switch_audio_device(_device_name: &str) -> bool {
+    // Not supported on other platforms yet
+    false
+}
+
 /// Get list of devices using SwitchAudioSource (for more reliable device names)
+#[cfg(target_os = "macos")]
 pub fn get_devices_from_system() -> Vec<String> {
     let result = Command::new("SwitchAudioSource")
         .arg("-a")  // List all devices
@@ -88,6 +96,11 @@ pub fn get_devices_from_system() -> Vec<String> {
         }
         _ => Vec::new(),
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn get_devices_from_system() -> Vec<String> {
+    Vec::new()
 }
 
 /// Fallback when eq feature is not enabled
