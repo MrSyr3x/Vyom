@@ -135,6 +135,7 @@ pub struct AudioPipeline {
     config: AudioPipelineConfig,
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
+    pub global_volume: Arc<std::sync::atomic::AtomicU8>,
     thread_handle: Option<thread::JoinHandle<()>>,
 }
 
@@ -145,6 +146,7 @@ impl AudioPipeline {
             config: AudioPipelineConfig::default(),
             eq_gains,
             running: Arc::new(AtomicBool::new(false)),
+            global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
         }
     }
@@ -159,8 +161,14 @@ impl AudioPipeline {
             },
             eq_gains,
             running: Arc::new(AtomicBool::new(false)),
+            global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
         }
+    }
+    
+    /// Set global volume (0-100)
+    pub fn set_volume(&self, volume: u8) {
+        self.global_volume.store(volume.min(100), Ordering::SeqCst);
     }
     
     /// Start the audio pipeline
@@ -172,6 +180,7 @@ impl AudioPipeline {
         
         let running = self.running.clone();
         let eq_gains = self.eq_gains.clone();
+        let global_volume = self.global_volume.clone();
         let source = self.config.source.clone();
         let format = self.config.format.clone();
         
@@ -180,10 +189,10 @@ impl AudioPipeline {
         let handle = thread::spawn(move || {
             let result = match source {
                 AudioSource::Http { host, port } => {
-                    run_http_audio_loop(&host, port, &format, eq_gains, running.clone())
+                    run_http_audio_loop(&host, port, &format, eq_gains, running.clone(), global_volume)
                 }
                 AudioSource::Fifo { path } => {
-                    run_fifo_audio_loop(&path, &format, eq_gains, running.clone())
+                    run_fifo_audio_loop(&path, &format, eq_gains, running.clone(), global_volume)
                 }
             };
             
@@ -265,6 +274,7 @@ fn run_http_audio_loop(
     format: &AudioInputFormat,
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
+    global_volume: Arc<std::sync::atomic::AtomicU8>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -295,10 +305,14 @@ fn run_http_audio_loop(
             let mut buffer = ring_buffer_clone.lock().unwrap();
             let mut fade = f32::from_bits(fade_level_clone.load(Ordering::Relaxed));
             
+            // Calculate Gain 🎚️
+            let vol = global_volume.load(Ordering::Relaxed);
+            let gain = (vol as f32 / 100.0).powf(3.0); // Cubic taper for natural feel
+            
             for sample in data.iter_mut() {
                 if let Some(s) = buffer.pop_front() {
                     if fade < 1.0 { fade = (fade + FADE_SPEED).min(1.0); }
-                    *sample = s * fade;
+                    *sample = s * fade * gain;
                 } else {
                     if fade > 0.0 { fade = (fade - FADE_SPEED).max(0.0); }
                     *sample = 0.0;
@@ -390,6 +404,7 @@ fn run_fifo_audio_loop(
     format: &AudioInputFormat,
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
+    global_volume: Arc<std::sync::atomic::AtomicU8>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -429,10 +444,14 @@ fn run_fifo_audio_loop(
             let mut buffer = ring_buffer_clone.lock().unwrap();
             let mut fade = f32::from_bits(fade_level_clone.load(Ordering::Relaxed));
             
+            // Calculate Gain 🎚️
+            let vol = global_volume.load(Ordering::Relaxed);
+            let gain = (vol as f32 / 100.0).powf(3.0);
+            
             for sample in data.iter_mut() {
                 if let Some(s) = buffer.pop_front() {
                     if fade < 1.0 { fade = (fade + FADE_SPEED).min(1.0); }
-                    *sample = s * fade;
+                    *sample = s * fade * gain;
                 } else {
                     if fade > 0.0 { fade = (fade - FADE_SPEED).max(0.0); }
                     *sample = 0.0;

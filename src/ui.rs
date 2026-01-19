@@ -105,6 +105,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // We strictly prioritize: Controls > Info > Gauge > Time > Artwork
     // Artwork gets whatever is left (Constraint::Min(0)).
     
+    // Calculate Info Height (4 if badges, 3 if not)
+    let info_height = if let Some(track) = &app.track {
+        if track.codec.is_some() || track.sample_rate.is_some() { 4 } else { 3 }
+    } else {
+        4
+    };
+
     let mut music_constraints = Vec::new();
     
     // Extremely small height (< 10): Show only essentials
@@ -114,18 +121,17 @@ pub fn ui(f: &mut Frame, app: &mut App) {
          music_constraints.push(Constraint::Length(m_height.saturating_sub(2).max(1)));  // 1: Info (Takes remaining)
          music_constraints.push(Constraint::Length(0));  // 2: Gauge (Hidden)
          music_constraints.push(Constraint::Length(0));  // 3: Time (Hidden)
-         music_constraints.push(Constraint::Length(0));  // 4: Spacer (Hidden)
+         music_constraints.push(Constraint::Length(0));  // 4: Spacer 1 (Hidden)
          music_constraints.push(Constraint::Length(1));  // 5: Controls
-         music_constraints.push(Constraint::Length(0));  // 6: Bottom Padding
     } else {
         // Normal Mode: Artwork takes ALL available space
-        music_constraints.push(Constraint::Min(0));     // 0: Artwork (Elastic!)
-        music_constraints.push(Constraint::Length(4));  // 1: Info 
-        music_constraints.push(Constraint::Length(1));  // 2: Gauge
-        music_constraints.push(Constraint::Length(1));  // 3: Time
-        music_constraints.push(Constraint::Length(1));  // 4: Spacer
-        music_constraints.push(Constraint::Length(1));  // 5: Controls
-        music_constraints.push(Constraint::Length(1));  // 6: Bottom Padding
+        music_constraints.push(Constraint::Min(0));           // 0: Artwork (Elastic!)
+        music_constraints.push(Constraint::Length(info_height)); // 1: Info (Dynamic)
+        music_constraints.push(Constraint::Length(1));        // 2: Spacer 1
+        music_constraints.push(Constraint::Length(1));        // 3: Gauge
+        music_constraints.push(Constraint::Length(1));        // 4: Time
+        // Removed Spacer 2 to tighten layout
+        music_constraints.push(Constraint::Length(3));        // 5: Controls
     }
 
     let music_chunks = Layout::default()
@@ -140,15 +146,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
          Layout::default()
              .direction(Direction::Vertical)
              .constraints([
-                 Constraint::Length(1), // Top Padding
-                 Constraint::Min(0),    // Art
-             ])
-             .split(area)[1]
+                  Constraint::Min(0),    // Art
+              ])
+              .split(area)[0]
     } else {
         Rect::default()
     };
 
     match &app.artwork {
+
         ArtworkState::Loaded(raw_image) => {
             // Calculate available area for artwork in characters
             let available_width = artwork_area.width as u32;
@@ -332,7 +338,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         f.render_widget(info, music_chunks[info_idx]);
 
         // 3. Gauge
-        let gauge_idx = 2;
+        let gauge_idx = if is_cramped { 2 } else { 3 };
         // Check if we have enough chunks. If cramped, we don't have spacers.
         // We used indices 0..4 for cramped.
         // music_chunks length check? 
@@ -348,8 +354,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ])
                 .split(music_chunks[gauge_idx])[1];
 
+            let current_pos = app.get_current_position_ms();
             let ratio = if track.duration_ms > 0 {
-                track.position_ms as f64 / track.duration_ms as f64
+                current_pos as f64 / track.duration_ms as f64
             } else {
                 0.0
             };
@@ -362,15 +369,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             let mut bar_spans: Vec<Span> = Vec::with_capacity(width);
             for i in 0..width {
                  if i < occupied_width {
-                    if i >= occupied_width.saturating_sub(1) {
-                        bar_spans.push(Span::styled("▓", fill_style));
-                    } else if i >= occupied_width.saturating_sub(2) {
-                        bar_spans.push(Span::styled("▒", fill_style));
+                    if i == occupied_width.saturating_sub(1) {
+                        // Playhead knob
+                        bar_spans.push(Span::styled("●", fill_style));
                     } else {
-                        bar_spans.push(Span::styled("█", fill_style));
+                        // Filled pipe
+                        bar_spans.push(Span::styled("━", fill_style));
                     }
                 } else {
-                    bar_spans.push(Span::styled("░", empty_style));
+                    // Empty track
+                    bar_spans.push(Span::styled("─", empty_style));
                 }
             }
 
@@ -382,12 +390,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
 
         // 4. Time
-        let time_idx = 3;
+        let time_idx = if is_cramped { 3 } else { 4 };
         if time_idx < music_chunks.len() {
+            let current_pos = app.get_current_position_ms();
             let time_str = format!(
                 "{:02}:{:02} / {:02}:{:02}",
-                track.position_ms / 60000,
-                (track.position_ms % 60000) / 1000,
+                current_pos / 60000,
+                (current_pos % 60000) / 1000,
                 track.duration_ms / 60000,
                 (track.duration_ms % 60000) / 1000
             );
@@ -398,8 +407,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
         
         // 5. Controls
-        // If cramped: index 4. If normal: index 5 (index 4 is spacer)
-        let controls_idx = if is_cramped { 4 } else { 5 };
+        let controls_idx = 5;
         
         if controls_idx < music_chunks.len() {
             let play_icon = if track.state == PlayerState::Playing { "⏸" } else { "▶" };
@@ -409,6 +417,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             let next_str = "   ⏭   ";
             let play_str = format!("   {}   ", play_icon); 
             
+            // Split Controls Area: Top for Buttons, Bottom for Volume
+            let controls_area = music_chunks[controls_idx];
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Buttons
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(1), // Volume Bar
+                ])
+                .split(controls_area);
+
+            // 1. Buttons (Top)
             let controls_text = Line::from(vec![
                 Span::styled(prev_str, btn_style),
                 Span::raw("   "), 
@@ -417,11 +437,39 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 Span::styled(next_str, btn_style),
             ]);
             
-            let controls = Paragraph::new(controls_text)
+            let controls_widget = Paragraph::new(controls_text)
                 .alignment(Alignment::Center)
-                .block(Block::default().style(Style::default().bg(Color::Reset)));
-            
-            f.render_widget(controls, music_chunks[controls_idx]);
+                .block(Block::default());
+            f.render_widget(controls_widget, chunks[0]);
+
+            // 2. Volume Bar (Bottom) - if we have space
+            if chunks.len() >= 3 {
+                // Calculate Volume Bar
+                let vol_ratio = app.app_volume as f64 / 100.0;
+                let bar_width = 20; // Fixed width for clean look
+                let filled_width = (bar_width as f64 * vol_ratio).round() as usize;
+                
+                let mut bar_spans = Vec::new();
+                
+                // "- " 
+                bar_spans.push(Span::styled("- ", Style::default().fg(theme.overlay)));
+                
+                for i in 0..bar_width {
+                    if i < filled_width {
+                        bar_spans.push(Span::styled("━", Style::default().fg(theme.magenta)));
+                    } else {
+                        bar_spans.push(Span::styled("─", Style::default().fg(theme.surface)));
+                    }
+                }
+                
+                // " + "
+                bar_spans.push(Span::styled(" +", Style::default().fg(theme.overlay)));
+
+                let vol_widget = Paragraph::new(Line::from(bar_spans))
+                    .alignment(Alignment::Center)
+                    .block(Block::default());
+                f.render_widget(vol_widget, chunks[2]);
+            }
 
             let area = music_chunks[controls_idx];
             let mid_x = area.x + area.width / 2;
@@ -1548,44 +1596,54 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         if elapsed < duration_ms {
             use ratatui::widgets::Clear;
             
-            // Calculate opacity based on time (fade out in last 500ms)
-            let fade_start = duration_ms - 500;
-            let opacity = if elapsed > fade_start {
-                ((duration_ms - elapsed) as f32 / 500.0).max(0.0)
-            } else {
-                1.0
-            };
+            let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
+            let height = 3;
+            let target_x = f.area().width.saturating_sub(width + 1); // Top-right fixed
+            let mut x = target_x;
             
-            // Only render if visible
-            if opacity > 0.1 {
-                let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
-                let height = 3;
-                let x = f.area().width.saturating_sub(width + 1); // Top-right
+            // Animation: Slide In/Out 🌊
+            if elapsed < 300 {
+                // Entrance (0-300ms): Slide Left
+                let t = elapsed as f32 / 300.0;
+                let ease = 1.0 - (1.0 - t).powi(3); // Cubic Out
+                let offset = (width as f32 * (1.0 - ease)) as u16;
+                x += offset;
+            } else if elapsed > 1700 {
+                 // Exit (1700-2000ms): Slide Right
+                 let t = (elapsed - 1700) as f32 / 300.0;
+                 let ease = t.powi(3); // Cubic In
+                 let offset = (width as f32 * ease) as u16;
+                 x += offset;
+            }
+            // Else: Hold position
+            
+            // Don't render if off-screen (start/end)
+            if x < f.area().width {
                 let y = 1; // Near top
-                let area = Rect::new(x, y, width, height);
+                let full_area = Rect::new(x, y, width, height);
+                // Clip to screen bounds to avoid panic
+                let visible_area = full_area.intersection(f.area());
                 
-                f.render_widget(Clear, area);
-                
-                let style = if opacity > 0.5 {
-                    Style::default().fg(theme.green).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(theme.overlay)
-                };
-                
-                let block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .border_style(Style::default().fg(if opacity > 0.5 { theme.green } else { theme.surface }))
-                    .style(Style::default().bg(theme.base));
-                
-                let text = Paragraph::new(Line::from(vec![
-                    Span::styled("✓ ", style),
-                    Span::styled(message.as_str(), style),
-                ]))
-                .alignment(Alignment::Center)
-                .block(block);
-                
-                f.render_widget(text, area);
+                if !visible_area.is_empty() {
+                    f.render_widget(Clear, visible_area);
+                    
+                    let block = Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(ratatui::widgets::BorderType::Rounded)
+                        .border_style(Style::default().fg(theme.green))
+                        .style(Style::default().bg(theme.base));
+                    
+                    let style = Style::default().fg(theme.green).add_modifier(Modifier::BOLD);
+                    
+                    let text = Paragraph::new(Line::from(vec![
+                        Span::styled("✓ ", style),
+                        Span::styled(message.as_str(), style),
+                    ]))
+                    .alignment(Alignment::Center)
+                    .block(block);
+                    
+                    f.render_widget(text, visible_area);
+                }
             }
         }
     }

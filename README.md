@@ -1,9 +1,22 @@
 # Vyom (व्योम) 🌌
+# Vyom (व्यom) 🌌
 > *Sanskrit: "The Sky", "The Void", or "The Ether"—the elemental medium through which sound travels.*
 
 **Vyom** is a high-performance, intelligent music ecosystem for your terminal. It blends minimalist design with heavy-duty audio engineering, serving as both a controller for your streaming apps and a high-fidelity MPD client.
 
 ![Vyom Screenshot](assets/screenshot.png?v=2)
+
+**The Full Experience (Default):**
+```bash
+vyom
+```
+*If you are in Tmux, this will automatically split your window and dock Vyom to the side.*
+
+**The Mini Player (Minimalist):**
+```bash
+vyom --mini
+```
+*Perfect for a small corner window.*
 
 ## 🎨 Why? The "Lazy & Creative" Vision 🛌💡
 I built **Vyom** because switching windows to skip a song is a workflow killer. I wanted my music to live where I live: **The Terminal**. 

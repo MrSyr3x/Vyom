@@ -139,6 +139,7 @@ impl PlayerTrait for MpdPlayer {
             sample_rate,
             bit_depth,
             file_path: Some(file_path),
+            volume: if status.volume >= 0 { Some(status.volume as u32) } else { None },
         }))
     }
 

@@ -161,9 +161,13 @@ pub struct App {
     pub last_seek_time: Option<Instant>,
     pub seek_initial_pos: Option<f64>,
     
-
+    // Animation State 🌊
+    pub smooth_scroll_accum: f64,
     
-    // Display Mode
+
+    // Playback Timing State ⏱️
+    pub last_track_update: Option<std::time::Instant>,
+
     pub app_show_lyrics: bool,
     pub is_tmux: bool,      // Layout logic
     pub is_mpd: bool,       // MPD backend mode
@@ -198,6 +202,8 @@ pub struct App {
     pub eq_preset: usize, // Index into EQ_PRESETS
     
     /// Audiophile Controls 🎚️
+    /// Internal Volume State (0-100)
+    pub app_volume: u8,
     pub preamp_db: f32,         // -12 to +12 dB
     pub balance: f32,           // -1.0 (L) to +1.0 (R)
     pub crossfade_secs: u32,    // MPD crossfade in seconds
@@ -325,6 +331,10 @@ impl App {
             seek_accumulator: 0.0,
             last_seek_time: None,
             seek_initial_pos: None,
+            
+            smooth_scroll_accum: 0.0,
+            
+            last_track_update: None,
             app_show_lyrics,
             is_tmux,
             is_mpd,
@@ -345,6 +355,8 @@ impl App {
             eq_selected: 0,     // First band selected
             eq_enabled: true,   // EQ enabled by default
             eq_preset: 0,       // Start with "Custom" preset
+            
+            app_volume: 100,
             preamp_db: 0.0,         // No preamp adjustment
             balance: 0.0,           // Center
             crossfade_secs: 0,      // No crossfade
@@ -370,6 +382,21 @@ impl App {
             selected_device_idx: 0,
             eq_gains,
             dsp_available: true, // Built-in DSP is always available
+        }
+    }
+    
+    pub fn get_current_position_ms(&self) -> u64 {
+        if let Some(track) = &self.track {
+            if track.state == crate::player::PlayerState::Playing {
+                if let Some(last_update) = self.last_track_update {
+                    let elapsed = last_update.elapsed().as_millis() as u64;
+                    // Clamp to duration to prevent overshooting
+                    return (track.position_ms + elapsed).min(track.duration_ms);
+                }
+            }
+            track.position_ms
+        } else {
+            0
         }
     }
     

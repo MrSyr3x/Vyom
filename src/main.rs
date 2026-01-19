@@ -59,9 +59,9 @@ struct Args {
     #[arg(long)]
     standalone: bool,
     
-    /// Enable lyrics panel
-    #[arg(long)]
-    lyrics: bool,
+    /// Start in mini player mode (defaults to full UI)
+    #[arg(long, short = 'm')]
+    mini: bool,
     
     /// Play MP3/FLAC music (Defaults to MPD Client mode)
     #[arg(long, short = 'c')]
@@ -85,7 +85,8 @@ async fn main() -> Result<()> {
     let is_tmux = std::env::var("TMUX").is_ok();
 
     // Smart Window Logic
-    let want_lyrics = args.lyrics;
+    // Default is Full UI (!mini). 
+    let want_lyrics = !args.mini;
     
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_str().unwrap();
@@ -94,13 +95,15 @@ async fn main() -> Result<()> {
     print!("\x1b]2;Vyom\x07");
 
     // 2. TMUX LOGIC
-    if is_tmux && !is_standalone {
+    // Only auto-split if we WANT full UI (default) and aren't already the child process
+    if is_tmux && !is_standalone && want_lyrics {
         // Build child command with all necessary flags
         let mut child_args = vec!["--standalone".to_string()];
         
-        if want_lyrics {
-            child_args.push("--lyrics".to_string());
-        }
+        // If user wants mini mode explicitly, we wouldn't be in this block.
+        // But if we are here, we want full UI. Child inherits default behavior (no flags needed for full UI).
+        // However, we must ensure child doesn't infinite loop. 
+        // passing --standalone prevents re-entry into this block.
         
         // Pass controller flag if present
         if args.controller {
@@ -286,7 +289,8 @@ async fn main() -> Result<()> {
     // 4. Animation Tick Task ⚡
     let tx_tick = tx.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        // 60 FPS Update Rate (approx 16ms)
+        let mut interval = tokio::time::interval(Duration::from_millis(16));
         loop {
             interval.tick().await;
             if tx_tick.send(AppEvent::Tick).await.is_err() { break; }
@@ -591,9 +595,25 @@ async fn main() -> Result<()> {
                                 let _ = player.prev();
                                 app.toast = Some(("⏮ Previous Track".to_string(), std::time::Instant::now()));
                             },
-                            KeyCode::Char('+') | KeyCode::Char('=') => { 
-                            // Note: Volume is hardware/DAC controlled in bit-perfect mode
+                            KeyCode::Char('+') => { 
+                                // Hardware/MPD Volume
+                                let _ = player.volume_up();
+                                
+                                // Software Gain (Hi-Res Pipeline) 🎚️
+                                app.app_volume = (app.app_volume.saturating_add(5)).min(100);
+                                audio_pipeline.set_volume(app.app_volume);
+                                
+                                app.toast = Some((format!("🔊 Volume: {}%", app.app_volume), std::time::Instant::now()));
+                            },
+                            KeyCode::Char('-') => { 
+                                // Hardware/MPD Volume
                                 let _ = player.volume_down();
+                                
+                                // Software Gain (Hi-Res Pipeline) 🎚️
+                                app.app_volume = app.app_volume.saturating_sub(5);
+                                audio_pipeline.set_volume(app.app_volume);
+
+                                app.toast = Some((format!("🔉 Volume: {}%", app.app_volume), std::time::Instant::now()));
                             },
                             // Seek Controls (cumulative & safe) ⏩
                             KeyCode::Char('h') => {
@@ -604,7 +624,8 @@ async fn main() -> Result<()> {
                                 
                                 if is_new_sequence {
                                     if let Some(track) = &app.track {
-                                        app.seek_initial_pos = Some(track.position_ms as f64 / 1000.0);
+                                        // Start seek from CURRENT interpolated position
+                                        app.seek_initial_pos = Some(app.get_current_position_ms() as f64 / 1000.0);
                                     } else {
                                         app.seek_initial_pos = Some(0.0);
                                     }
@@ -651,7 +672,8 @@ async fn main() -> Result<()> {
                                 
                                 if is_new_sequence {
                                     if let Some(track) = &app.track {
-                                        app.seek_initial_pos = Some(track.position_ms as f64 / 1000.0);
+                                        // Start seek from CURRENT interpolated position
+                                        app.seek_initial_pos = Some(app.get_current_position_ms() as f64 / 1000.0);
                                     } else {
                                         app.seek_initial_pos = Some(0.0);
                                     }
@@ -1454,6 +1476,7 @@ async fn main() -> Result<()> {
                 
                 AppEvent::TrackUpdate(info) => {
                     app.track = info.clone();
+                    app.last_track_update = Some(std::time::Instant::now());
                     if let Some(track) = info {
                         let id = format!("{}{}", track.name, track.artist);
                         
@@ -1597,22 +1620,31 @@ async fn main() -> Result<()> {
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
                         if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
+                            // Find target line based on interpolated time
                             let target_idx = lyrics.iter()
-                               .position(|l| l.timestamp_ms > track.position_ms)
-                               .map(|i| if i > 0 { i - 1 } else { 0 })
-                               .unwrap_or(0);
+                               .position(|l| l.timestamp_ms > app.get_current_position_ms())
+                               .map(|i| i.saturating_sub(1))
+                               .unwrap_or(lyrics.len().saturating_sub(1));
                             
-                            // 2. Animate Offset
-                            if let Some(curr) = &mut app.lyrics_offset {
-                                if *curr < target_idx {
-                                    *curr += 1;
-                                } else if *curr > target_idx {
-                                    *curr -= 1;
-                                } else {
-                                    // Reached target - reset selection too!
-                                    app.lyrics_offset = None;
-                                    app.lyrics_selected = None; // Clear selection for fresh start
+                            // 2. Smooth Scroll Animation 🌊
+                            // Update accumulator (16ms per tick)
+                            app.smooth_scroll_accum += 0.016;
+                            
+                            // Threshold: 0.05s (approx 20 lines/sec max speed)
+                            // This prevents "teleporting" and ensures visible motion
+                            if app.smooth_scroll_accum >= 0.05 {
+                                if let Some(curr) = &mut app.lyrics_offset {
+                                    if *curr < target_idx {
+                                        *curr += 1;
+                                    } else if *curr > target_idx {
+                                        *curr -= 1;
+                                    } else {
+                                        // Reached target
+                                        app.lyrics_offset = None;
+                                        app.lyrics_selected = None;
+                                    }
                                 }
+                                app.smooth_scroll_accum = 0.0;
                             }
                         }
                     }

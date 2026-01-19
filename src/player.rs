@@ -28,6 +28,9 @@ pub struct TrackInfo {
     
     /// File path for embedded artwork extraction (MPD mode)
     pub file_path: Option<String>,
+    
+    /// Current Volume (0-100)
+    pub volume: Option<u32>,
 }
 
 /// The unified interface for any OS Media Player 🎵
@@ -136,12 +139,14 @@ impl PlayerTrait for MacOsPlayer {
                 if "{}" is "Spotify" then
                     -- Spotify Duration is ms
                     set tArtwork to artwork url of current track
-                    return tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tDuration & "|||" & tPosition & "|||" & tState & "|||" & tArtwork
+                    set tVol to sound volume
+                    return tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tDuration & "|||" & tPosition & "|||" & tState & "|||" & tArtwork & "|||" & tVol
                 else
                     -- Music App: duration is seconds
                     set tDurSec to duration of current track
                     set tDuration to tDurSec * 1000
-                    return tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tDuration & "|||" & tPosition & "|||" & tState & "|||" & "NONE"
+                    set tVol to sound volume
+                    return tName & "|||" & tArtist & "|||" & tAlbum & "|||" & tDuration & "|||" & tPosition & "|||" & tState & "|||" & "NONE"  & "|||" & tVol
                 end if
             end tell
         "#, app_name, app_name);
@@ -166,6 +171,9 @@ impl PlayerTrait for MacOsPlayer {
                 };
                 
                 let duration_ms: u64 = parts[3].parse::<f64>().unwrap_or(0.0) as u64;
+                let volume: u32 = if parts.len() >= 8 {
+                    parts[7].parse().unwrap_or(0)
+                } else { 0 };
 
                 Ok(Some(TrackInfo {
                     name: parts[0].to_string(),
@@ -182,6 +190,7 @@ impl PlayerTrait for MacOsPlayer {
                     sample_rate: None,
                     bit_depth: None,
                     file_path: None,
+                    volume: Some(volume),
                 }))
             },
             Err(_) => Ok(None)
