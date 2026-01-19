@@ -221,11 +221,7 @@ impl AudioPipeline {
     }
 }
 
-impl Drop for AudioPipeline {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 // HTTP Audio Loop (legacy 16-bit)
