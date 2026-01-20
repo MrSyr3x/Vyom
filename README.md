@@ -1,90 +1,158 @@
 # Vyom (व्योम) 🌌
-# Vyom (व्यom) 🌌
+
 > *Sanskrit: "The Sky", "The Void", or "The Ether"—the elemental medium through which sound travels.*
 
-**Vyom** is a high-performance, intelligent music ecosystem for your terminal. It blends minimalist design with heavy-duty audio engineering, serving as both a controller for your streaming apps and a high-fidelity MPD client.
+**Vyom** is a high-performance, intelligent music ecosystem for your terminal. It blends minimalist design with heavy-duty audio engineering, serving as both a tactile controller for your streaming apps (Spotify, Apple Music) and a high-fidelity MPD client with a built-in DSP engine.
 
 ![Vyom Screenshot](assets/screenshot.png?v=2)
 
-**The Full Experience (Default):**
+---
+
+## ⚡ Quick Start
+
 ```bash
+# Clone and install
+git clone https://github.com/MrSyr3x/Vyom.git && cd Vyom
+cargo install --path . --force
+
+# Run it!
 vyom
 ```
-*If you are in Tmux, this will automatically split your window and dock Vyom to the side.*
+*If you are in Tmux, Vyom will automatically split your window and dock itself to the side.*
 
-**The Mini Player (Minimalist):**
-```bash
-vyom --mini
-```
-*Perfect for a small corner window.*
+---
 
-## 🎨 Why? The "Lazy & Creative" Vision 🛌💡
-I built **Vyom** because switching windows to skip a song is a workflow killer. I wanted my music to live where I live: **The Terminal**. 
+## 🎨 Philosophy
 
-Vyom isn't just a TUI; it's the "Poweramp of the Terminal." It’s designed to be transparent, blend into `neovim`, split perfectly in `tmux`, and offer a premium audio experience that rivals desktop players.
+I built **Vyom** because switching windows to skip a song is a workflow killer. I wanted my music to live where I live: **The Terminal**.
 
-## ✨ Features
+Vyom isn't just a TUI; it's the "Poweramp of the Terminal." It's designed to be transparent, blend into `neovim`, split perfectly in `tmux`, and offer a premium audio experience that rivals desktop players.
 
-- **Dual Operation Modes**:
-    - **MPD Mode** (Default): High-fidelity local playback with queue management, search, and directory browsing.
-    - **Controller Mode** (`--controller`): Tactile remote control for **Spotify** and **Apple Music** (macOS native).
-- **Hi-Res Audio Pipeline** 🔊:
-    - Support for **24/32-bit** audio via FIFO.
-    - **10-Band DSP Equalizer**: Integrated parametric EQ for fine-tuning your sound.
-    - **Bit-Perfect Output**: Dynamic sample rate detection ensuring your DAC gets the pure source.
-- **Visual Presence**:
-    - **Catppuccin Themes**: Lush, modern color palettes with live-reloading support.
-    - **"Heavenly" Pixel Art**: High-fidelity album art rendered via terminal half-blocks.
-    - **Spectrum Analyzer**: Built-in visualizer (powered by Cava) for that nostalgic Hi-Fi feel.
-- **Synced Lyrics** 📜: Auto-scrolling, time-synced lyrics with interactive "jump-to-time" selection.
-- **Smart Layouts**:
-    - **Tmux Sidebar**: Auto-detects `tmux` and docks itself as a sleek 20% sidebar.
-    - **Dynamic Scaling**: Automatically shifts between Mini, Library, and Standalone views based on window size.
-- **Cross-Platform**:
-    - **macOS**: Native bit-perfect output and AppleScript integration.
-    - **Linux**: Full compatibility with ALSA/Pulse audio support.
+---
 
-## 🚀 Installation
+## ✨ Features at a Glance
 
-### 1. Requirements
-- **Rust Toolchain**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Audio Headers**:
-    - **macOS**: Built-in (CoreAudio).
-    - **Linux**: `libasound2-dev` (ALSA).
-- **Dependencies (Optional)**:
-    - **MPD**: For local music library support.
-    - **Cava**: For the spectrum analyzer.
-    - **switchaudio-osx**: For device switching on Mac.
+| Feature | Description |
+|---|---|
+| **Dual Operation Modes** | **MPD Mode** (default) for local playback. **Controller Mode** (macOS only) for Spotify/Apple Music remote control. |
+| **10-Band Parametric EQ** | Built-in DSP with 20+ factory presets (Bass Booster, Late Night, etc.) and **custom user presets**. |
+| **Hi-Res Audio Pipeline** | Supports **24/32-bit** audio via FIFO. Dynamic sample rate detection for bit-perfect output. |
+| **Synced Lyrics** | Auto-scrolling, time-synced lyrics with interactive "jump-to-time" selection. |
+| **Library Browser** | Directory browser, search, playlists, and current queue management. |
+| **Cava Visualizer** | Integrated spectrum analyzer for that nostalgic Hi-Fi feel. |
+| **Catppuccin Themes** | Live-reloading, modern color palettes. |
+| **Pixel Art Album Art** | High-fidelity album art rendered via terminal half-blocks. |
+| **Tmux Aware** | Auto-detects `tmux` and docks itself as a sleek 20% sidebar. |
+| **State Persistence** | Remembers your EQ settings, presets, balance, and crossfade across restarts. |
 
-### 2. Build & Install
-```bash
-git clone https://github.com/MrSyr3x/Vyom.git
-cd Vyom
+---
 
-# Install with full features (MPD + Equalizer)
-cargo install --path . --force
-```
+## 🔊 The Audio Engine
+
+Vyom features a real-time DSP audio pipeline built from scratch.
+
+-   **Bit-Perfect Output**: Dynamically queries MPD for the source format (sample rate, bit depth) and configures the output device accordingly. Your DAC receives the pure, untouched source.
+-   **FIFO Input**: Reads Hi-Res PCM audio (16/24/32-bit) directly from a FIFO, bypassing any intermediate resampling.
+-   **10-Band Biquad EQ**: A parametric equalizer with bands at 32Hz, 64Hz, 128Hz, 256Hz, 512Hz, 1kHz, 2kHz, 4kHz, 8kHz, and 16kHz. Each band is processed using precise Biquad filters.
+-   **Preamp & Balance Control**: Fine-tune gain and stereo balance.
+-   **Singleton Lock**: Only one Vyom instance controls audio. Other instances run in "UI-only" mode, displaying the same interface without audio contention.
+
+---
+
+## 🎛️ EQ Presets
+
+Vyom ships with **20+ factory presets**, carefully tuned for different genres:
+
+<details>
+<summary>View All Presets</summary>
+
+- Flat, Acoustic, Bass Booster, Bass Reducer, Classical, Dance, Deep
+- Electronic, Hip-Hop, Jazz, Late Night, Latin, Loudness, Lounge
+- Piano, Pop, R&B, Rock, Small Speakers, Spoken Word
+
+</details>
+
+### Custom Presets
+
+1.  Adjust the EQ bands to your liking.
+2.  Press `S` (Shift+S) to save with a name.
+3.  Press `X` (Shift+X) to delete the current custom preset.
+
+All custom presets are saved to `~/.config/vyom/state.toml` and persist across restarts.
+
+---
 
 ## 🎮 Controls
 
 ### Global
-- `1` / `2` / `3` / `4`: Switch views (Lyrics, Visualizer, Library, EQ).
-- `Space`: Play/Pause.
-- `n` / `p`: Next / Previous.
-- `h` / `l`: Seek backward/forward (5s intervals).
-- `q`: Quit.
+| Key | Action |
+|---|---|
+| `1` / `2` / `3` / `4` | Switch views (Lyrics, Visualizer, Library, EQ) |
+| `Space` | Play / Pause |
+| `n` / `p` | Next / Previous track |
+| `h` / `l` | Seek backward / forward (5s) |
+| `+` / `-` | Volume up / down |
+| `q` | Quit |
+| `?` | Show all keybindings |
 
-### Library / MPD
-- `/`: Trigger Global Search.
-- `Enter`: Add folder/song to queue or enter directory.
-- `Backspace`: Go up a directory level.
-- `J` / `K`: Move items up/down in the Current Queue.
-- `s`: Save current queue as a Playlist.
+### Library View (`3`)
+| Key | Action |
+|---|---|
+| `j` / `k` | Navigate down / up |
+| `h` / `l` | Go back / Enter directory or play song |
+| `/` | Search library |
+| `Enter` | Add song/folder to queue |
+| `s` | Save current queue as playlist |
+| `J` / `K` | Move item up/down in queue |
 
-## ⚙️ Configuration
-Vyom looks for configuration in your standard config home:
-- **Theme**: `~/.config/vyom/theme.toml` (Loads automatically on change).
-- **Visualizer**: `~/.config/cava/vyom_config`.
+### EQ View (`4`)
+| Key | Action |
+|---|---|
+| `←` / `→` | Select band |
+| `↑` / `↓` | Adjust band gain |
+| `Tab` / `Shift+Tab` | Cycle EQ presets |
+| `e` | Toggle EQ on/off |
+| `r` | Reset EQ to flat |
+| `S` | Save current as custom preset |
+| `X` | Delete current custom preset |
+| `d` / `D` | Switch audio output device |
 
 ---
+
+## 🚀 Installation
+
+### Requirements
+-   **Rust Toolchain**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+-   **MPD** (Optional): For local music library support.
+-   **Cava** (Optional): For the spectrum analyzer.
+-   **switchaudio-osx** (Optional, macOS): For audio device switching.
+
+### Build & Install
+```bash
+# From source (MPD + EQ enabled by default)
+cargo install --path . --force
+```
+
+---
+
+## ⚙️ Configuration
+
+Vyom stores its state and looks for configuration in your standard config home:
+
+| File | Purpose |
+|---|---|
+| `~/.config/vyom/state.toml` | EQ settings, custom presets, balance, crossfade. |
+| `~/.config/vyom/theme.toml` | Catppuccin theme colors (live-reloads on change). |
+| `~/.config/cava/vyom_config` | Cava visualizer configuration. |
+
+---
+
+## 💡 Tips & Tricks
+
+-   **Mini Player Mode**: Run `vyom --mini` for a compact view, perfect for a small corner window.
+-   **Controller Mode**: Run `vyom --controller` to control Spotify or Apple Music instead of MPD.
+-   **MPD Setup**: Ensure your `mpd.conf` includes a `httpd` output or a `fifo` output at `/tmp/vyom_hires.fifo` for Hi-Res audio.
+
+---
+
 *Made with </3 by syr3x*

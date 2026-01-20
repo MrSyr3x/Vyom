@@ -687,8 +687,8 @@ async fn main() -> Result<()> {
                                 app.toast = Some((format!("🔉 Volume: {}%", app.app_volume), std::time::Instant::now()));
                             },
                             // Seek Controls (cumulative & safe) ⏩
-                            // Guard against Library View (uses h/l for nav)
-                            KeyCode::Char('h') if app.view_mode != app::ViewMode::Library => {
+                            // Guard against Library View AND EQ View (uses h/l for nav)
+                            KeyCode::Char('h') if app.view_mode != app::ViewMode::Library && app.view_mode != app::ViewMode::EQ => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -736,7 +736,7 @@ async fn main() -> Result<()> {
                                     app.toast = Some((format!("⏪ Seek: {:+.0}s", app.seek_accumulator), now));
                                 }
                             },
-                            KeyCode::Char('l') if app.view_mode != app::ViewMode::Library => {
+                            KeyCode::Char('l') if app.view_mode != app::ViewMode::Library && app.view_mode != app::ViewMode::EQ => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -913,13 +913,15 @@ async fn main() -> Result<()> {
                             }
                         },
                         // EQ Controls (only when in EQ view) 🎚️
-                        KeyCode::Left if app.view_mode == app::ViewMode::EQ => {
+                        // Navigation: Left/Right or h/l ↔️
+                        KeyCode::Left | KeyCode::Char('h') if app.view_mode == app::ViewMode::EQ => {
                             app.eq_selected = app.eq_selected.saturating_sub(1);
                         },
-                        KeyCode::Right if app.view_mode == app::ViewMode::EQ => {
+                        KeyCode::Right | KeyCode::Char('l') if app.view_mode == app::ViewMode::EQ => {
                             if app.eq_selected < 9 { app.eq_selected += 1; }
                         },
-                        KeyCode::Up if app.view_mode == app::ViewMode::EQ => {
+                        // Gain: Up/Down or k/j ↕️
+                        KeyCode::Up | KeyCode::Char('k') if app.view_mode == app::ViewMode::EQ => {
                             let band = &mut app.eq_bands[app.eq_selected];
                             *band = (*band + 0.05).min(1.0); // +1.2dB
                             app.mark_custom();
@@ -927,7 +929,7 @@ async fn main() -> Result<()> {
                             let db = (app.eq_bands[app.eq_selected] - 0.5) * 24.0;
                             app.toast = Some((format!("🎚 Band {}: {:+.1}dB", app.eq_selected + 1, db), std::time::Instant::now()));
                         },
-                        KeyCode::Down if app.view_mode == app::ViewMode::EQ => {
+                        KeyCode::Down | KeyCode::Char('j') if app.view_mode == app::ViewMode::EQ => {
                             let band = &mut app.eq_bands[app.eq_selected];
                             *band = (*band - 0.05).max(0.0); // -1.2dB
                             app.mark_custom();
@@ -942,6 +944,13 @@ async fn main() -> Result<()> {
                         KeyCode::Char('r') if app.view_mode == app::ViewMode::EQ => {
                             app.reset_eq();
                             app.toast = Some(("🔄 EQ Reset".to_string(), std::time::Instant::now()));
+                        },
+                        // Reset single band: 0
+                        KeyCode::Char('0') if app.view_mode == app::ViewMode::EQ => {
+                            app.eq_bands[app.eq_selected] = 0.5;
+                            app.mark_custom();
+                            app.sync_band_to_dsp(app.eq_selected);
+                            app.toast = Some((format!("↺ Band {} Reset", app.eq_selected + 1), std::time::Instant::now()));
                         },
                         // Preset cycling: Tab for next, Shift+Tab for previous
                         KeyCode::Tab if app.view_mode == app::ViewMode::EQ => {

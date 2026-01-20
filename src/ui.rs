@@ -1760,8 +1760,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         // Get context-specific keybindings with icons
         let (title, keys): (&str, Vec<(&str, &str, &str)>) = match app.view_mode {
             ViewMode::EQ => ("EQ Controls", vec![
-                ("←/→", "🎚️", "Select band"),
-                ("↑/↓", "📊", "Adjust gain"),
+                ("h/l", "🎚️", "Select band"),
+                ("k/j", "📊", "Adjust gain"),
                 ("e", "⚡", "Toggle EQ"),
                 ("0", "↺", "Reset band"),
                 ("g/G", "🔊", "Preamp ±1dB"),
@@ -1778,6 +1778,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("l/Ent", "▶️", "Select/Play"),
                 ("h/Bksp", "←", "Go back"),
                 ("/", "🔍", "Search"),
+                ("a", "➕", "Add to Queue"),
                 ("s", "💾", "Save playlist"),
                 ("d", "🗑️", "Delete/Remove"),
                 ("t", "🏷️", "Edit tags"),
@@ -1797,6 +1798,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("Space", "▶️", "Play/Pause"),
                 ("n", "⏭️", "Next track"),
                 ("p", "⏮️", "Previous track"),
+                ("z", "🔀", "Shuffle"),
+                ("x", "🔁", "Repeat"),
                 ("/", "🔍", "Search"),
                 ("+/-", "🔊", "Volume"),
                 ("z", "🔀", "Shuffle"),
