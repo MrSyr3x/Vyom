@@ -670,7 +670,8 @@ async fn main() -> Result<()> {
                                 app.toast = Some((format!("🔉 Volume: {}%", app.app_volume), std::time::Instant::now()));
                             },
                             // Seek Controls (cumulative & safe) ⏩
-                            KeyCode::Char('h') => {
+                            // Guard against Library View (uses h/l for nav)
+                            KeyCode::Char('h') if app.view_mode != app::ViewMode::Library => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -718,7 +719,7 @@ async fn main() -> Result<()> {
                                     app.toast = Some((format!("⏪ Seek: {:+.0}s", app.seek_accumulator), now));
                                 }
                             },
-                            KeyCode::Char('l') => {
+                            KeyCode::Char('l') if app.view_mode != app::ViewMode::Library => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -1248,8 +1249,8 @@ async fn main() -> Result<()> {
                                 }
                              }
                         },
-                        // Enter key for Library actions
-                        KeyCode::Enter if app.view_mode == app::ViewMode::Library => {
+                        // Enter or 'l' key for Library actions (Select/Play/Enter Dir)
+                        KeyCode::Enter | KeyCode::Char('l') if app.view_mode == app::ViewMode::Library => {
                             #[cfg(feature = "mpd")]
                             if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
@@ -1437,8 +1438,8 @@ async fn main() -> Result<()> {
                             }
                         },
 
-                        // Backspace to go back in Browse
-                        KeyCode::Backspace | KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
+                        // Backspace/Esc or 'h' to go back in Browse
+                        KeyCode::Backspace | KeyCode::Esc | KeyCode::Char('h') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
                             app.browse_path.pop();
                             app.library_items.clear();
                             app.library_selected = 0;
@@ -1507,11 +1508,11 @@ async fn main() -> Result<()> {
                                 }
                             }
                         },
-                        // Navigation keys for Library view (use Up/Down arrows)
-                        KeyCode::Up if app.view_mode == app::ViewMode::Library => {
+                        // Navigation keys for Library view (Up/Down or k/j)
+                        KeyCode::Up | KeyCode::Char('k') if app.view_mode == app::ViewMode::Library => {
                             app.library_selected = app.library_selected.saturating_sub(1);
                         },
-                        KeyCode::Down if app.view_mode == app::ViewMode::Library => {
+                        KeyCode::Down | KeyCode::Char('j') if app.view_mode == app::ViewMode::Library => {
                             let max_items = match app.library_mode {
                                 app::LibraryMode::Queue => app.queue.len().max(1),
                                 app::LibraryMode::Directory if app.browse_path.is_empty() => 4,

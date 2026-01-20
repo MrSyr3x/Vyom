@@ -1771,10 +1771,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("d/D", "🎧", "Output device"),
             ]),
             ViewMode::Library => ("Library", vec![
-                ("↑/↓", "📋", "Navigate"),
+                ("j/k", "📋", "Navigate"),
                 ("Tab", "🔄", "Switch mode"),
-                ("Enter", "▶️", "Select/Play"),
-                ("⌫", "←", "Go back"),
+                ("l/Ent", "▶️", "Select/Play"),
+                ("h/Bksp", "←", "Go back"),
                 ("/", "🔍", "Search"),
                 ("s", "💾", "Save playlist"),
                 ("d", "🗑️", "Delete/Remove"),
@@ -1820,7 +1820,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         // Calculate popup size - fit content exactly (no extra space)
         // Calculate popup size - fit content exactly (no extra space)
         // Calculate popup size - fit content exactly (no extra space)
-        let mut total_items = keys.len() + global_keys.len() + 3; // +3 for title, empty line, global header
+        let mut total_items = keys.len() + global_keys.len() + 4; // +4 for title, empty, global header, empty
         if !keys.is_empty() { total_items += 1; } // +1 for separator between sections
         // Use 80% of screen height as max, or at least fit content if possible
         let max_height = (f.area().height as u16).saturating_sub(4); 
@@ -1849,7 +1849,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         // Context keys
         for (key, icon, desc) in &keys {
             lines.push(Line::from(vec![
-                Span::styled(format!(" {:>3} ", key), Style::default().fg(theme.yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {:>7} ", key), Style::default().fg(theme.yellow).add_modifier(Modifier::BOLD)),
                 Span::styled("→ ", Style::default().fg(theme.overlay)),
                 Span::styled(format!("{} ", icon), Style::default()),
                 Span::styled(*desc, Style::default().fg(theme.text)),
@@ -1861,14 +1861,17 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
         
         // Global section
+        let global_title = "Global";
+        let global_pad = (popup_width as usize - global_title.len() - 4) / 2;
         lines.push(Line::from(Span::styled(
-            "─── Global ───",
-            Style::default().fg(theme.blue)
+            format!("{:>pad$}{}", "", global_title, pad = global_pad),
+            Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)
         )));
+        lines.push(Line::from(""));
         
         for (key, icon, desc) in &global_keys {
             lines.push(Line::from(vec![
-                Span::styled(format!(" {:>3} ", key), Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {:>7} ", key), Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
                 Span::styled("→ ", Style::default().fg(theme.overlay)),
                 Span::styled(format!("{} ", icon), Style::default()),
                 Span::styled(*desc, Style::default().fg(theme.text)),
@@ -1880,7 +1883,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .block(Block::default()
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Rounded)
-                .border_style(Style::default().fg(theme.surface))
+                .border_style(Style::default().fg(theme.blue))
                 .style(Style::default().bg(theme.base)));
         f.render_widget(popup, popup_area);
     } else {
