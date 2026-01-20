@@ -28,6 +28,49 @@ mod audio_pipeline;
 #[cfg(feature = "mpd")]
 mod mpd_player;
 
+use std::fs::File;
+use std::io::{Read, Write};
+use std::os::unix::io::AsRawFd;
+
+const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
+
+/// Try to acquire the audio lock.
+/// Returns Some(File) if we acquired the lock (and thus should play audio).
+/// Returns None if another instance holds the lock (we should be UI-only).
+fn try_acquire_audio_lock() -> Option<File> {
+    // 1. Check if lock file exists
+    if let Ok(mut file) = std::fs::OpenOptions::new().read(true).write(true).open(LOCK_FILE_PATH) {
+        let mut pid_str = String::new();
+        if file.read_to_string(&mut pid_str).is_ok() {
+            if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                // 2. Check if process is alive
+                unsafe {
+                    // kill(pid, 0) checks existence without sending a signal
+                    if libc::kill(pid, 0) == 0 {
+                        // Process is alive! We are secondary.
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Create/Overwrite lock file
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(LOCK_FILE_PATH) 
+    {
+        let pid = std::process::id();
+        let _ = write!(file, "{}", pid);
+        return Some(file);
+    }
+
+    None
+}
+
+
 
 use clap::Parser;
 
@@ -170,10 +213,21 @@ async fn main() -> Result<()> {
     let mut app = App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app);
     
     // Start Audio Pipeline 🔊 (FIFO → DSP EQ → Speakers)
+    // SINGLETON CHECK: Only start audio if we acquire the lock
+    let audio_lock = try_acquire_audio_lock();
+    let is_audio_master = audio_lock.is_some();
+    
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
-    if let Err(e) = audio_pipeline.start() {
-        // Not fatal - just log and continue (EQ will be visual only)
-        eprintln!("Audio pipeline: {} (EQ will be visual only)", e);
+    
+    if is_audio_master {
+        if let Err(e) = audio_pipeline.start() {
+           eprintln!("Audio pipeline: {} (EQ will be visual only)", e);
+        }
+    } else {
+        // We are secondary. No audio output.
+        // Visuals might still work if we tap into the same FIFO? 
+        // For now, secondary = no audio processing = no visualizer (unless we share data, which is complex).
+        app.toast = Some(("🔇 Shared Audio Mode (UI Only)".to_string(), std::time::Instant::now()));
     }
     
     // Player Backend Selection 🎛️
@@ -1658,5 +1712,11 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+    
+    // Cleanup Lock File (if we own it)
+    if is_audio_master {
+        let _ = std::fs::remove_file(LOCK_FILE_PATH);
+    }
+    
     Ok(())
 }
