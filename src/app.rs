@@ -1,4 +1,5 @@
 use crate::player::{TrackInfo, PlayerTrait};
+use crate::config::{AppConfig, EqPreset};
 use crate::lyrics::{LyricLine};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -64,6 +65,7 @@ pub struct TagEditState {
 pub enum InputMode {
     PlaylistSave,
     PlaylistRename,
+    EqSave,
 }
 
 /// Generic Input Popup State 📝
@@ -213,12 +215,12 @@ pub struct App {
     pub show_keyhints: bool,    // WhichKey popup visible
     pub show_audio_info: bool,  // Audio Info popup visible (like Poweramp)
     pub tag_edit: Option<TagEditState>,
-    pub input_state: Option<InputState>,  // Generic input popup
+    pub input_state: Option<InputState>,
     pub toast: Option<(String, std::time::Instant)>,  // Toast notification (message, shown_at)
     pub gapless_mode: bool,     // True when current+next song are from same album
     pub last_album: String,     // Track album changes
     pub shuffle: bool,          // MPD random mode
-    pub repeat: bool,           // MPD repeat mode
+    pub repeat: bool,          // MPD repeat mode
     
     /// Audio output devices 🔊
     pub output_device: String,
@@ -229,101 +231,32 @@ pub struct App {
     pub eq_gains: EqGains,
     /// DSP EQ is always available (built-in)
     pub dsp_available: bool,
+    // Persistence & Custom Presets
+    pub presets: Vec<EqPreset>,
+    pub eq_preset_name: String, // Tracks current preset name for logic
 }
 
-/// EQ Presets: (name, [10 band values 0.0-1.0])
-/// Bands: 32Hz, 64Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz
-/// Values: 0.0 = -12dB, 0.5 = 0dB (flat), 1.0 = +12dB
-/// Formula: value = (dB / 24) + 0.5
-/// Presets extracted from Apple Music Equalizer screenshots
-pub const EQ_PRESETS: &[(&str, [f32; 10])] = &[
-    // Custom - user adjustable
-    ("Custom",         [0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50]),
-    // Flat - neutral
-    ("Flat",           [0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50]),
-    // Acoustic: slight warm bass, forward mids, airy highs
-    //           32:+2, 64:+1, 125:0, 250:+1, 500:+1, 1k:0, 2k:0, 4k:+1, 8k:+2, 16k:+1
-    ("Acoustic",       [0.583, 0.542, 0.50, 0.542, 0.542, 0.50, 0.50, 0.542, 0.583, 0.542]),
-    // Bass Booster: heavy low end boost
-    //           32:+4, 64:+5, 125:+4, 250:+2, 500:0, 1k:0, 2k:0, 4k:0, 8k:0, 16k:0
-    ("Bass Booster",   [0.667, 0.708, 0.667, 0.583, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50]),
-    // Bass Reducer: cut low frequencies
-    //           32:-4, 64:-5, 125:-4, 250:-2, 500:0, rest:0
-    ("Bass Reducer",   [0.333, 0.292, 0.333, 0.417, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50]),
-    // Classical: subtle, clear, natural
-    //           32:0, 64:0, 125:0, 250:0, 500:0, 1k:-1, 2k:-1, 4k:-1, 8k:+1, 16k:+2
-    ("Classical",      [0.50, 0.50, 0.50, 0.50, 0.50, 0.458, 0.458, 0.458, 0.542, 0.583]),
-    // Dance: heavy bass, cut mids, bright highs
-    //           32:+5, 64:+4, 125:+2, 250:0, 500:-2, 1k:-2, 2k:0, 4k:+2, 8k:+3, 16k:+3
-    ("Dance",          [0.708, 0.667, 0.583, 0.50, 0.417, 0.417, 0.50, 0.583, 0.625, 0.625]),
-    // Deep: sub-bass emphasis, very dark
-    //           32:+5, 64:+4, 125:+2, 250:0, 500:0, 1k:0, 2k:-1, 4k:-2, 8k:-3, 16k:-4
-    ("Deep",           [0.708, 0.667, 0.583, 0.50, 0.50, 0.50, 0.458, 0.417, 0.375, 0.333]),
-    // Electronic: V-curve, bass + treble
-    //           32:+5, 64:+4, 125:0, 250:-1, 500:-1, 1k:0, 2k:0, 4k:+2, 8k:+4, 16k:+5
-    ("Electronic",     [0.708, 0.667, 0.50, 0.458, 0.458, 0.50, 0.50, 0.583, 0.667, 0.708]),
-    // Hip-Hop: heavy bass, clear mids, crisp highs
-    //           32:+5, 64:+4, 125:+2, 250:0, 500:0, 1k:+1, 2k:+1, 4k:0, 8k:+1, 16k:+2
-    ("Hip-Hop",        [0.708, 0.667, 0.583, 0.50, 0.50, 0.542, 0.542, 0.50, 0.542, 0.583]),
-    // Jazz: warm, smooth, detailed
-    //           32:+2, 64:+1, 125:0, 250:+1, 500:+2, 1k:+2, 2k:0, 4k:+1, 8k:+2, 16k:+1
-    ("Jazz",           [0.583, 0.542, 0.50, 0.542, 0.583, 0.583, 0.50, 0.542, 0.583, 0.542]),
-    // Late Night: compressed, quieter dynamics
-    //           32:-1, 64:0, 125:+1, 250:+2, 500:+2, 1k:+2, 2k:+1, 4k:0, 8k:-1, 16k:-1
-    ("Late Night",     [0.458, 0.50, 0.542, 0.583, 0.583, 0.583, 0.542, 0.50, 0.458, 0.458]),
-    // Latin: punchy, rhythmic, bright
-    //           32:+2, 64:+1, 125:+1, 250:+1, 500:0, 1k:0, 2k:0, 4k:+1, 8k:+3, 16k:+3
-    ("Latin",          [0.583, 0.542, 0.542, 0.542, 0.50, 0.50, 0.50, 0.542, 0.625, 0.625]),
-    // Loudness: classic loudness curve (bass + treble boost)
-    //           32:+4, 64:+2, 125:0, 250:0, 500:0, 1k:0, 2k:0, 4k:0, 8k:+2, 16k:+4
-    ("Loudness",       [0.667, 0.583, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.583, 0.667]),
-    // Lounge: mellow, relaxed
-    //           32:-2, 64:0, 125:+1, 250:+2, 500:+2, 1k:+1, 2k:0, 4k:-1, 8k:0, 16k:0
-    ("Lounge",         [0.417, 0.50, 0.542, 0.583, 0.583, 0.542, 0.50, 0.458, 0.50, 0.50]),
-    // Piano: clear mids, natural bass
-    //           32:+1, 64:0, 125:0, 250:+1, 500:+2, 1k:+2, 2k:+1, 4k:+1, 8k:+2, 16k:+1
-    ("Piano",          [0.542, 0.50, 0.50, 0.542, 0.583, 0.583, 0.542, 0.542, 0.583, 0.542]),
-    // Pop: vocals forward, punchy
-    //           32:-2, 64:0, 125:+1, 250:+3, 500:+4, 1k:+3, 2k:+1, 4k:0, 8k:+1, 16k:+1
-    ("Pop",            [0.417, 0.50, 0.542, 0.625, 0.667, 0.625, 0.542, 0.50, 0.542, 0.542]),
-    // R&B: warm bass, silky vocals
-    //           32:+3, 64:+2, 125:+1, 250:0, 500:+1, 1k:+2, 2k:+2, 4k:+1, 8k:+1, 16k:+2
-    ("R&B",            [0.625, 0.583, 0.542, 0.50, 0.542, 0.583, 0.583, 0.542, 0.542, 0.583]),
-    // Rock: guitar-focused, powerful
-    //           32:+3, 64:+2, 125:0, 250:-1, 500:0, 1k:+2, 2k:+3, 4k:+3, 8k:+3, 16k:+2
-    ("Rock",           [0.625, 0.583, 0.50, 0.458, 0.50, 0.583, 0.625, 0.625, 0.625, 0.583]),
-    // Small Speakers: bass compensation
-    //           32:+5, 64:+4, 125:+3, 250:+1, 500:0, 1k:0, 2k:+1, 4k:+3, 8k:+4, 16k:+5
-    ("Small Speakers", [0.708, 0.667, 0.625, 0.542, 0.50, 0.50, 0.542, 0.625, 0.667, 0.708]),
-    // Spoken Word: voice clarity
-    //           32:-3, 64:-1, 125:+1, 250:+4, 500:+5, 1k:+4, 2k:+2, 4k:0, 8k:-2, 16k:-3
-    ("Spoken Word",    [0.375, 0.458, 0.542, 0.667, 0.708, 0.667, 0.583, 0.50, 0.417, 0.375]),
-    // Treble Booster: high frequency emphasis
-    //           32:0, 64:0, 125:0, 250:0, 500:0, 1k:0, 2k:+1, 4k:+3, 8k:+4, 16k:+4
-    ("Treble Booster", [0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.542, 0.625, 0.667, 0.667]),
-    // Treble Reducer: high frequency cut
-    //           32:0, 64:0, 125:0, 250:0, 500:0, 1k:0, 2k:-1, 4k:-3, 8k:-4, 16k:-4
-    ("Treble Reducer", [0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.458, 0.375, 0.333, 0.333]),
-    // Vocal Booster: mid boost for voice clarity
-    //           32:-3, 64:-2, 125:0, 250:+3, 500:+5, 1k:+5, 2k:+3, 4k:+1, 8k:-1, 16k:-3
-    ("Vocal Booster",  [0.375, 0.417, 0.50, 0.625, 0.708, 0.708, 0.625, 0.542, 0.458, 0.375]),
-];
-
-
-
-
 impl App {
-    pub fn new(app_show_lyrics: bool, is_tmux: bool, is_mpd: bool, source_app: &str) -> Self {
-        let theme = crate::theme::load_current_theme();
-        let eq_gains = EqGains::new();
+    pub fn new(app_show_lyrics: bool, is_tmux: bool, is_mpd: bool, source_app: &str, config: AppConfig) -> Self {
         
+        // Merge defaults with user presets
+        // If config.presets is empty, it means we don't have custom ones yet, but we should always have defaults available.
+        // Actually, let's keep user custom presets separate or append them?
+        // Let's create a combined list: Defaults + User Config Presets
+        let mut presets = AppConfig::get_default_presets();
+        presets.extend(config.presets.clone());
+
+        // Find index of last used preset
+        let eq_preset_idx = presets.iter()
+            .position(|p| p.name == config.last_preset_name)
+            .unwrap_or(0); // Default to first (Custom or Flat)
+
         Self {
-            theme,
+            theme: crate::theme::load_current_theme(),
             is_running: true,
             track: None,
-            lyrics: LyricsState::Idle, // changed
+            lyrics: LyricsState::Idle,
             artwork: ArtworkState::Idle,
-
             lyrics_offset: None,
             lyrics_selected: None,
             lyrics_cache: HashMap::new(),
@@ -331,9 +264,7 @@ impl App {
             seek_accumulator: 0.0,
             last_seek_time: None,
             seek_initial_pos: None,
-            
             smooth_scroll_accum: 0.0,
-            
             last_track_update: None,
             app_show_lyrics,
             is_tmux,
@@ -351,16 +282,18 @@ impl App {
             search_active: false,
             playlists: Vec::new(),
             visualizer_bars: vec![0.3; 32], // Start with 32 bars at 30% height
-            eq_bands: [0.5; 10], // All bands at 0dB (centered)
-            eq_selected: 0,     // First band selected
-            eq_enabled: true,   // EQ enabled by default
-            eq_preset: 0,       // Start with "Custom" preset
             
+            // Persistence loading
+            eq_bands: config.eq_bands,
+            eq_selected: 0,
+            eq_enabled: config.eq_enabled,
+            eq_preset: eq_preset_idx,
             app_volume: 100,
-            preamp_db: 0.0,         // No preamp adjustment
-            balance: 0.0,           // Center
-            crossfade_secs: 0,      // No crossfade
-            replay_gain_mode: 0,    // Off by default
+            preamp_db: config.preamp_db,
+            balance: config.balance,
+            crossfade_secs: config.crossfade,
+            replay_gain_mode: config.replay_gain_mode,
+            
             show_keyhints: false,   // Hidden by default
             show_audio_info: false, // Hidden by default
             tag_edit: None,
@@ -380,8 +313,15 @@ impl App {
                 }
             },
             selected_device_idx: 0,
-            eq_gains,
+            
+            // Initialization for Persistence fields
+            eq_gains: EqGains::default(), 
+            
             dsp_available: true, // Built-in DSP is always available
+            
+            // Persistence & Custom Presets
+            presets,
+            eq_preset_name: config.last_preset_name,
         }
     }
     
@@ -416,7 +356,12 @@ impl App {
     /// Reset EQ to flat
     pub fn reset_eq(&mut self) {
         self.eq_bands = [0.5; 10];
-        self.eq_preset = 1; // Set to "Flat" preset
+        // Find Flat preset
+        if let Some(pos) = self.presets.iter().position(|p| p.name == "Flat") {
+            self.eq_preset = pos;
+        } else {
+             self.eq_preset = 0;
+        }
         self.eq_gains.reset();
     }
     
@@ -428,22 +373,23 @@ impl App {
     
     /// Apply current preset to EQ bands
     pub fn apply_preset(&mut self) {
-        if self.eq_preset < EQ_PRESETS.len() {
-            self.eq_bands = EQ_PRESETS[self.eq_preset].1;
+        if self.eq_preset < self.presets.len() {
+            self.eq_bands = self.presets[self.eq_preset].bands;
+            self.eq_preset_name = self.presets[self.eq_preset].name.clone();
             self.sync_eq_to_dsp();
         }
     }
     
     /// Cycle to next preset
     pub fn next_preset(&mut self) {
-        self.eq_preset = (self.eq_preset + 1) % EQ_PRESETS.len();
+        self.eq_preset = (self.eq_preset + 1) % self.presets.len();
         self.apply_preset();
     }
     
     /// Cycle to previous preset
     pub fn prev_preset(&mut self) {
         self.eq_preset = if self.eq_preset == 0 { 
-            EQ_PRESETS.len() - 1 
+            self.presets.len() - 1 
         } else { 
             self.eq_preset - 1 
         };
@@ -451,17 +397,89 @@ impl App {
     }
     
     /// Get current preset name
-    pub fn get_preset_name(&self) -> &'static str {
-        if self.eq_preset < EQ_PRESETS.len() {
-            EQ_PRESETS[self.eq_preset].0
+    pub fn get_preset_name(&self) -> String {
+        if self.eq_preset < self.presets.len() {
+            self.presets[self.eq_preset].name.clone()
         } else {
-            "Custom"
+            "Unknown".to_string()
         }
     }
     
     /// Mark as custom preset when user manually adjusts bands
     pub fn mark_custom(&mut self) {
-        self.eq_preset = 0; // "Custom"
+        // We don't necessarily reset index, but maybe we switch to "Custom" (index 0) 
+        // if we are editing a standard preset, OR we just let it drift from the saved state.
+        // For simplicity, let's switch to the "Custom" preset (0) if it exists, 
+        // so we don't overwrite named presets until saved.
+        // BUT, if we have dynamic presets, maybe we should just say "Modified"?
+        // Let's stick to the "Custom" slot which is index 0.
+        // WAIT: With dynamic presets, "Custom" might not be 0.
+        // Let's check for "Custom".
+        if let Some(pos) = self.presets.iter().position(|p| p.name == "Custom") {
+             if self.eq_preset != pos {
+                  self.eq_preset = pos;
+             }
+        }
+        // If "Custom" doesn't exist (e.g. user deleted it), we just stay on current index but it's now dirty.
+    }
+
+    /// Save current EQ bands as a new preset
+    pub fn save_preset(&mut self, name: String) {
+        let preset = EqPreset::new(&name, self.eq_bands);
+        self.presets.push(preset);
+        self.eq_preset = self.presets.len() - 1; // Switch to new preset
+        self.eq_preset_name = name;
+    }
+
+    /// Delete current preset (if not a builtin)
+    pub fn delete_preset(&mut self) -> Result<(), String> {
+        if self.eq_preset < self.presets.len() {
+            let name = self.presets[self.eq_preset].name.as_str();
+            
+            // Prevent deleting defaults
+            let defaults = AppConfig::get_default_presets();
+            if defaults.iter().any(|d| d.name == name) {
+                 return Err("Cannot delete built-in preset".to_string());
+            }
+
+            self.presets.remove(self.eq_preset);
+            if self.eq_preset >= self.presets.len() {
+                self.eq_preset = self.presets.len().saturating_sub(1);
+            }
+            // re-apply
+            self.apply_preset();
+            return Ok(());
+        }
+        Err("No preset selected".to_string())
+    }
+
+    pub fn save_state(&self) {
+        // Collect only user presets (exclude defaults)
+        let defaults = AppConfig::get_default_presets();
+        let default_names: Vec<&String> = defaults.iter().map(|p| &p.name).collect();
+        
+        let user_presets: Vec<EqPreset> = self.presets.iter()
+            .filter(|p| !default_names.contains(&&p.name) || p.name == "Custom") // Keep Custom if modified? Actually Custom is in default list.
+            .map(|p| p.clone())
+            .collect();
+
+        // Actually, we should probably ONLY save presets that are NOT in the default list?
+        // But if user modified "Custom", we might want to save it if we allow it.
+        // For now, simple logic: Filter out any preset where Name + Bands matches a default?
+        // Simpler: Just filter by Name. If user names it "Bass Booster", tough luck, it's treated as default.
+        // Just saving unique names.
+
+        let config = AppConfig {
+            presets: self.presets.iter().filter(|p| !defaults.iter().any(|d| d.name == p.name)).cloned().collect(),
+            last_preset_name: self.get_preset_name(),
+            eq_enabled: self.eq_enabled,
+            eq_bands: self.eq_bands,
+            preamp_db: self.preamp_db,
+            balance: self.balance,
+            crossfade: self.crossfade_secs,
+            replay_gain_mode: self.replay_gain_mode,
+        };
+        config.save();
     }
     
     /// Cycle to next audio device and actually switch output

@@ -1769,6 +1769,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("c", "🔀", "Crossfade"),
                 ("R", "📀", "ReplayGain"),
                 ("d/D", "🎧", "Output device"),
+                ("S", "💾", "Save preset"),
+                ("X", "🗑️", "Delete preset"),
             ]),
             ViewMode::Library => ("Library", vec![
                 ("j/k", "📋", "Navigate"),

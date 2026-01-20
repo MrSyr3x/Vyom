@@ -62,7 +62,7 @@ git clone https://github.com/MrSyr3x/Vyom.git
 cd Vyom
 
 # Install with full features (MPD + Equalizer)
-cargo install --path . --features mpd,eq --force
+cargo install --path . --force
 ```
 
 ## 🎮 Controls

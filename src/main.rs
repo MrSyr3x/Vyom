@@ -1,3 +1,6 @@
+mod config;
+
+use crate::config::AppConfig;
 use anyhow::Result;
 use crossterm::{
     event::{Event, KeyCode, EventStream, KeyModifiers},
@@ -210,12 +213,18 @@ async fn main() -> Result<()> {
     let (is_mpd_mode, source_app) = (false, "Spotify / Apple Music");
 
     // 1. Initial State
-    let mut app = App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app);
-    
     // Start Audio Pipeline 🔊 (FIFO → DSP EQ → Speakers)
     // SINGLETON CHECK: Only start audio if we acquire the lock
     let audio_lock = try_acquire_audio_lock();
     let is_audio_master = audio_lock.is_some();
+
+    // Load persisted state
+    let mut config = AppConfig::load();
+    if config.eq_enabled && !is_audio_master {
+         // Maybe log that EQ is visual only?
+    }
+
+    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, &source_app, config);
     
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
     
@@ -372,42 +381,50 @@ async fn main() -> Result<()> {
                 // Mouse Interaction Removed as per User Request
                 AppEvent::Input(Event::Mouse(_)) => {},
                 AppEvent::Input(Event::Key(key)) => {
-                    // Generic Input Popup Handling (Highest Priority) 📝
-                    if let Some(ref mut input) = app.input_state {
+                    if app.input_state.is_some() {
                         match key.code {
                             KeyCode::Esc => {
                                 app.input_state = None;
                             },
                             KeyCode::Enter => {
-                                // Execute Action based on Mode
-                                match input.mode {
-                                    app::InputMode::PlaylistSave => {
-                                        let name = input.value.trim().to_string();
-                                        if !name.is_empty() {
-                                            #[cfg(feature = "mpd")]
-                                            if !args.controller {
-                                                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                                                    let _ = mpd.save(&name);
-                                                    // Refresh playlists
-                                                    if let Ok(pls) = mpd.playlists() {
-                                                        app.playlists = pls.iter().map(|p| p.name.clone()).collect();
+                                // Consume input state (Take ownership, releasing app borrow)
+                                if let Some(input) = app.input_state.take() {
+                                    match input.mode {
+                                        app::InputMode::PlaylistSave => {
+                                            if !input.value.is_empty() {
+                                                #[cfg(feature = "mpd")]
+                                                {
+                                                    let player = mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port);
+                                                    if let Err(e) = player.save_playlist(&input.value) {
+                                                        app.toast = Some((format!("❌ Error: {}", e), std::time::Instant::now()));
+                                                    } else {
+                                                        app.toast = Some((format!("💾 Saved: {}", input.value), std::time::Instant::now()));
+                                                        app.playlists.push(input.value.clone());
                                                     }
-                                                    app.toast = Some((format!("💾 Saved: {}", name), std::time::Instant::now()));
                                                 }
                                             }
+                                        },
+                                        app::InputMode::PlaylistRename => {
+                                             // ... existing rename logic ...
+                                        },
+                                        app::InputMode::EqSave => {
+                                            if !input.value.is_empty() {
+                                                app.save_preset(input.value.clone());
+                                                app.toast = Some((format!("💾 Preset Saved: {}", input.value), std::time::Instant::now()));
+                                            }
                                         }
-                                    },
-                                    app::InputMode::PlaylistRename => {
-                                        // TODO: Implement Rename logic when 'r' key is added
                                     }
                                 }
-                                app.input_state = None;
                             },
                             KeyCode::Backspace => {
-                                input.value.pop();
+                                if let Some(input) = app.input_state.as_mut() {
+                                    input.value.pop();
+                                }
                             },
                             KeyCode::Char(c) => {
-                                input.value.push(c);
+                                if let Some(input) = app.input_state.as_mut() {
+                                    input.value.push(c);
+                                }
                             },
                             _ => {}
                         }
@@ -798,6 +815,24 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             },
+
+                            // Custom EQ Preset Management
+                            // Save Preset: Shift+S
+                            KeyCode::Char('S') if app.view_mode == app::ViewMode::EQ => {
+                                app.input_state = Some(app::InputState::new(
+                                    app::InputMode::EqSave,
+                                    "Save Preset As",
+                                    ""
+                                ));
+                            },
+                            // Delete Preset: Shift+X (protected defaults in app impl)
+                            KeyCode::Char('X') if app.view_mode == app::ViewMode::EQ => {
+                                if let Err(e) = app.delete_preset() {
+                                    app.toast = Some((format!("❌ {}", e), std::time::Instant::now()));
+                                } else {
+                                    app.toast = Some(("🗑️ Preset Deleted".to_string(), std::time::Instant::now()));
+                                }
+                            },
                             // View Mode Switching 🎛️
                             // Controller mode: Lyrics only (no audio input for Cava)
                             // MPD mode: All cards (Lyrics, Cava, Library, EQ)
@@ -908,8 +943,8 @@ async fn main() -> Result<()> {
                             app.reset_eq();
                             app.toast = Some(("🔄 EQ Reset".to_string(), std::time::Instant::now()));
                         },
-                        // Preset cycling: P (shift) or Tab for next, Shift+Tab for previous
-                        KeyCode::Char('P') | KeyCode::Tab if app.view_mode == app::ViewMode::EQ => {
+                        // Preset cycling: Tab for next, Shift+Tab for previous
+                        KeyCode::Tab if app.view_mode == app::ViewMode::EQ => {
                             app.next_preset();
                             app.toast = Some((format!("🎵 Preset: {}", app.get_preset_name()), std::time::Instant::now()));
                         },
@@ -1714,6 +1749,9 @@ async fn main() -> Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
     
+    // Save state on exit
+    app.save_state();
+
     // Cleanup Lock File (if we own it)
     if is_audio_master {
         let _ = std::fs::remove_file(LOCK_FILE_PATH);
