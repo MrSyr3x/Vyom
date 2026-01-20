@@ -236,7 +236,7 @@ async fn main() -> Result<()> {
         // We are secondary. No audio output.
         // Visuals might still work if we tap into the same FIFO? 
         // For now, secondary = no audio processing = no visualizer (unless we share data, which is complex).
-        app.toast = Some(("🔇 Shared Audio Mode (UI Only)".to_string(), std::time::Instant::now()));
+        app.show_toast("🔇 Shared Audio Mode (UI Only)");
     }
     
     // Player Backend Selection 🎛️
@@ -396,9 +396,9 @@ async fn main() -> Result<()> {
                                                 {
                                                     let player = mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port);
                                                     if let Err(e) = player.save_playlist(&input.value) {
-                                                        app.toast = Some((format!("❌ Error: {}", e), std::time::Instant::now()));
+                                                        app.show_toast(&format!("❌ Error: {}", e));
                                                     } else {
-                                                        app.toast = Some((format!("💾 Saved: {}", input.value), std::time::Instant::now()));
+                                                        app.show_toast(&format!("💾 Saved: {}", input.value));
                                                         app.playlists.push(input.value.clone());
                                                     }
                                                 }
@@ -410,7 +410,7 @@ async fn main() -> Result<()> {
                                         app::InputMode::EqSave => {
                                             if !input.value.is_empty() {
                                                 app.save_preset(input.value.clone());
-                                                app.toast = Some((format!("💾 Preset Saved: {}", input.value), std::time::Instant::now()));
+                                                app.show_toast(&format!("💾 Preset Saved: {}", input.value));
                                             }
                                         }
                                     }
@@ -656,15 +656,15 @@ async fn main() -> Result<()> {
                             },
                             KeyCode::Char(' ') => { 
                                 let _ = player.play_pause();
-                                app.toast = Some(("⏯ Play/Pause".to_string(), std::time::Instant::now()));
+                                app.show_toast("⏯ Play/Pause");
                             },
                             KeyCode::Char('n') => { 
                                 let _ = player.next();
-                                app.toast = Some(("⏭ Next Track".to_string(), std::time::Instant::now()));
+                                app.show_toast("⏭ Next Track");
                             },
                             KeyCode::Char('p') => { 
                                 let _ = player.prev();
-                                app.toast = Some(("⏮ Previous Track".to_string(), std::time::Instant::now()));
+                                app.show_toast("⏮ Previous Track");
                             },
                             KeyCode::Char('+') => { 
                                 // Hardware/MPD Volume
@@ -674,7 +674,7 @@ async fn main() -> Result<()> {
                                 app.app_volume = (app.app_volume.saturating_add(5)).min(100);
                                 audio_pipeline.set_volume(app.app_volume);
                                 
-                                app.toast = Some((format!("🔊 Volume: {}%", app.app_volume), std::time::Instant::now()));
+                                app.show_toast(&format!("🔊 Volume: {}%", app.app_volume));
                             },
                             KeyCode::Char('-') => { 
                                 // Hardware/MPD Volume
@@ -684,7 +684,7 @@ async fn main() -> Result<()> {
                                 app.app_volume = app.app_volume.saturating_sub(5);
                                 audio_pipeline.set_volume(app.app_volume);
 
-                                app.toast = Some((format!("🔉 Volume: {}%", app.app_volume), std::time::Instant::now()));
+                                app.show_toast(&format!("🔉 Volume: {}%", app.app_volume));
                             },
                             // Seek Controls (cumulative & safe) ⏩
                             // Guard against Library View AND EQ View (uses h/l for nav)
@@ -733,7 +733,7 @@ async fn main() -> Result<()> {
                                             // If track changed, skip the seek silently
                                         }
                                     });
-                                    app.toast = Some((format!("⏪ Seek: {:+.0}s", app.seek_accumulator), now));
+                                    app.show_toast(&format!("⏪ Seek: {:+.0}s", app.seek_accumulator));
                                 }
                             },
                             KeyCode::Char('l') if app.view_mode != app::ViewMode::Library && app.view_mode != app::ViewMode::EQ => {
@@ -780,7 +780,7 @@ async fn main() -> Result<()> {
                                             // If track changed, skip the seek silently
                                         }
                                     });
-                                    app.toast = Some((format!("⏩ Seek: {:+.0}s", app.seek_accumulator), now));
+                                    app.show_toast(&format!("⏩ Seek: {:+.0}s", app.seek_accumulator));
                                 }
                             },
                             
@@ -828,9 +828,9 @@ async fn main() -> Result<()> {
                             // Delete Preset: Shift+X (protected defaults in app impl)
                             KeyCode::Char('X') if app.view_mode == app::ViewMode::EQ => {
                                 if let Err(e) = app.delete_preset() {
-                                    app.toast = Some((format!("❌ {}", e), std::time::Instant::now()));
+                                    app.show_toast(&format!("❌ {}", e));
                                 } else {
-                                    app.toast = Some(("🗑️ Preset Deleted".to_string(), std::time::Instant::now()));
+                                    app.show_toast("🗑️ Preset Deleted");
                                 }
                             },
                             // View Mode Switching 🎛️
@@ -904,7 +904,7 @@ async fn main() -> Result<()> {
                                         
                                         let mins = target_ms / 60000;
                                         let secs = (target_ms % 60000) / 1000;
-                                        app.toast = Some((format!("🎤 Jump to {}:{:02}", mins, secs), std::time::Instant::now()));
+                                        app.show_toast(&format!("🎤 Jump to {}:{:02}", mins, secs));
                                         app.lyrics_selected = None; // Exit selection mode
                                         app.lyrics_offset = None; // Return to auto-sync
                                         app.last_scroll_time = None; // Allow immediate auto-follow
@@ -927,7 +927,7 @@ async fn main() -> Result<()> {
                             app.mark_custom();
                             app.sync_band_to_dsp(app.eq_selected);
                             let db = (app.eq_bands[app.eq_selected] - 0.5) * 24.0;
-                            app.toast = Some((format!("🎚 Band {}: {:+.1}dB", app.eq_selected + 1, db), std::time::Instant::now()));
+                            app.show_toast(&format!("🎚 Band {}: {:+.1}dB", app.eq_selected + 1, db));
                         },
                         KeyCode::Down | KeyCode::Char('j') if app.view_mode == app::ViewMode::EQ => {
                             let band = &mut app.eq_bands[app.eq_selected];
@@ -935,31 +935,31 @@ async fn main() -> Result<()> {
                             app.mark_custom();
                             app.sync_band_to_dsp(app.eq_selected);
                             let db = (app.eq_bands[app.eq_selected] - 0.5) * 24.0;
-                            app.toast = Some((format!("🎚 Band {}: {:+.1}dB", app.eq_selected + 1, db), std::time::Instant::now()));
+                            app.show_toast(&format!("🎚 Band {}: {:+.1}dB", app.eq_selected + 1, db));
                         },
                         KeyCode::Char('e') if app.view_mode == app::ViewMode::EQ => {
                             app.toggle_eq();
-                            app.toast = Some((format!("🎛 EQ: {}", if app.eq_enabled { "ON" } else { "OFF" }), std::time::Instant::now()));
+                            app.show_toast(&format!("🎛 EQ: {}", if app.eq_enabled { "ON" } else { "OFF" }));
                         },
                         KeyCode::Char('r') if app.view_mode == app::ViewMode::EQ => {
                             app.reset_eq();
-                            app.toast = Some(("🔄 EQ Reset".to_string(), std::time::Instant::now()));
+                            app.show_toast("🔄 EQ Reset");
                         },
                         // Reset single band: 0
                         KeyCode::Char('0') if app.view_mode == app::ViewMode::EQ => {
                             app.eq_bands[app.eq_selected] = 0.5;
                             app.mark_custom();
                             app.sync_band_to_dsp(app.eq_selected);
-                            app.toast = Some((format!("↺ Band {} Reset", app.eq_selected + 1), std::time::Instant::now()));
+                            app.show_toast(&format!("↺ Band {} Reset", app.eq_selected + 1));
                         },
                         // Preset cycling: Tab for next, Shift+Tab for previous
                         KeyCode::Tab if app.view_mode == app::ViewMode::EQ => {
                             app.next_preset();
-                            app.toast = Some((format!("🎵 Preset: {}", app.get_preset_name()), std::time::Instant::now()));
+                            app.show_toast(&format!("🎵 Preset: {}", app.get_preset_name()));
                         },
                         KeyCode::BackTab if app.view_mode == app::ViewMode::EQ => {
                             app.prev_preset();
-                            app.toast = Some((format!("🎵 Preset: {}", app.get_preset_name()), std::time::Instant::now()));
+                            app.show_toast(&format!("🎵 Preset: {}", app.get_preset_name()));
                         },
                         // Audio device switching: d for next, D for previous
                         KeyCode::Char('d') if app.view_mode == app::ViewMode::EQ => {
@@ -1237,7 +1237,7 @@ async fn main() -> Result<()> {
                                         let new_state = !status.random;
                                         let _ = mpd.random(new_state);
                                         app.shuffle = new_state;
-                                        app.toast = Some((format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }), std::time::Instant::now()));
+                                        app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
                                     }
                                 }
                             }
@@ -1251,7 +1251,7 @@ async fn main() -> Result<()> {
                                         let new_state = !status.repeat;
                                         let _ = mpd.repeat(new_state);
                                         app.repeat = new_state;
-                                        app.toast = Some((format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }), std::time::Instant::now()));
+                                        app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
                                     }
                                 }
                             }
@@ -1286,7 +1286,7 @@ async fn main() -> Result<()> {
                                                 _ => false
                                             };
                                             if added {
-                                                app.toast = Some((format!("Added: {}", added_name), std::time::Instant::now()));
+                                                app.show_toast(&format!("Added: {}", added_name));
                                             }
                                          }
                                     }

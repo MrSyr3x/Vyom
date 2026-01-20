@@ -1589,28 +1589,35 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
     // --- TOAST NOTIFICATION ---
-    if let Some((message, shown_at)) = &app.toast {
-        let elapsed = shown_at.elapsed().as_millis() as u64;
-        let duration_ms = 2000; // 2 seconds
+    if let Some(ref toast) = app.toast {
+        use ratatui::widgets::{Clear, Paragraph};
         
-        if elapsed < duration_ms {
-            use ratatui::widgets::Clear;
-            
+        let now = std::time::Instant::now();
+        
+        // Auto-dismiss if deadline passed
+        if now > toast.deadline {
+            app.toast = None;
+        } else {
+            let message = &toast.message;
             let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
             let height = 3;
             let target_x = f.area().width.saturating_sub(width + 1); // Top-right fixed
             let mut x = target_x;
             
+            let entrance_elapsed = now.duration_since(toast.start_time).as_millis();
+            let time_remaining = toast.deadline.saturating_duration_since(now).as_millis();
+            
             // Animation: Slide In/Out 🌊
-            if elapsed < 300 {
-                // Entrance (0-300ms): Slide Left
-                let t = elapsed as f32 / 300.0;
+            if entrance_elapsed < 300 {
+                // Entrance (0-300ms from start): Slide LEFT
+                let t = entrance_elapsed as f32 / 300.0;
                 let ease = 1.0 - (1.0 - t).powi(3); // Cubic Out
                 let offset = (width as f32 * (1.0 - ease)) as u16;
                 x += offset;
-            } else if elapsed > 1700 {
-                 // Exit (1700-2000ms): Slide Right
-                 let t = (elapsed - 1700) as f32 / 300.0;
+            } else if time_remaining < 300 {
+                 // Exit (Last 300ms before deadline): Slide RIGHT
+                 // t goes 0 -> 1 as we approach deadline
+                 let t = (300 - time_remaining) as f32 / 300.0;
                  let ease = t.powi(3); // Cubic In
                  let offset = (width as f32 * ease) as u16;
                  x += offset;
