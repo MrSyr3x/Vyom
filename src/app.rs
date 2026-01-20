@@ -76,6 +76,13 @@ pub struct InputState {
     pub value: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct Toast {
+    pub message: String,
+    pub start_time: Instant,
+    pub deadline: Instant,
+}
+
 impl InputState {
     pub fn new(mode: InputMode, title: &str, initial_value: &str) -> Self {
         Self {
@@ -216,7 +223,7 @@ pub struct App {
     pub show_audio_info: bool,  // Audio Info popup visible (like Poweramp)
     pub tag_edit: Option<TagEditState>,
     pub input_state: Option<InputState>,
-    pub toast: Option<(String, std::time::Instant)>,  // Toast notification (message, shown_at)
+    pub toast: Option<Toast>,
     pub gapless_mode: bool,     // True when current+next song are from same album
     pub last_album: String,     // Track album changes
     pub shuffle: bool,          // MPD random mode
@@ -371,6 +378,29 @@ impl App {
         self.eq_gains.set_enabled(self.eq_enabled);
     }
     
+    pub fn show_toast(&mut self, message: &str) {
+        let now = Instant::now();
+        let duration = std::time::Duration::from_millis(2000); // 2s display time
+        let deadline = now + duration;
+        
+        if let Some(ref mut current) = self.toast {
+            // Intelligent Update:
+            // If previous toast is recent (less than 500ms old) OR still active,
+            // update message and extend deadline, but keep start_time to preserve "Entrance" state.
+            // This prevents the "flashing" animation on rapid updates.
+            current.message = message.to_string();
+            current.deadline = deadline;
+            // start_time is INTENTIONALLY left alone!
+        } else {
+            // New Toast
+            self.toast = Some(Toast {
+                message: message.to_string(),
+                start_time: now,
+                deadline,
+            });
+        }
+    }
+    
     /// Apply current preset to EQ bands
     pub fn apply_preset(&mut self) {
         if self.eq_preset < self.presets.len() {
@@ -483,7 +513,11 @@ impl App {
     }
     
     /// Cycle to next audio device and actually switch output
+    /// Cycle to next audio device and actually switch output
     pub fn next_device(&mut self) {
+        // ALWAYS refresh first to catch hotplugged devices (Earphones etc)
+        self.refresh_devices();
+        
         if !self.audio_devices.is_empty() {
             self.selected_device_idx = (self.selected_device_idx + 1) % self.audio_devices.len();
             let device_name = self.audio_devices[self.selected_device_idx].clone();
@@ -496,6 +530,9 @@ impl App {
     
     /// Cycle to previous audio device and actually switch output
     pub fn prev_device(&mut self) {
+        // ALWAYS refresh first to catch hotplugged devices
+        self.refresh_devices();
+        
         if !self.audio_devices.is_empty() {
             self.selected_device_idx = if self.selected_device_idx == 0 {
                 self.audio_devices.len() - 1
@@ -514,18 +551,40 @@ impl App {
     pub fn refresh_devices(&mut self) {
         // Use SwitchAudioSource for reliable device names
         let system_devices = audio_device::get_devices_from_system();
-        if !system_devices.is_empty() {
-            self.audio_devices = system_devices;
+        let new_list = if !system_devices.is_empty() {
+            system_devices
         } else {
             // Fall back to cpal
-            self.audio_devices = audio_device::get_output_devices().into_iter().map(|d| d.name).collect();
+            audio_device::get_output_devices().into_iter().map(|d| d.name).collect()
+        };
+        
+        if new_list.is_empty() { return; }
+        
+        // Smart Selection Preservation 🧠
+        // Find where our current output device is in the NEW list
+        // This handles list reordering or insertions/deletions
+        let current_name = &self.output_device;
+        if let Some(idx) = new_list.iter().position(|name| name == current_name) {
+            self.selected_device_idx = idx;
+        } else {
+            // Check if "current" is actually valid via system (maybe it was renamed or we just started)
+            // But usually we just default to 0 if our current device vanished
+            if self.selected_device_idx >= new_list.len() {
+                self.selected_device_idx = 0;
+            }
         }
-        // Keep current selection if still valid
-        if self.selected_device_idx >= self.audio_devices.len() {
-            self.selected_device_idx = 0;
-        }
-        if !self.audio_devices.is_empty() {
-            self.output_device = self.audio_devices[self.selected_device_idx].clone();
+        
+        self.audio_devices = new_list;
+        
+        // Sync output_device field to match reality if we defaulted
+        if self.selected_device_idx < self.audio_devices.len() {
+            // Don't overwrite output_device here unless we want to "snap" to a valid one,
+            // but for UI consistency it's better to show what we *think* we have configured
+            // until user explicitly switches.
+            // Actually, if the device DISAPPEARED, we should probably update output_device.
+            if !self.audio_devices.contains(&self.output_device) {
+                 self.output_device = self.audio_devices[self.selected_device_idx].clone();
+            }
         }
     }
     
