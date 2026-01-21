@@ -368,7 +368,11 @@ impl App {
     /// Reset EQ to flat
     pub fn reset_eq(&mut self) {
         self.eq_bands = [0.5; 10];
-        self.mark_custom();
+        // Switch back to Flat preset
+        if let Some(pos) = self.presets.iter().position(|p| p.name == "Flat") {
+            self.eq_preset = pos;
+            self.eq_preset_name = "Flat".to_string();
+        }
         self.eq_gains.reset();
     }
     
