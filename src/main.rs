@@ -693,8 +693,9 @@ async fn main() -> Result<()> {
                                 app.show_toast(&format!("🔉 Volume: {}%", app.app_volume));
                             },
                             // Seek Controls (cumulative & safe) ⏩
-                            // Guard against Library View AND EQ View (uses h/l for nav)
-                            KeyCode::Char('h') if app.view_mode != app::ViewMode::Library && app.view_mode != app::ViewMode::EQ => {
+                            // Enable in Library view too (user request)
+                            // Only blocked in EQ View (uses h/l for nav)
+                            KeyCode::Char('h') if app.view_mode != app::ViewMode::EQ => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -742,7 +743,7 @@ async fn main() -> Result<()> {
                                     app.show_toast(&format!("⏪ Seek: {:+.0}s", app.seek_accumulator));
                                 }
                             },
-                            KeyCode::Char('l') if app.view_mode != app::ViewMode::Library && app.view_mode != app::ViewMode::EQ => {
+                            KeyCode::Char('l') if app.view_mode != app::ViewMode::EQ => {
                                 let now = std::time::Instant::now();
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
@@ -1351,8 +1352,9 @@ async fn main() -> Result<()> {
                                 }
                              }
                         },
-                        // Enter or 'l' key for Library actions (Select/Play/Enter Dir)
-                        KeyCode::Enter | KeyCode::Char('l') if app.view_mode == app::ViewMode::Library => {
+                        // Enter key for Library actions (Select/Play/Enter Dir)
+                        // 'l' removed to allow seeking
+                        KeyCode::Enter if app.view_mode == app::ViewMode::Library => {
                             #[cfg(feature = "mpd")]
                             if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
@@ -1540,8 +1542,9 @@ async fn main() -> Result<()> {
                             }
                         },
 
-                        // Backspace/Esc or 'h' to go back in Browse
-                        KeyCode::Backspace | KeyCode::Esc | KeyCode::Char('h') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
+                        // Backspace/Esc to go back in Browse
+                        // 'h' removed to allow seeking
+                        KeyCode::Backspace | KeyCode::Esc if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Directory => {
                             app.browse_path.pop();
                             app.library_items.clear();
                             app.library_selected = 0;
