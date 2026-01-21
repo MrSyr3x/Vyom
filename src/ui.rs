@@ -1771,7 +1771,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("b/B", "⚖️", "Balance ±0.1"),
                 ("c", "🔀", "Crossfade"),
                 ("R", "📀", "ReplayGain"),
-                ("d/D", "🎧", "Output device"),
                 ("S", "💾", "Save preset"),
                 ("X", "🗑️", "Delete preset"),
             ]),
