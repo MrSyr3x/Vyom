@@ -1,6 +1,6 @@
 [package]
 name = "vyom"
-version = "1.0.188"
+version = "1.0.189"
 edition = "2021"
 description = "A minimalist, transparent Spotify music player for tmux with Catppuccin theming."
 license = "MIT"

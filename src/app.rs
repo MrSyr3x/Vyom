@@ -365,9 +365,15 @@ impl App {
         }
     }
     
-    /// Reset EQ to flat
+    /// Reset EQ to flat and clear Custom preset
     pub fn reset_eq(&mut self) {
         self.eq_bands = [0.5; 10];
+
+        // Reset Custom preset if it exists so previous tweaks are discarded
+        if let Some(custom_pos) = self.presets.iter().position(|p| p.name == "Custom") {
+             self.presets[custom_pos].bands = [0.5; 10];
+        }
+
         // Switch back to Flat preset
         if let Some(pos) = self.presets.iter().position(|p| p.name == "Flat") {
             self.eq_preset = pos;
