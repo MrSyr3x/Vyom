@@ -122,13 +122,15 @@ impl PlayerTrait for MpdPlayer {
         let file_path = format!("{}/{}", self.music_directory, song.file);
         
         Ok(Some(TrackInfo {
-            name: song.title.unwrap_or_else(|| song.file.clone()),
-            artist: find_tag(&song.tags, "Artist")
-                .or_else(|| find_tag(&song.tags, "AlbumArtist"))
-                .or_else(|| find_tag(&song.tags, "Composer"))
-                .unwrap_or_else(|| "Unknown Artist".to_string()),
-            album: find_tag(&song.tags, "Album")
-                .unwrap_or_else(|| "Unknown Album".to_string()),
+            name: song.title.as_deref().or_else(|| find_tag(&song.tags, "Title").as_deref()).unwrap_or(&song.file).to_string(),
+            artist: song.artist.as_deref()
+                .or_else(|| find_tag(&song.tags, "Artist").as_deref())
+                .or_else(|| find_tag(&song.tags, "AlbumArtist").as_deref())
+                .or_else(|| find_tag(&song.tags, "Composer").as_deref())
+                .unwrap_or("Unknown Artist").to_string(),
+            album: song.album.as_deref()
+                .or_else(|| find_tag(&song.tags, "Album").as_deref())
+                .unwrap_or("Unknown Album").to_string(),
             artwork_url: None, // Will be extracted from embedded art
             duration_ms,
             position_ms,
