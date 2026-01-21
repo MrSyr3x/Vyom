@@ -35,6 +35,13 @@ pub struct AppConfig {
     pub crossfade: u32,
     #[serde(default)]
     pub replay_gain_mode: u8,
+    #[serde(default = "default_music_dir")]
+    pub music_directory: String,
+}
+
+fn default_music_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    format!("{}/Music", home)
 }
 
 fn default_bands() -> [f32; 10] {
@@ -52,6 +59,7 @@ impl Default for AppConfig {
             balance: 0.0,
             crossfade: 0,
             replay_gain_mode: 0, // Off
+            music_directory: default_music_dir(),
         }
     }
 }

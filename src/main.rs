@@ -1189,16 +1189,61 @@ async fn main() -> Result<()> {
                             ));
                         },
                         // Tag editing: t to edit selected song's tags
-                        KeyCode::Char('t') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
-                            // Get selected song from queue
-                            if let Some(item) = app.queue.get(app.library_selected) {
-                                // Open tag editor with current values
-                                app.tag_edit = Some(app::TagEditState::new(
-                                    &item.file_path,
-                                    &item.title,
-                                    &item.artist,
-                                    "",  // Album not in QueueItem, will be loaded from file
-                                ));
+                        KeyCode::Char('t') if app.view_mode == app::ViewMode::Library => {
+                            match app.library_mode {
+                                app::LibraryMode::Queue => {
+                                    // Get selected song from queue
+                                    if let Some(item) = app.queue.get(app.library_selected) {
+                                        // Try to read album from file directly 📖
+                                        let mut album = String::new();
+                                        #[cfg(feature = "mpd")]
+                                        if !args.controller {
+                                             let full_path = format!("{}/{}", app.music_directory, item.file_path);
+                                             if let Ok(tagged_file) = lofty::read_from_path(&full_path) {
+                                                 if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+                                                     album = tag.album().as_deref().unwrap_or("").to_string();
+                                                 }
+                                             }
+                                        }
+
+                                        // Open tag editor with extracted values
+                                        app.tag_edit = Some(app::TagEditState::new(
+                                            &item.file_path,
+                                            &item.title,
+                                            &item.artist,
+                                            &album,
+                                        ));
+                                    }
+                                },
+                                app::LibraryMode::Directory => {
+                                    // Get selected item from directory
+                                    if let Some(item) = app.library_items.get(app.library_selected) {
+                                        // Only allow editing Songs (not folders)
+                                        if item.item_type == app::LibraryItemType::Song {
+                                            if let Some(path) = &item.path {
+                                                // Try to read album from file directly 📖
+                                                let mut album = String::new();
+                                                #[cfg(feature = "mpd")]
+                                                if !args.controller {
+                                                     let full_path = format!("{}/{}", app.music_directory, path);
+                                                     if let Ok(tagged_file) = lofty::read_from_path(&full_path) {
+                                                         if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+                                                             album = tag.album().as_deref().unwrap_or("").to_string();
+                                                         }
+                                                     }
+                                                }
+
+                                                 app.tag_edit = Some(app::TagEditState::new(
+                                                    path,
+                                                    &item.name,
+                                                    item.artist.as_deref().unwrap_or(""),
+                                                    &album,
+                                                ));
+                                            }
+                                        }
+                                    }
+                                },
+                                _ => {}
                             }
                         },
                         // Delete: d to delete playlist or remove song from queue

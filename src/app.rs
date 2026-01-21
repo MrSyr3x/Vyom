@@ -241,6 +241,9 @@ pub struct App {
     // Persistence & Custom Presets
     pub presets: Vec<EqPreset>,
     pub eq_preset_name: String, // Tracks current preset name for logic
+
+    /// Music directory for local file operations 📂
+    pub music_directory: String,
 }
 
 impl App {
@@ -329,6 +332,8 @@ impl App {
             // Persistence & Custom Presets
             presets,
             eq_preset_name: config.last_preset_name,
+            
+            music_directory: config.music_directory,
         }
     }
     
@@ -518,6 +523,7 @@ impl App {
             balance: self.balance,
             crossfade: self.crossfade_secs,
             replay_gain_mode: self.replay_gain_mode,
+            music_directory: self.music_directory.clone(),
         };
         config.save();
     }
