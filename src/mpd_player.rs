@@ -121,14 +121,36 @@ impl PlayerTrait for MpdPlayer {
         // Build absolute file path for embedded artwork extraction
         let file_path = format!("{}/{}", self.music_directory, song.file);
         
+        // Metadata extraction with Queue Fallback 🛡️
+        // Sometimes currentsong() lacks tags that queue() has.
+        // If artist/album key fields are missing, verify against the queue.
+        let mut artist = song.artist.clone();
+        let mut album = song.album.clone();
+        let mut title = song.title.clone();
+
+        if artist.is_none() || album.is_none() {
+             if let Ok(queue) = conn.queue() {
+                if let Some(queue_song) = queue.iter().find(|s| s.place == song.place) {
+                     // Found match in queue (matched by Place/Id implicit in song struct equality or check Pos/Id)
+                     // rust-mpd Song struct equality checks file path usually. 
+                     // Let's rely on matching file path + position if possible, or just file path.
+                     if queue_song.file == song.file {
+                         if artist.is_none() { artist = queue_song.artist.clone(); }
+                         if album.is_none() { album = queue_song.album.clone(); }
+                         if title.is_none() { title = queue_song.title.clone(); }
+                     }
+                }
+             }
+        }
+
         Ok(Some(TrackInfo {
-            name: song.title.as_deref().or_else(|| find_tag(&song.tags, "Title").as_deref()).unwrap_or(&song.file).to_string(),
-            artist: song.artist.as_deref()
+            name: title.as_deref().or_else(|| find_tag(&song.tags, "Title").as_deref()).unwrap_or(&song.file).to_string(),
+            artist: artist.as_deref()
                 .or_else(|| find_tag(&song.tags, "Artist").as_deref())
                 .or_else(|| find_tag(&song.tags, "AlbumArtist").as_deref())
                 .or_else(|| find_tag(&song.tags, "Composer").as_deref())
                 .unwrap_or("Unknown Artist").to_string(),
-            album: song.album.as_deref()
+            album: album.as_deref()
                 .or_else(|| find_tag(&song.tags, "Album").as_deref())
                 .unwrap_or("Unknown Album").to_string(),
             artwork_url: None, // Will be extracted from embedded art
