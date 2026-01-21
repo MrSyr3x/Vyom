@@ -252,26 +252,26 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .unwrap_or(false);
             
             if is_hires {
-                spans.push(Span::styled("  Hi-Res  ", Style::default()
+                spans.push(Span::styled("\u{00A0}Hi-Res\u{00A0}", Style::default()
                     .fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             } else if is_lossless && track.bit_depth == Some(16) {
-                spans.push(Span::styled("  CD  ", Style::default()
+                spans.push(Span::styled("\u{00A0}CD\u{00A0}", Style::default()
                     .fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             } else if is_lossy {
-                spans.push(Span::styled(" Lossy ", Style::default()
+                spans.push(Span::styled("\u{00A0}Lossy\u{00A0}", Style::default()
                     .fg(theme.base).bg(theme.overlay).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             } else if is_lossless {
-                spans.push(Span::styled(" Lossless ", Style::default()
+                spans.push(Span::styled("\u{00A0}Lossless\u{00A0}", Style::default()
                     .fg(theme.base).bg(theme.cyan).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             }
             
             // Gapless badge (when consecutive tracks from same album)
             if app.gapless_mode {
-                spans.push(Span::styled(" Gapless ", Style::default()
+                spans.push(Span::styled("\u{00A0}Gapless\u{00A0}", Style::default()
                     .fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             }
