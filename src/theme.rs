@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use ratatui::style::Color;
 use std::fs;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Theme {
     pub base: Color,
     pub surface: Color,
@@ -14,7 +14,6 @@ pub struct Theme {
     pub blue: Color,
     pub magenta: Color,
     pub cyan: Color,
-
 }
 
 impl Theme {
@@ -30,13 +29,12 @@ impl Theme {
             blue: Color::Rgb(137, 180, 250),
             magenta: Color::Rgb(203, 166, 247),
             cyan: Color::Rgb(148, 226, 213),
-
         }
     }
 }
 
-// Helper for deserialization
-#[derive(Deserialize)]
+// Helper for serialization/deserialization
+#[derive(Serialize, Deserialize)]
 struct ThemeFile {
     theme: Theme,
 }
@@ -56,6 +54,23 @@ pub fn load_current_theme() -> Theme {
                 return theme;
             }
         }
+    } else {
+        // Auto-create default theme file if it doesn't exist
+        let default_theme = Theme::default();
+        let wrapper = ThemeFile { theme: default_theme.clone() };
+        
+        // Ensure directory exists
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        
+        // Write to file
+        if let Ok(toml_str) = toml::to_string_pretty(&wrapper) {
+            let _ = fs::write(&path, toml_str);
+        }
+        
+        return default_theme;
     }
+    
     Theme::default()
 }

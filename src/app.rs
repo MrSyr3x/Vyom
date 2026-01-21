@@ -401,6 +401,16 @@ impl App {
         }
     }
     
+    /// Called every tick to update state
+    pub fn on_tick(&mut self) {
+        // Handle Toast Expiry
+        if let Some(ref toast) = self.toast {
+            if Instant::now() > toast.deadline {
+                self.toast = None;
+            }
+        }
+    }
+    
     /// Apply current preset to EQ bands
     pub fn apply_preset(&mut self) {
         if self.eq_preset < self.presets.len() {

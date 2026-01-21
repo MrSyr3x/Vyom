@@ -1716,6 +1716,7 @@ async fn main() -> Result<()> {
                     app.visualizer_bars = bars;
                 },
                 AppEvent::Tick => {
+                    app.on_tick();
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
                         if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target

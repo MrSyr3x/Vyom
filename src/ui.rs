@@ -1594,12 +1594,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         
         let now = std::time::Instant::now();
         
-        // Auto-dismiss if deadline passed
-        if now > toast.deadline {
-            app.toast = None;
-        } else {
-            let message = &toast.message;
-            let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
+        // Auto-dismiss handled in App::on_tick()
+        let message = &toast.message;
+        let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
             let height = 3;
             let target_x = f.area().width.saturating_sub(width + 1); // Top-right fixed
             let mut x = target_x;
@@ -1652,7 +1649,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     f.render_widget(text, visible_area);
                 }
             }
-        }
     }
 
     // --- INPUT POPUP ---
