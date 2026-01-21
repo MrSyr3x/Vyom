@@ -539,7 +539,8 @@ impl App {
             let device_name = self.audio_devices[self.selected_device_idx].clone();
             // Actually switch the system audio output
             if audio_device::switch_audio_device(&device_name) {
-                self.output_device = device_name;
+                self.output_device = device_name.clone();
+                self.show_toast(&format!("🎧 Device: {}", device_name));
             }
         }
     }
@@ -558,7 +559,8 @@ impl App {
             let device_name = self.audio_devices[self.selected_device_idx].clone();
             // Actually switch the system audio output
             if audio_device::switch_audio_device(&device_name) {
-                self.output_device = device_name;
+                self.output_device = device_name.clone();
+                self.show_toast(&format!("🎧 Device: {}", device_name));
             }
         }
     }
