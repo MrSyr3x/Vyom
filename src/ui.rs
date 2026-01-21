@@ -252,11 +252,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .unwrap_or(false);
             
             if is_hires {
-                spans.push(Span::styled(" Hi-Res ", Style::default()
+                spans.push(Span::styled("  Hi-Res  ", Style::default()
                     .fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             } else if is_lossless && track.bit_depth == Some(16) {
-                spans.push(Span::styled(" CD ", Style::default()
+                spans.push(Span::styled("  CD  ", Style::default()
                     .fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD)));
                 spans.push(Span::raw(" "));
             } else if is_lossy {
