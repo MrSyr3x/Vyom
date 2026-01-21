@@ -451,21 +451,22 @@ impl App {
     }
     
     /// Mark as custom preset when user manually adjusts bands
+    /// Mark as custom preset when user manually adjusts bands
     pub fn mark_custom(&mut self) {
-        // We don't necessarily reset index, but maybe we switch to "Custom" (index 0) 
-        // if we are editing a standard preset, OR we just let it drift from the saved state.
-        // For simplicity, let's switch to the "Custom" preset (0) if it exists, 
-        // so we don't overwrite named presets until saved.
-        // BUT, if we have dynamic presets, maybe we should just say "Modified"?
-        // Let's stick to the "Custom" slot which is index 0.
-        // WAIT: With dynamic presets, "Custom" might not be 0.
-        // Let's check for "Custom".
+        // Find "Custom" preset or create it
         if let Some(pos) = self.presets.iter().position(|p| p.name == "Custom") {
-             if self.eq_preset != pos {
-                  self.eq_preset = pos;
-             }
+             self.eq_preset = pos;
+             self.eq_preset_name = "Custom".to_string();
+             // Critical: Sync the Custom preset's storage with current live bands
+             // so if we switch away and back, we keep the tweaks.
+             self.presets[pos].bands = self.eq_bands;
+        } else {
+            // "Custom" doesn't exist, create it at index 0
+            let custom = EqPreset::new("Custom", self.eq_bands);
+            self.presets.insert(0, custom);
+            self.eq_preset = 0;
+            self.eq_preset_name = "Custom".to_string();
         }
-        // If "Custom" doesn't exist (e.g. user deleted it), we just stay on current index but it's now dirty.
     }
 
     /// Save current EQ bands as a new preset
