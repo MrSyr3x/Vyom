@@ -776,6 +776,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 };
                 let search_color = if app.search_active { theme.green } else { theme.overlay };
                 
+                // Add padding above search bar (User Request)
+                lines.push(Line::raw(""));
+
                 lines.push(Line::from(vec![
                     Span::styled("  ", Style::default().fg(search_color)),
                     Span::styled(search_text, Style::default().fg(search_color)),
