@@ -125,34 +125,50 @@ impl PlayerTrait for MpdPlayer {
         // Sometimes currentsong() lacks tags that queue() has.
         // If artist/album key fields are missing, verify against the queue.
         let mut artist = song.artist.clone();
-        let mut album = song.album.clone();
+        // Album is NOT a field on mpd::Song, must access via tags
+        let mut album = find_tag(&song.tags, "Album");
+        let mut title = song.title.clone();
+
+        // Metadata extraction with Queue Fallback 🛡️
+        // Sometimes currentsong() lacks tags that queue() has.
+        // If artist/album key fields are missing, verify against the queue.
+        let mut artist = song.artist.clone();
+        // Album is NOT a field on mpd::Song, must access via tags
+        let mut album = find_tag(&song.tags, "Album");
         let mut title = song.title.clone();
 
         if artist.is_none() || album.is_none() {
              if let Ok(queue) = conn.queue() {
                 if let Some(queue_song) = queue.iter().find(|s| s.place == song.place) {
-                     // Found match in queue (matched by Place/Id implicit in song struct equality or check Pos/Id)
-                     // rust-mpd Song struct equality checks file path usually. 
-                     // Let's rely on matching file path + position if possible, or just file path.
+                     // Found match in queue
                      if queue_song.file == song.file {
                          if artist.is_none() { artist = queue_song.artist.clone(); }
-                         if album.is_none() { album = queue_song.album.clone(); }
+                         if album.is_none() { album = find_tag(&queue_song.tags, "Album"); }
                          if title.is_none() { title = queue_song.title.clone(); }
                      }
+                } else {
+                    // Try finding by path if place match failed
+                    if let Some(queue_song_path) = queue.iter().find(|s| s.file == song.file) {
+                         if artist.is_none() { artist = queue_song_path.artist.clone(); }
+                         if album.is_none() { album = find_tag(&queue_song_path.tags, "Album"); }
+                         if title.is_none() { title = queue_song_path.title.clone(); }
+                    }
                 }
              }
         }
 
+        let final_artist = artist
+                .or_else(|| find_tag(&song.tags, "Artist"))
+                .or_else(|| find_tag(&song.tags, "AlbumArtist"))
+                .or_else(|| find_tag(&song.tags, "Composer"))
+                .unwrap_or_else(|| "Unknown Artist".to_string());
+
         Ok(Some(TrackInfo {
-            name: title.as_deref().or_else(|| find_tag(&song.tags, "Title").as_deref()).unwrap_or(&song.file).to_string(),
-            artist: artist.as_deref()
-                .or_else(|| find_tag(&song.tags, "Artist").as_deref())
-                .or_else(|| find_tag(&song.tags, "AlbumArtist").as_deref())
-                .or_else(|| find_tag(&song.tags, "Composer").as_deref())
-                .unwrap_or("Unknown Artist").to_string(),
-            album: album.as_deref()
-                .or_else(|| find_tag(&song.tags, "Album").as_deref())
-                .unwrap_or("Unknown Album").to_string(),
+            name: title.or_else(|| find_tag(&song.tags, "Title")).unwrap_or_else(|| song.file.clone()),
+            artist: final_artist,
+            album: album
+                .or_else(|| find_tag(&song.tags, "Album"))
+                .unwrap_or_else(|| "Unknown Album".to_string()),
             artwork_url: None, // Will be extracted from embedded art
             duration_ms,
             position_ms,
