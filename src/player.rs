@@ -36,7 +36,7 @@ pub struct TrackInfo {
 /// The unified interface for any OS Media Player 🎵
 pub trait PlayerTrait: Send + Sync {
     fn get_current_track(&self) -> Result<Option<TrackInfo>>;
-    fn play_pause(&self) -> Result<()>;
+    fn play_pause(&self) -> Result<bool>;
     fn next(&self) -> Result<()>;
     fn prev(&self) -> Result<()>;
     fn seek(&self, position_secs: f64) -> Result<()>;
@@ -197,11 +197,22 @@ impl PlayerTrait for MacOsPlayer {
         }
     }
 
-    fn play_pause(&self) -> Result<()> {
+    fn play_pause(&self) -> Result<bool> {
         if let Some(app) = self.detect_active_player() {
-            Self::run_script(&format!("tell application \"{}\" to playpause", app))?;
+            // Toggle and then check logic
+            let script = format!(r#"
+                tell application "{}"
+                    playpause
+                    delay 0.1
+                    return player state as string
+                end tell
+            "#, app);
+            
+            let output = Self::run_script(&script)?;
+            Ok(output == "playing")
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     fn next(&self) -> Result<()> {
@@ -247,7 +258,7 @@ pub struct DummyPlayer;
 #[cfg(not(target_os = "macos"))]
 impl PlayerTrait for DummyPlayer {
     fn get_current_track(&self) -> Result<Option<TrackInfo>> { Ok(None) }
-    fn play_pause(&self) -> Result<()> { Ok(()) }
+    fn play_pause(&self) -> Result<bool> { Ok(false) }
     fn next(&self) -> Result<()> { Ok(()) }
     fn prev(&self) -> Result<()> { Ok(()) }
     fn seek(&self, _pos: f64) -> Result<()> { Ok(()) }

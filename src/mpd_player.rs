@@ -143,15 +143,23 @@ impl PlayerTrait for MpdPlayer {
         }))
     }
 
-    fn play_pause(&self) -> Result<()> {
+    fn play_pause(&self) -> Result<bool> {
         let mut conn = self.connect()?;
         let status = conn.status()?;
         match status.state {
-            State::Play => conn.pause(true)?,
-            State::Pause => conn.pause(false)?,
-            State::Stop => conn.play()?,
+            State::Play => {
+                conn.pause(true)?;
+                Ok(false) // Now Paused
+            },
+            State::Pause => {
+                conn.pause(false)?;
+                Ok(true) // Now Playing
+            },
+            State::Stop => {
+                conn.play()?;
+                Ok(true) // Now Playing
+            }
         }
-        Ok(())
     }
 
     fn next(&self) -> Result<()> {

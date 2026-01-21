@@ -655,8 +655,9 @@ async fn main() -> Result<()> {
                                 }
                             },
                             KeyCode::Char(' ') => { 
-                                let _ = player.play_pause();
-                                app.show_toast("⏯ Play/Pause");
+                                if let Ok(is_playing) = player.play_pause() {
+                                    app.show_toast(if is_playing { "▶ Play" } else { "⏸ Pause" });
+                                }
                             },
                             KeyCode::Char('n') => { 
                                 let _ = player.next();
