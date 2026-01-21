@@ -913,6 +913,13 @@ async fn main() -> Result<()> {
                                 }
                             }
                         },
+                        // Audio Device Switching: d/D (Global in Controller Mode / Lyrics / Cava) 🎧
+                        KeyCode::Char('d') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Cava) => {
+                            app.next_device();
+                        },
+                        KeyCode::Char('D') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Cava) => {
+                            app.prev_device();
+                        },
                         // EQ Controls (only when in EQ view) 🎚️
                         // Navigation: Left/Right or h/l ↔️
                         KeyCode::Left | KeyCode::Char('h') if app.view_mode == app::ViewMode::EQ => {

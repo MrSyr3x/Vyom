@@ -1809,6 +1809,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("x", "🔁", "Repeat"),
                 ("1-4", "🖼️", "View modes"),
                 ("h/l", "⏩", "Seek ±5s"),
+                ("d/D", "🎧", "Output device"),
                 ("i", "ℹ️", "Audio info"),
                 ("q", "🚪", "Quit"),
             ]
@@ -1820,6 +1821,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("p", "⏮️", "Previous track"),
                 ("+/-", "🔊", "Volume"),
                 ("h/l", "⏩", "Seek ±5s"),
+                ("d/D", "🎧", "Output device"),
                 ("i", "ℹ️", "Audio info"),
                 ("q", "🚪", "Quit"),
             ]
