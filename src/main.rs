@@ -1668,12 +1668,13 @@ async fn main() -> Result<()> {
                                 let tx_lyrics = tx.clone();
                                 let (artist, name, dur) = (track.artist.clone(), track.name.clone(), track.duration_ms);
                                 let fetch_id = id.clone();
+                                let file_path = track.file_path.clone();
                                 
                                 let client = client.clone();
                                 tokio::spawn(async move {
                                     let fetcher = LyricsFetcher::new(client);
                                     use crate::lyrics::LyricsFetchResult;
-                                    match fetcher.fetch(&artist, &name, dur).await {
+                                    match fetcher.fetch(&artist, &name, dur, file_path.as_ref()).await {
                                         Ok(LyricsFetchResult::Found(lyrics)) => { 
                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics))).await;
                                         },

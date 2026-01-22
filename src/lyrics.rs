@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "mpd")]
+use lofty::{prelude::Accessor, file::TaggedFileExt, tag::ItemKey};
+
 #[derive(Debug, Deserialize)]
 pub struct LrclibResponse {
     #[serde(rename = "syncedLyrics")]
@@ -115,8 +118,17 @@ impl LyricsFetcher {
         primary.trim().to_string()
     }
 
-    pub async fn fetch(&self, artist: &str, title: &str, duration_ms: u64) -> Result<LyricsFetchResult> {
-        // 0. Check Disk Cache 💾
+
+
+    pub async fn fetch(&self, artist: &str, title: &str, duration_ms: u64, file_path: Option<&String>) -> Result<LyricsFetchResult> {
+        // 0. Check Local File (Embedded or LRC) 📂
+        if let Some(path_str) = file_path {
+            if let Some(local_res) = self.fetch_impl_local(path_str) {
+                return Ok(local_res);
+            }
+        }
+
+        // 1. Check Disk Cache 💾
         let cache_path = self.get_cache_path(artist, title);
         if let Some(path) = &cache_path {
             if let Some(cached_lyrics) = self.load_from_cache(path) {
@@ -137,7 +149,7 @@ impl LyricsFetcher {
             ("duration", duration_str.as_str()),
         ];
 
-        // 1. Try Exact (/get)
+        // 2. Try Exact (/get)
         let resp = self.client.get(url).query(&params).send().await?;
         if resp.status().is_success() {
              let data: LrclibResponse = resp.json().await?;
@@ -155,7 +167,7 @@ impl LyricsFetcher {
              }
         }
 
-        // 2. Try Search (/search) with CLEAN title and ORIGINAL artist
+        // 3. Try Search (/search) with CLEAN title and ORIGINAL artist
         let search_res = self.search(artist, &safe_title, duration_ms).await?;
         if let LyricsFetchResult::Found(ref lines) = search_res {
             if let Some(path) = &cache_path {
@@ -167,7 +179,7 @@ impl LyricsFetcher {
              return Ok(search_res);
         }
 
-        // 3. Try Search with PRIMARY artist (NEW Fallback) 🎯
+        // 4. Try Search with PRIMARY artist (NEW Fallback) 🎯
         let safe_artist = Self::clean_artist(artist);
         if safe_artist != artist.to_lowercase() {
              let primary_res = self.search(&safe_artist, &safe_title, duration_ms).await?;
@@ -181,6 +193,64 @@ impl LyricsFetcher {
              // Already tried with this artist name (it was clean)
              Ok(search_res)
         }
+    }
+
+    fn fetch_impl_local(&self, path_str: &str) -> Option<LyricsFetchResult> {
+        let path = Path::new(path_str);
+        
+        // A. Check sidecar .lrc file
+        let lrc_path = path.with_extension("lrc");
+        if lrc_path.exists() {
+            if let Ok(content) = fs::read_to_string(lrc_path) {
+                // Determine if synced or plain by checking for timestamps
+                let is_synced = content.contains(']'); 
+                if is_synced {
+                     let lines = self.parse_lrc_content(&content);
+                     if !lines.is_empty() {
+                         return Some(LyricsFetchResult::Found(lines));
+                     }
+                }
+            }
+        }
+
+        // B. Check Embedded Lyrics (lofty)
+        #[cfg(feature = "mpd")]
+        {
+            if let Ok(tagged_file) = lofty::read_from_path(path) {
+                // Try primary tag first, then first tag
+                let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+                
+                if let Some(tag) = tag {
+                     if let Some(lyrics) = tag.get_string(&ItemKey::Lyrics).map(|s| s.to_string()) {
+                        let is_synced = lyrics.contains(']');
+                        if is_synced {
+                            let lines = self.parse_lrc_content(&lyrics);
+                            if !lines.is_empty() {
+                                return Some(LyricsFetchResult::Found(lines));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    fn parse_lrc_content(&self, content: &str) -> Vec<LyricLine> {
+        let mut lines = Vec::new();
+        for line in content.lines() {
+            if let Some(idx) = line.find(']') {
+                 if line.starts_with('[') {
+                    let timestamp_str = &line[1..idx];
+                    let text = line[idx+1..].trim().to_string();
+                    if let Some(ms) = self.parse_timestamp(timestamp_str) {
+                         lines.push(LyricLine { timestamp_ms: ms, text });
+                    }
+                 }
+            }
+        }
+        lines
     }
 
     async fn search(&self, artist: &str, title: &str, duration_ms: u64) -> Result<LyricsFetchResult> {
@@ -198,9 +268,6 @@ impl LyricsFetcher {
             if let Some(dur) = r.duration {
                 (dur - target_dur).abs() <= 3.0
             } else {
-                // If API doesn't return duration, strict mode says NO? 
-                // Or YES to be safe? 
-                // Let's say NO to be strict. Most entries have duration.
                 false
             }
         };
@@ -224,24 +291,10 @@ impl LyricsFetcher {
             return LyricsFetchResult::Instrumental;
         }
         
-        // Reuse parsing logic via helper or just inline? 
-        // LrclibResponse ownership consumed here
         let raw = data.synced_lyrics.or(data.plain_lyrics);
         if raw.is_none() { return LyricsFetchResult::None; }
         
-        let mut lines = Vec::new();
-        for line in raw.unwrap().lines() {
-            if let Some(idx) = line.find(']') {
-                 if line.starts_with('[') {
-                    let timestamp_str = &line[1..idx];
-                    let text = line[idx+1..].trim().to_string();
-                    if let Some(ms) = self.parse_timestamp(timestamp_str) {
-                         lines.push(LyricLine { timestamp_ms: ms, text });
-                    }
-                 }
-            }
-        }
-        
+        let lines = self.parse_lrc_content(&raw.unwrap());
         if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
     }
     
@@ -253,22 +306,7 @@ impl LyricsFetcher {
         let raw = data.synced_lyrics.as_ref().or(data.plain_lyrics.as_ref());
          if raw.is_none() { return LyricsFetchResult::None; }
          
-         // ... duplicate logic or clone? Clone data is cheap (strings)
-         // Let's just clone and call parse
-         // Actually LrclibResponse is not Clone. 
-         // Manual parse:
-        let mut lines = Vec::new();
-        for line in raw.unwrap().lines() {
-            if let Some(idx) = line.find(']') {
-                 if line.starts_with('[') {
-                    let timestamp_str = &line[1..idx];
-                    let text = line[idx+1..].trim().to_string();
-                    if let Some(ms) = self.parse_timestamp(timestamp_str) {
-                         lines.push(LyricLine { timestamp_ms: ms, text });
-                    }
-                 }
-            }
-        }
+         let lines = self.parse_lrc_content(raw.unwrap());
          if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
     }
 
@@ -293,3 +331,4 @@ impl LyricsFetcher {
         Some(min * 60000 + sec * 1000 + ms)
     }
 }
+
