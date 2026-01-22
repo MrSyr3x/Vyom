@@ -1289,8 +1289,13 @@ async fn main() -> Result<()> {
                         },
                         // Shuffle toggle: z
                         KeyCode::Char('z') => {
-                            #[cfg(feature = "mpd")]
-                            if !args.controller {
+                            if args.controller {
+                                let new_state = !app.shuffle;
+                                let _ = player.shuffle(new_state);
+                                app.shuffle = new_state;
+                                app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
+                            } else {
+                                #[cfg(feature = "mpd")]
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(status) = mpd.status() {
                                         let new_state = !status.random;
@@ -1303,8 +1308,13 @@ async fn main() -> Result<()> {
                         },
                         // Repeat toggle: x
                         KeyCode::Char('x') => {
-                            #[cfg(feature = "mpd")]
-                            if !args.controller {
+                            if args.controller {
+                                let new_state = !app.repeat;
+                                let _ = player.repeat(new_state);
+                                app.repeat = new_state;
+                                app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
+                            } else {
+                                #[cfg(feature = "mpd")]
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     if let Ok(status) = mpd.status() {
                                         let new_state = !status.repeat;
@@ -1782,6 +1792,28 @@ async fn main() -> Result<()> {
                 },
                 AppEvent::Tick => {
                     app.on_tick();
+                    
+                    // Poll Shuffle/Repeat status every ~2 seconds (120 ticks at 16ms/tick, roughly)
+                    // Actually tick rate is 100ms? View main loop setup.
+                    // Assuming ~10Hz or similar.
+                    if args.controller {
+                         use std::time::{SystemTime, UNIX_EPOCH};
+                         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                         // Simple 1s throttle: check if second changed or use counter
+                         // Using random counter for simplicity if we don't have global state here
+                         // Actually app.on_tick() handles seek accumulation.
+                         // Let's use a counter in App if available? No.
+                         // Use system time check.
+                         static mut LAST_SYNC: u64 = 0;
+                         unsafe {
+                             if now > LAST_SYNC {
+                                 LAST_SYNC = now;
+                                 if let Ok(s) = player.get_shuffle() { app.shuffle = s; }
+                                 if let Ok(r) = player.get_repeat() { app.repeat = r; }
+                             }
+                         }
+                    }
+
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
                         if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target

@@ -249,6 +249,58 @@ impl PlayerTrait for MacOsPlayer {
         }
         Ok(())
     }
+
+    fn shuffle(&self, enable: bool) -> Result<()> {
+        if let Some(app) = self.detect_active_player() {
+            if app == "Spotify" {
+                Self::run_script(&format!("tell application \"Spotify\" to set shuffling to {}", enable))?;
+            } else if app == "Music" {
+                 Self::run_script(&format!("tell application \"Music\" to set shuffle enabled to {}", enable))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn repeat(&self, enable: bool) -> Result<()> {
+         if let Some(app) = self.detect_active_player() {
+            if app == "Spotify" {
+                Self::run_script(&format!("tell application \"Spotify\" to set repeating to {}", enable))?;
+            } else if app == "Music" {
+                let val = if enable { "all" } else { "off" };
+                Self::run_script(&format!("tell application \"Music\" to set song repeat to {}", val))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn get_shuffle(&self) -> Result<bool> {
+        if let Some(app) = self.detect_active_player() {
+            let script = if app == "Spotify" {
+                "tell application \"Spotify\" to return shuffling"
+            } else {
+                "tell application \"Music\" to return shuffle enabled"
+            };
+            let output = Self::run_script(script)?;
+            Ok(output == "true")
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn get_repeat(&self) -> Result<bool> {
+         if let Some(app) = self.detect_active_player() {
+            if app == "Spotify" {
+                let output = Self::run_script("tell application \"Spotify\" to return repeating")?;
+                Ok(output == "true")
+            } else {
+                let output = Self::run_script("tell application \"Music\" to return song repeat")?;
+                // Music returns: off, one, all
+                Ok(output == "all" || output == "one")
+            }
+        } else {
+            Ok(false)
+        }
+    }
 }
 
 // --- Dummy Implementation (Linux/Windows Placeholder) ---

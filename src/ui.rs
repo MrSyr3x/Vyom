@@ -311,18 +311,32 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             None
         };
         
+        // Helper to truncate strings that are too long
+        let max_width = music_chunks[info_idx].width.saturating_sub(4) as usize; // -4 for padding/prefixes
+        
+        let truncate = |s: &str, prefix_len: usize| -> String {
+            let available = max_width.saturating_sub(prefix_len);
+            if s.chars().count() > available {
+                let mut truncated: String = s.chars().take(available.saturating_sub(1)).collect();
+                truncated.push('…');
+                truncated
+            } else {
+                s.to_string()
+            }
+        };
+
         let mut info_text = vec![
             Line::from(Span::styled(
-                format!("🎵 {}", track.name),
+                format!("🎵 {}", truncate(&track.name, 2)),
                 Style::default().fg(theme.text).add_modifier(Modifier::BOLD)
             )),
             Line::from(vec![
                 Span::raw("🎤 "),
-                Span::styled(&track.artist, Style::default().fg(theme.magenta)), 
+                Span::styled(truncate(&track.artist, 2), Style::default().fg(theme.magenta)), 
             ]),
             Line::from(vec![
                 Span::raw("💿 "),
-                Span::styled(&track.album, Style::default().fg(theme.cyan).add_modifier(Modifier::DIM)), 
+                Span::styled(truncate(&track.album, 2), Style::default().fg(theme.cyan).add_modifier(Modifier::DIM)), 
             ]),
         ];
         
@@ -333,7 +347,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         
         let info = Paragraph::new(info_text)
             .alignment(Alignment::Center)
-            .wrap(ratatui::widgets::Wrap { trim: true })
+            // .wrap(ratatui::widgets::Wrap { trim: true }) // Removed wrapping to prevent layout shift
             .block(Block::default().style(Style::default().bg(Color::Reset)));
         f.render_widget(info, music_chunks[info_idx]);
 
@@ -429,12 +443,19 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .split(controls_area);
 
             // 1. Buttons (Top)
+            let shuffle_style = if app.shuffle { Style::default().fg(theme.green) } else { Style::default().fg(theme.surface) };
+            let repeat_style = if app.repeat { Style::default().fg(theme.blue) } else { Style::default().fg(theme.surface) };
+
             let controls_text = Line::from(vec![
+                Span::styled("🔀 ", shuffle_style),
+                Span::raw("   "),
                 Span::styled(prev_str, btn_style),
                 Span::raw("   "), 
                 Span::styled(play_str, btn_style),
                 Span::raw("   "), 
                 Span::styled(next_str, btn_style),
+                Span::raw("   "),
+                Span::styled("🔁 ", repeat_style),
             ]);
             
             let controls_widget = Paragraph::new(controls_text)
@@ -502,13 +523,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Span::styled(mode_title, Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD))
         ]));
 
-        // Shuffle/Repeat status icons
-        let shuffle_icon = if app.shuffle { " 🔀 " } else { "" };
-        let repeat_icon = if app.repeat { " 🔁 " } else { "" };
-
         let credits_title = Line::from(vec![
-            Span::styled(shuffle_icon, Style::default().fg(theme.green)),
-            Span::styled(repeat_icon, Style::default().fg(theme.blue)),
             Span::styled(" ~ by syr3x </3 ", Style::default()
                 .bg(Color::Rgb(235, 111, 146)) // #eb6f92
                 .fg(theme.base) 
