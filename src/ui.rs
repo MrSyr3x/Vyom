@@ -443,20 +443,28 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .split(controls_area);
 
             // 1. Buttons (Top)
-            let shuffle_style = if app.shuffle { Style::default().fg(theme.green) } else { Style::default().fg(theme.surface) };
-            let repeat_style = if app.repeat { Style::default().fg(theme.blue) } else { Style::default().fg(theme.surface) };
+            let mut controls_spans = Vec::new();
 
-            let controls_text = Line::from(vec![
-                Span::styled("🔀 ", shuffle_style),
-                Span::raw("   "),
-                Span::styled(prev_str, btn_style),
-                Span::raw("   "), 
-                Span::styled(play_str, btn_style),
-                Span::raw("   "), 
-                Span::styled(next_str, btn_style),
-                Span::raw("   "),
-                Span::styled("🔁 ", repeat_style),
-            ]);
+            // Shuffle (Left)
+            if app.shuffle {
+                controls_spans.push(Span::styled("🔀 ", Style::default().fg(theme.green)));
+                controls_spans.push(Span::raw("   "));
+            }
+
+            // Main Controls
+            controls_spans.push(Span::styled(prev_str, btn_style));
+            controls_spans.push(Span::raw("   "));
+            controls_spans.push(Span::styled(play_str, btn_style));
+            controls_spans.push(Span::raw("   "));
+            controls_spans.push(Span::styled(next_str, btn_style));
+
+            // Repeat (Right)
+            if app.repeat {
+                controls_spans.push(Span::raw("   "));
+                controls_spans.push(Span::styled("🔁 ", Style::default().fg(theme.blue)));
+            }
+
+            let controls_text = Line::from(controls_spans);
             
             let controls_widget = Paragraph::new(controls_text)
                 .alignment(Alignment::Center)
