@@ -442,34 +442,44 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ])
                 .split(controls_area);
 
-            // 1. Buttons (Top)
-            let mut controls_spans = Vec::new();
+            // 1. Buttons (Top) - 3-Column Layout for seamless centering
+            let button_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(36), // Fixed width for center controls ensuring absolute center
+                    Constraint::Fill(1),
+                ])
+                .split(chunks[0]);
 
-            // Shuffle (Left)
+            // Left: Shuffle (Align Right)
             if app.shuffle {
-                controls_spans.push(Span::styled("🔀 ", Style::default().fg(theme.green)));
-                controls_spans.push(Span::raw("   "));
+                let shuffle_widget = Paragraph::new(Span::styled("🔀 ", Style::default().fg(theme.green)))
+                    .alignment(Alignment::Right)
+                    .block(Block::default());
+                f.render_widget(shuffle_widget, button_layout[0]);
             }
 
-            // Main Controls
-            controls_spans.push(Span::styled(prev_str, btn_style));
-            controls_spans.push(Span::raw("   "));
-            controls_spans.push(Span::styled(play_str, btn_style));
-            controls_spans.push(Span::raw("   "));
-            controls_spans.push(Span::styled(next_str, btn_style));
-
-            // Repeat (Right)
-            if app.repeat {
-                controls_spans.push(Span::raw("   "));
-                controls_spans.push(Span::styled("🔁 ", Style::default().fg(theme.blue)));
-            }
-
-            let controls_text = Line::from(controls_spans);
-            
-            let controls_widget = Paragraph::new(controls_text)
+            // Center: Prev / Play / Next (Always Centered)
+            let center_spans = Line::from(vec![
+                Span::styled(prev_str, btn_style),
+                Span::raw("   "), 
+                Span::styled(play_str, btn_style),
+                Span::raw("   "), 
+                Span::styled(next_str, btn_style),
+            ]);
+            let center_widget = Paragraph::new(center_spans)
                 .alignment(Alignment::Center)
                 .block(Block::default());
-            f.render_widget(controls_widget, chunks[0]);
+            f.render_widget(center_widget, button_layout[1]);
+
+            // Right: Repeat (Align Left)
+            if app.repeat {
+                let repeat_widget = Paragraph::new(Span::styled(" 🔁", Style::default().fg(theme.blue)))
+                    .alignment(Alignment::Left)
+                    .block(Block::default());
+                f.render_widget(repeat_widget, button_layout[2]);
+            }
 
             // 2. Volume Bar (Bottom) - if we have space
             if chunks.len() >= 3 {
