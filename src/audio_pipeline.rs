@@ -244,7 +244,8 @@ fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
         .map_err(|e| format!("Failed to send request: {}", e))?;
     
     // Read HTTP headers
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let cloned_stream = stream.try_clone().map_err(|e| format!("Failed to clone stream: {}", e))?;
+    let mut reader = BufReader::new(cloned_stream);
     let mut header_line = String::new();
     loop {
         header_line.clear();
@@ -298,7 +299,11 @@ fn run_http_audio_loop(
     let stream = device.build_output_stream(
         &stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let mut buffer = ring_buffer_clone.lock().unwrap();
+            let mut buffer = if let Ok(buf) = ring_buffer_clone.lock() {
+                buf
+            } else {
+                return; // Mutex poison - skip
+            };
             let mut fade = f32::from_bits(fade_level_clone.load(Ordering::Relaxed));
             
             // Calculate Gain 🎚️
@@ -437,7 +442,11 @@ fn run_fifo_audio_loop(
     let stream = device.build_output_stream(
         &stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let mut buffer = ring_buffer_clone.lock().unwrap();
+            let mut buffer = if let Ok(buf) = ring_buffer_clone.lock() {
+                buf
+            } else {
+                return;
+            };
             let mut fade = f32::from_bits(fade_level_clone.load(Ordering::Relaxed));
             
             // Calculate Gain 🎚️

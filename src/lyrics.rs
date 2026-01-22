@@ -291,11 +291,13 @@ impl LyricsFetcher {
             return LyricsFetchResult::Instrumental;
         }
         
-        let raw = data.synced_lyrics.or(data.plain_lyrics);
-        if raw.is_none() { return LyricsFetchResult::None; }
-        
-        let lines = self.parse_lrc_content(&raw.unwrap());
-        if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
+        let raw_opt = data.synced_lyrics.or(data.plain_lyrics);
+        if let Some(raw) = raw_opt {
+             let lines = self.parse_lrc_content(&raw);
+             if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
+        } else {
+             LyricsFetchResult::None
+        }
     }
     
     // Helper for reference (Search)
@@ -303,11 +305,13 @@ impl LyricsFetcher {
         if data.instrumental {
             return LyricsFetchResult::Instrumental;
         }
-        let raw = data.synced_lyrics.as_ref().or(data.plain_lyrics.as_ref());
-         if raw.is_none() { return LyricsFetchResult::None; }
-         
-         let lines = self.parse_lrc_content(raw.unwrap());
-         if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
+        let raw_opt = data.synced_lyrics.as_ref().or(data.plain_lyrics.as_ref());
+         if let Some(raw) = raw_opt {
+             let lines = self.parse_lrc_content(raw);
+             if lines.is_empty() { LyricsFetchResult::None } else { LyricsFetchResult::Found(lines) }
+         } else {
+             LyricsFetchResult::None
+         }
     }
 
     fn parse_timestamp(&self, ts: &str) -> Option<u64> {

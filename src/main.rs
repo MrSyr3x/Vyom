@@ -1758,6 +1758,9 @@ async fn main() -> Result<()> {
                 AppEvent::LyricsUpdate(id, state) => {
                     // Update cache if loaded
                     if let LyricsState::Loaded(ref l) = state {
+                         if app.lyrics_cache.len() > 50 {
+                             app.lyrics_cache.clear();
+                         }
                          app.lyrics_cache.insert(id.clone(), l.clone());
                     }
                     
