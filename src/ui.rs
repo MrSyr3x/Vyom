@@ -1147,11 +1147,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     lines.push(Line::from(""));
                     
                     // ━━━ BALANCE SLIDER ━━━
-                    let slider_w = (w * 50 / 100).max(20);
+                    let mut slider_w = (w * 50 / 100).max(21);
+                    if slider_w % 2 == 0 { slider_w += 1; } // Force odd width for perfect center
                     let pad = (w.saturating_sub(slider_w + 6)) / 2;
-                    let bal_pos = ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32) as usize;
+                    let bal_pos = ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32).round() as usize;
                     let center_pos = slider_w / 2;
-                    let show_center_marker = (bal_pos as i32 - center_pos as i32).abs() > 2;
+                    let show_center_marker = bal_pos != center_pos;
                     
                     // Label colors based on balance direction - use actual value to avoid resize rounding issues
                     let is_panned_left = app.balance < -0.02;
