@@ -10,6 +10,7 @@ use image::DynamicImage;
 use crate::theme::Theme;
 use crate::audio_device;
 use crate::dsp_eq::EqGains;
+use crate::visualizer::Visualizer;
 
 
 
@@ -35,7 +36,7 @@ pub enum ArtworkState {
 pub enum ViewMode {
     #[default]
     Lyrics,
-    Cava,
+    Visualizer,
     Library,  // Renamed from Queue → Library
     EQ,
 }
@@ -201,6 +202,7 @@ pub struct App {
     
     /// Visualizer bars (0.0-1.0 heights) 📊
     pub visualizer_bars: Vec<f32>,
+    pub visualizer: Visualizer,
     
     /// EQ State 🎛️
     /// 10-band EQ: 32Hz, 64Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz
@@ -261,7 +263,7 @@ impl App {
             .position(|p| p.name == config.last_preset_name)
             .unwrap_or(0); // Default to first (Custom or Flat)
 
-        Self {
+        let mut app = Self {
             theme: crate::theme::load_current_theme(),
             is_running: true,
             track: None,
@@ -291,7 +293,8 @@ impl App {
             search_query: String::new(),
             search_active: false,
             playlists: Vec::new(),
-            visualizer_bars: vec![0.3; 32], // Start with 32 bars at 30% height
+            visualizer_bars: vec![0.0; 60], 
+            visualizer: Visualizer::new(44100), // Default 44.1k, will adapt? Or fixed for vis?
             
             // Persistence loading
             eq_bands: config.eq_bands,
@@ -334,7 +337,13 @@ impl App {
             eq_preset_name: config.last_preset_name,
             
             music_directory: config.music_directory,
-        }
+        };
+
+        // CRITICAL FIX: Sync loaded EQ state to DSP engine immediately! 🔊
+        // Otherwise, we launch with flat EQ despite UI showing "Bass Boost".
+        app.sync_eq_to_dsp();
+        
+        app
     }
     
     pub fn get_current_position_ms(&self) -> u64 {

@@ -15,11 +15,13 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::fs::OpenOptionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use std::collections::VecDeque;
 
 use crate::dsp_eq::{DspEqualizer, EqGains};
+use crate::visualizer::Visualizer;
 
 /// Default settings
 pub const DEFAULT_HOST: &str = "127.0.0.1";
@@ -137,6 +139,8 @@ pub struct AudioPipeline {
     running: Arc<AtomicBool>,
     pub global_volume: Arc<std::sync::atomic::AtomicU8>,
     thread_handle: Option<thread::JoinHandle<()>>,
+    /// Shared buffer for visualizer
+    pub vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
 }
 
 impl AudioPipeline {
@@ -148,6 +152,7 @@ impl AudioPipeline {
             running: Arc::new(AtomicBool::new(false)),
             global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
+            vis_buffer: None,
         }
     }
     
@@ -163,7 +168,13 @@ impl AudioPipeline {
             running: Arc::new(AtomicBool::new(false)),
             global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
+            vis_buffer: None,
         }
+    }
+    
+    /// Attach visualizer buffer
+    pub fn attach_visualizer(&mut self, buffer: Arc<Mutex<VecDeque<f32>>>) {
+        self.vis_buffer = Some(buffer);
     }
     
     /// Set global volume (0-100)
@@ -183,16 +194,17 @@ impl AudioPipeline {
         let global_volume = self.global_volume.clone();
         let source = self.config.source.clone();
         let format = self.config.format.clone();
+        let vis_buffer = self.vis_buffer.clone();
         
         running.store(true, Ordering::SeqCst);
         
         let handle = thread::spawn(move || {
             let result = match source {
                 AudioSource::Http { host, port } => {
-                    run_http_audio_loop(&host, port, &format, eq_gains, running.clone(), global_volume)
+                    run_http_audio_loop(&host, port, &format, eq_gains, running.clone(), global_volume, vis_buffer)
                 }
                 AudioSource::Fifo { path } => {
-                    run_fifo_audio_loop(&path, &format, eq_gains, running.clone(), global_volume)
+                    run_fifo_audio_loop(&path, &format, eq_gains, running.clone(), global_volume, vis_buffer)
                 }
             };
             
@@ -272,6 +284,7 @@ fn run_http_audio_loop(
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
     global_volume: Arc<std::sync::atomic::AtomicU8>,
+    vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -296,6 +309,10 @@ fn run_http_audio_loop(
     
     const FADE_SPEED: f32 = 0.005;
     
+    // VISUALIZER: Clone buffer ref for callback
+    let vis_buffer_clone = vis_buffer.clone();
+    let channels = format.channels as usize;
+    
     let stream = device.build_output_stream(
         &stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -319,6 +336,12 @@ fn run_http_audio_loop(
                     *sample = 0.0;
                 }
             }
+            
+            // Send copy of samples to visualizer
+            if let Some(vis) = &vis_buffer_clone {
+                Visualizer::push_samples(vis, data, channels);
+            }
+            
             fade_level_clone.store(fade.to_bits(), Ordering::Relaxed);
         },
         |err| eprintln!("Audio stream error: {}", err),
@@ -406,6 +429,7 @@ fn run_fifo_audio_loop(
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
     global_volume: Arc<std::sync::atomic::AtomicU8>,
+    vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -439,6 +463,10 @@ fn run_fifo_audio_loop(
     
     const FADE_SPEED: f32 = 0.003; // Slower fade for Hi-Res
     
+    // VISUALIZER
+    let vis_buffer_clone = vis_buffer.clone();
+    let channels_usize = channels as usize;
+    
     let stream = device.build_output_stream(
         &stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -462,6 +490,12 @@ fn run_fifo_audio_loop(
                     *sample = 0.0;
                 }
             }
+            
+            // Broadcast to Visualizer
+            if let Some(vis) = &vis_buffer_clone {
+                Visualizer::push_samples(vis, data, channels_usize);
+            }
+            
             fade_level_clone.store(fade.to_bits(), Ordering::Relaxed);
         },
         |err| eprintln!("Audio stream error: {}", err),

@@ -532,7 +532,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         // Dynamic title based on view mode 🎛️
         let mode_title = match app.view_mode {
             ViewMode::Lyrics => " Lyrics ",
-            ViewMode::Cava => " Cava ",
+            ViewMode::Visualizer => " Visualizer ",
             ViewMode::Library => " Library ",
             ViewMode::EQ => " EQ ",
         };
@@ -658,7 +658,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     }
                 }
             },
-            ViewMode::Cava => {
+            ViewMode::Visualizer => {
                 // 🌊 Premium Cava Spectrum Visualizer with Mirror Effect
                 let width = inner_lyrics_area.width as usize;
                 let height = inner_lyrics_area.height as usize;
@@ -670,18 +670,19 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     f.render_widget(msg, inner_lyrics_area);
                 } else {
                     // Use single-char bars for cleaner look
-                    let bar_count = (width / 2).max(8).min(64);
+                    // AUTO-SCALE: Use as many bars as fit (width/2), capped only by practical limits (256)
+                    let bar_count = (width / 2).max(8).min(256);
                     
-                    // 8-color gradient for smooth transitions 🌈
+                    // 8-color gradient using Theme Colors 🎨
                     let gradient = [
-                        Color::Rgb(237, 135, 150), // Red/Pink
-                        Color::Rgb(245, 169, 127), // Peach
-                        Color::Rgb(238, 212, 159), // Yellow
-                        Color::Rgb(166, 218, 149), // Green
-                        Color::Rgb(139, 213, 202), // Teal
-                        Color::Rgb(138, 173, 244), // Blue
-                        Color::Rgb(183, 189, 248), // Lavender
-                        Color::Rgb(198, 160, 246), // Mauve
+                        theme.red,
+                        theme.yellow,
+                        theme.green,
+                        theme.cyan,
+                        theme.blue,
+                        theme.magenta,
+                        theme.red,
+                        theme.text, 
                     ];
                     
                     let mut lines = Vec::new();
@@ -711,8 +712,22 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         }
                         
                         for i in 0..bar_count {
-                            let bar_idx = i % app.visualizer_bars.len().max(1);
-                            let bar_height = app.visualizer_bars.get(bar_idx).copied().unwrap_or(0.3);
+                            // RESAMPLING LOGIC: Map UI Bar (i) to Data Range (start..end)
+                            // This ensures we show the FULL spectrum regardless of screen width.
+                            // "No Cutoffs" guarantee.
+                            let source_len = app.visualizer_bars.len();
+                            let start_idx = (i * source_len) / bar_count;
+                            let end_idx = ((i + 1) * source_len).div_ceil(bar_count).min(source_len);
+                            // Ensure we have at least one index
+                            let start_idx = start_idx.min(source_len.saturating_sub(1));
+                            let end_idx = end_idx.max(start_idx + 1);
+
+                            // Aggregation: Use MAX to preserve peaks (don't lose the beat)
+                            let mut bar_height = 0.0f32;
+                            for j in start_idx..end_idx {
+                                let val = app.visualizer_bars.get(j).copied().unwrap_or(0.0);
+                                if val > bar_height { bar_height = val; }
+                            }
                             
                             // Map bar position to gradient color
                             let color_idx = (i * gradient.len() / bar_count).min(gradient.len() - 1);
@@ -1827,7 +1842,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 ("j/k", "📜", "Scroll lyrics"),
                 ("Enter", "🎤", "Jump to line"),
             ]),
-            ViewMode::Cava => ("Visualizer", vec![]),
+            ViewMode::Visualizer => ("Visualizer", vec![]),
         };
         
         // Global keys - mode-specific

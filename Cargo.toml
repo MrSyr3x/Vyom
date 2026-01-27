@@ -1,6 +1,6 @@
 [package]
 name = "vyom"
-version = "1.0.197"
+version = "1.0.198"
 edition = "2021"
 description = "A minimalist, transparent Spotify music player for tmux with Catppuccin theming."
 license = "MIT"
@@ -41,6 +41,8 @@ libc = "0.2"
 rustfft = { version = "6.2", optional = true }
 rodio = "0.17.1"
 walkdir = "2.5.0"
+spectrum-analyzer = "1.7.0"
+crossbeam-queue = "0.3.12"
 
 [features]
 default = ["mpd", "eq"]

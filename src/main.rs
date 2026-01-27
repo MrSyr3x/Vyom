@@ -32,6 +32,7 @@ mod ui;
 mod audio_device;
 mod dsp_eq;
 mod audio_pipeline;
+mod visualizer;
 
 #[cfg(feature = "mpd")]
 mod mpd_player;
@@ -98,7 +99,6 @@ enum AppEvent {
     ArtworkUpdate(ArtworkState),
     ThemeUpdate(Theme),
     QueueUpdate(Vec<(String, String, u64, bool, String)>),
-    CavaUpdate(Vec<f32>),
     Tick,
 }
 
@@ -233,6 +233,9 @@ async fn main() -> Result<()> {
     
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
     
+    // Attach Visualizer 📊
+    audio_pipeline.attach_visualizer(app.visualizer.get_audio_buffer());
+    
     if is_audio_master {
         if let Err(e) = audio_pipeline.start() {
            eprintln!("Audio pipeline: {} (EQ will be visual only)", e);
@@ -315,49 +318,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    // 4a. Cava Integration Task 📊 (MPD mode only - needs FIFO audio input)
-    #[cfg(feature = "mpd")]
-    if !args.controller {
-        let tx_cava = tx.clone();
-        tokio::spawn(async move {
-            use tokio::process::Command;
-            use tokio::io::{AsyncBufReadExt, BufReader};
-            
-            // Use MPD FIFO config for visualization
-            let cava_config = format!("{}/.config/cava/vyom_config", std::env::var("HOME").unwrap_or_default());
-            let child = Command::new("cava")
-                .arg("-p")
-                .arg(&cava_config)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            
-            if let Ok(mut child) = child {
-                if let Some(stdout) = child.stdout.take() {
-                    let mut reader = BufReader::new(stdout).lines();
-                    
-                    while let Ok(Some(line)) = reader.next_line().await {
-                        // Parse ASCII values (semicolon-separated)
-                        let bars: Vec<f32> = line.split(';')
-                            .filter(|s| !s.is_empty())
-                            .filter_map(|s| s.trim().parse::<f32>().ok())
-                            .map(|v| v / 1000.0) // Normalize to 0.0-1.0
-                            .collect();
-                        
-                        if !bars.is_empty() {
-                            if tx_cava.send(AppEvent::CavaUpdate(bars)).await.is_err() { break; }
-                        }
-                    }
-                }
-                let _ = child.kill().await;
-            }
-        });
-    }
-
     // 4. Animation Tick Task ⚡
     let tx_tick = tx.clone();
     tokio::spawn(async move {
-        // 60 FPS Update Rate (approx 16ms)
+        // 60 FPS Update Rate (approx 16ms) - Back to smooth fluidity
         let mut interval = tokio::time::interval(Duration::from_millis(16));
         loop {
             interval.tick().await;
@@ -376,6 +340,12 @@ async fn main() -> Result<()> {
                 // Time up! removing "manual mode" flag to let Tick animation take over
                 app.last_scroll_time = None;
             }
+        }
+        
+        // Update visualizer bars 60fps (called before draw)
+        if app.view_mode == app::ViewMode::Visualizer {
+            // We request 64 bars which is the max rendering width we limited to
+            app.visualizer_bars = app.visualizer.get_bars(64);
         }
 
         terminal.draw(|f| ui::ui(f, &mut app))?;
@@ -845,7 +815,7 @@ async fn main() -> Result<()> {
                             // MPD mode: All cards (Lyrics, Cava, Library, EQ)
                             KeyCode::Char('1') => app.view_mode = app::ViewMode::Lyrics,
                             #[cfg(feature = "mpd")]
-                            KeyCode::Char('2') if !args.controller => app.view_mode = app::ViewMode::Cava,
+                            KeyCode::Char('2') if !args.controller => app.view_mode = app::ViewMode::Visualizer,
                             #[cfg(feature = "mpd")]
                             KeyCode::Char('3') if !args.controller => app.view_mode = app::ViewMode::Library,
                             #[cfg(feature = "mpd")]
@@ -920,10 +890,10 @@ async fn main() -> Result<()> {
                             }
                         },
                         // Audio Device Switching: d/D (Global in Controller Mode / Lyrics / Cava) 🎧
-                        KeyCode::Char('d') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Cava) => {
+                        KeyCode::Char('d') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Visualizer) => {
                             app.next_device();
                         },
-                        KeyCode::Char('D') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Cava) => {
+                        KeyCode::Char('D') if matches!(app.view_mode, app::ViewMode::Lyrics | app::ViewMode::Visualizer) => {
                             app.prev_device();
                         },
                         // EQ Controls (only when in EQ view) 🎚️
@@ -1786,10 +1756,7 @@ async fn main() -> Result<()> {
                         app::QueueItem { title, artist, duration_ms, is_current, file_path }
                     }).collect();
                 },
-                AppEvent::CavaUpdate(bars) => {
-                    // Update visualizer with real cava data
-                    app.visualizer_bars = bars;
-                },
+
                 AppEvent::Tick => {
                     app.on_tick();
                     
