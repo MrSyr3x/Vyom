@@ -370,6 +370,10 @@ fn run_http_audio_loop(
             continue;
         }
         
+        if let Ok(mut buffer) = ring_buffer.lock() {
+            buffer.clear();
+        }
+        
         while running.load(Ordering::SeqCst) {
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
