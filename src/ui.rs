@@ -82,14 +82,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     // --- MUSIC CARD ---
     let music_title = Title::from(Line::from(vec![
-        Span::styled(" Vyom ", Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD))
+        Span::styled(" Now Playing ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD))
     ]));
 
     let music_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(music_title)
-        .title_alignment(Alignment::Center)
+        .title_alignment(Alignment::Left)
         .border_style(Style::default().fg(theme.blue)) 
         .style(Style::default().bg(Color::Reset));
     
@@ -504,15 +504,25 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 // " + "
                 bar_spans.push(Span::styled(" +", Style::default().fg(theme.overlay)));
 
+                // Match button layout for perfect alignment
+                let volume_layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Fill(1),
+                        Constraint::Length(36), // Same as buttons
+                        Constraint::Fill(1),
+                    ])
+                    .split(chunks[2]);
+
                 let vol_widget = Paragraph::new(Line::from(bar_spans))
                     .alignment(Alignment::Center)
                     .block(Block::default());
-                f.render_widget(vol_widget, chunks[2]);
+                f.render_widget(vol_widget, volume_layout[1]);
             }
 
             let area = music_chunks[controls_idx];
-            let mid_x = area.x + area.width / 2;
-            let y = area.y;
+            let _mid_x = area.x + area.width / 2;
+            let _y = area.y;
             
 
         }
@@ -531,14 +541,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if let Some(lyrics_area_rect) = lyrics_area {
         // Dynamic title based on view mode 🎛️
         let mode_title = match app.view_mode {
-            ViewMode::Lyrics => " Lyrics ",
-            ViewMode::Visualizer => " Visualizer ",
-            ViewMode::Library => " Library ",
-            ViewMode::EQ => " EQ ",
+            ViewMode::Lyrics => " Lyrics ".to_string(),
+            ViewMode::Visualizer => " Visualizer ".to_string(),
+            ViewMode::Library => " Library ".to_string(),
+            ViewMode::EQ => " Sound ".to_string(),
         };
         
         let lyrics_title = Title::from(Line::from(vec![
-            Span::styled(mode_title, Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD))
+            Span::styled(mode_title, Style::default().fg(theme.magenta).add_modifier(Modifier::BOLD))
         ]));
 
         let credits_title = Line::from(vec![
@@ -546,13 +556,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .bg(Color::Rgb(235, 111, 146)) // #eb6f92
                 .fg(theme.base) 
                 .add_modifier(Modifier::BOLD | Modifier::ITALIC))
-        ]);
+        ]).alignment(Alignment::Center);
 
         let lyrics_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(lyrics_title)
-            .title_alignment(Alignment::Center)
+            .title_alignment(Alignment::Left)
             .title_bottom(credits_title)
             .border_style(Style::default().fg(theme.magenta))
             .style(Style::default().bg(Color::Reset));
@@ -617,7 +627,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 ]));
                                 
                                 let line_y = inner_lyrics_area.y + row as u16;
-                                let hitbox = Rect::new(inner_lyrics_area.x, line_y, inner_lyrics_area.width, 1);
+                                let _hitbox = Rect::new(inner_lyrics_area.x, line_y, inner_lyrics_area.width, 1);
 
 
                              } else {
@@ -1031,22 +1041,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         let title_w = w.saturating_sub(artist_w + time_w + 10);
                         let content_h = h.saturating_sub(8);
                         
-                        let lavender = theme.magenta;
+                        let _lavender = theme.magenta;
                         let green = theme.green;
                         let cream = theme.yellow;
                         let muted = theme.overlay;
                         let grid = theme.surface;
                         
-                        // ━━━ CENTERED TITLE ━━━
+                        // ━━━ CENTERED TITLE (Removed - Moved to Border) ━━━
                         lines.push(Line::from(""));
-                        let result_count = app.library_items.len();
-                        let title = if app.search_query.is_empty() {
-                            "  SEARCH  ".to_string()
-                        } else {
-                            format!("  \"{}\"  ·  {} results  ", app.search_query, result_count)
-                        };
-                        lines.push(Line::from(Span::styled(title, Style::default().fg(lavender))).alignment(Alignment::Center));
-                        lines.push(Line::from(""));
+                        // let title = ... removed ...
+                        // lines.push(Line::from(""));
                         
                         // ━━━ CONTENT ━━━
                         if app.library_items.is_empty() && !app.search_query.is_empty() {
@@ -1095,7 +1099,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     LibraryMode::Playlists => {
                         // Unified aesthetic for Playlists
                         let content_h = h.saturating_sub(8);
-                        let playlist_count = app.playlists.len();
+                        let _playlist_count = app.playlists.len();
                         
                         let magenta = theme.magenta;
                         let green = theme.green;
@@ -1103,13 +1107,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                         let muted = theme.overlay;
                         let grid = theme.surface;
                         
-                        // ━━━ CENTERED TITLE ━━━
+                        // ━━━ CENTERED TITLE (Removed - Moved to Border) ━━━
                         lines.push(Line::from(""));
-                        lines.push(Line::from(Span::styled(
-                            format!("  PLAYLISTS  ·  {} saved  ", playlist_count), 
-                            Style::default().fg(magenta)
-                        )).alignment(Alignment::Center));
-                        lines.push(Line::from(""));
+                        // lines.push(Line::from(Span::styled(
+                        //     format!("  PLAYLISTS  ·  {} saved  ", playlist_count), 
+                        //     Style::default().fg(magenta)
+                        // )).alignment(Alignment::Center));
+                        // lines.push(Line::from(""));
                         
                         // ━━━ CONTENT ━━━
                         if app.playlists.is_empty() {
@@ -1164,13 +1168,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     // Color palette from theme
                     let green = theme.green;
                     let pink = theme.red;       // Catppuccin red = pink
-                    let blue = theme.blue;
-                    let lavender = theme.magenta;
+                    let _blue = theme.blue;
+                    let _lavender = theme.magenta;
                     let cream = theme.yellow;   // Use yellow as highlight/cream
                     let grid_dim = theme.surface;
                     let muted = theme.overlay;
                     // Dynamic label color based on EQ state
-                    let label_color = if app.eq_enabled { green } else { muted };
+                    let _label_color = if app.eq_enabled { green } else { muted };
                     
                     let freqs = ["32", "64", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
                     let bands = 10;
@@ -1440,22 +1444,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.show_audio_info {
         use ratatui::widgets::Clear;
         
-        let width = 50.min(f.area().width.saturating_sub(4));
-        let height = 20.min(f.area().height.saturating_sub(4));
-        let x = (f.area().width.saturating_sub(width)) / 2;
-        let y = (f.area().height.saturating_sub(height)) / 2;
-        let area = Rect::new(x, y, width, height);
-        
-        f.render_widget(Clear, area);
-        
+        // 1. Generate Content First
         let mut lines: Vec<Line> = Vec::new();
-        
-        // Header
-        lines.push(Line::from(vec![
-            Span::styled("◉ ", Style::default().fg(theme.green)),
-            Span::styled("Audio Info", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
-        ]));
-        lines.push(Line::from(""));
         
         // Track Info Section
         lines.push(Line::from(vec![
@@ -1572,6 +1562,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 Span::styled("🔊 ", Style::default().fg(theme.yellow)),
                 Span::styled("Output", Style::default().fg(theme.text).add_modifier(Modifier::BOLD)),
             ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Device: ", Style::default().fg(theme.overlay)),
+                Span::styled(&app.output_device, Style::default().fg(theme.cyan)),
+            ]));
             
             let (mode_text, mode_color) = if app.eq_enabled {
                 ("DSP Active (EQ Enabled)", theme.yellow)
@@ -1614,11 +1608,23 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Span::styled(" to close", Style::default().fg(theme.surface)),
         ]));
         
+        // 2. Calculate Scalable Height
+        let height = (lines.len() as u16 + 2).min(f.area().height.saturating_sub(4)); // +2 for borders
+        let width = 60.min(f.area().width.saturating_sub(4)); 
+        let x = (f.area().width.saturating_sub(width)) / 2;
+        let y = (f.area().height.saturating_sub(height)) / 2;
+        let area = Rect::new(x, y, width, height);
+
+        // 3. Clear and Render
+        f.render_widget(Clear, area);
+
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(theme.blue))
-            .style(Style::default().bg(theme.base));
+            .title(" Audio Info ")
+            .title_alignment(Alignment::Left)
+            .style(Style::default().bg(Color::Reset));
         
         let p = Paragraph::new(lines).block(block);
         f.render_widget(p, area);
@@ -1670,10 +1676,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                     let block = Block::default()
                         .borders(Borders::ALL)
                         .border_type(ratatui::widgets::BorderType::Rounded)
-                        .border_style(Style::default().fg(theme.green))
-                        .style(Style::default().bg(theme.base));
+                        .border_style(Style::default().fg(theme.blue))
+                        .style(Style::default().bg(Color::Reset));
                     
-                    let style = Style::default().fg(theme.green).add_modifier(Modifier::BOLD);
+                    let style = Style::default().fg(theme.blue).add_modifier(Modifier::BOLD);
                     
                     let text = Paragraph::new(Line::from(vec![
                         Span::styled("✓ ", style),
@@ -1711,9 +1717,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .borders(Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(theme.blue))
-            .title(input.title.as_str())
-            .title_style(Style::default().fg(theme.magenta).add_modifier(Modifier::BOLD))
-            .style(Style::default().bg(theme.base));
+            .title(format!(" {} ", input.title))
+            .title_alignment(Alignment::Left)
+            .style(Style::default().bg(Color::Reset));
         
         let p = Paragraph::new(lines).block(block);
         f.render_widget(p, area);
@@ -1785,8 +1791,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .border_type(ratatui::widgets::BorderType::Rounded)
                 .border_style(Style::default().fg(theme.surface))
                 .title(" Edit Song Tags ")
-                .title_style(Style::default().fg(theme.magenta))
-                .style(Style::default().bg(theme.base)));
+                .title_alignment(Alignment::Left)
+                .style(Style::default().bg(Color::Reset)));
         f.render_widget(popup, popup_area);
         } // Close min size check
     }
@@ -1801,8 +1807,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ViewMode::EQ => ("EQ Controls", vec![
                 ("h/l", "🎚️", "Select band"),
                 ("k/j", "📊", "Adjust gain"),
+                ("Tab", "🎵", "Next preset"), 
                 ("e", "⚡", "Toggle EQ"),
-                ("0", "↺", "Reset band"),
+                ("r", "↺", "Reset all"),
+                ("0", "🎯", "Reset band"),
                 ("g/G", "🔊", "Preamp ±1dB"),
                 ("b/B", "⚖️", "Balance ±0.1"),
                 ("c", "🔀", "Crossfade"),
@@ -1813,8 +1821,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ViewMode::Library => ("Library", vec![
                 ("j/k", "📋", "Navigate"),
                 ("Tab", "🔄", "Switch mode"),
-                ("l/Ent", "▶️", "Select/Play"),
-                ("h/Bksp", "←", "Go back"),
+                ("Enter", "▶️", "Select/Play"),
+                ("Bksp", "←", "Go back"),
                 ("/", "🔍", "Search"),
                 ("a", "➕", "Add to Queue"),
                 ("s", "💾", "Save playlist"),
@@ -1862,40 +1870,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             ]
         };
         
-        // Calculate popup size - fit content exactly (no extra space)
-        // Calculate popup size - fit content exactly (no extra space)
-        // Calculate popup size - fit content exactly (no extra space)
-        let mut total_items = keys.len() + global_keys.len() + 4; // +4 for title, empty, global header, empty
-        if !keys.is_empty() { total_items += 1; } // +1 for separator between sections
-        // Use 80% of screen height as max, or at least fit content if possible
-        let max_height = (f.area().height as u16).saturating_sub(4); 
-        let popup_height = (total_items as u16 + 2).min(max_height); // +2 for borders
-        let popup_width = 32u16.min(f.area().width.saturating_sub(2)); // Clamp to window width
-        
-        // Position at bottom-right (like Neovim which-key)
-        let popup_x = f.area().width.saturating_sub(popup_width + 1);
-        let popup_y = f.area().height.saturating_sub(popup_height + 2);
-        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
-        
-        // Clear background
-        f.render_widget(Clear, popup_area);
-        
-        // Build popup content with Helix-style formatting
+        // Build popup content first to calculate exact height
         let mut lines: Vec<Line> = Vec::new();
         
-        // Title centered
-        let title_pad = (popup_width as usize - title.len() - 4) / 2;
-        lines.push(Line::from(Span::styled(
-            format!("{:>pad$}{}", "", title, pad = title_pad),
-            Style::default().fg(theme.magenta).add_modifier(Modifier::BOLD)
-        )));
-        lines.push(Line::from(""));
-        
+        // Context keys
         // Context keys
         for (key, icon, desc) in &keys {
             lines.push(Line::from(vec![
-                Span::styled(format!(" {:>7} ", key), Style::default().fg(theme.yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("→ ", Style::default().fg(theme.overlay)),
+                Span::styled(format!(" {:<7} ", key), Style::default().fg(theme.yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("   ", Style::default().fg(theme.overlay)), // Cleaner spacer
                 Span::styled(format!("{} ", icon), Style::default()),
                 Span::styled(*desc, Style::default().fg(theme.text)),
             ]));
@@ -1905,23 +1888,34 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             lines.push(Line::from(""));
         }
         
-        // Global section
-        let global_title = "Global";
-        let global_pad = (popup_width as usize - global_title.len() - 4) / 2;
+        // Global section - Left aligned with divider
         lines.push(Line::from(Span::styled(
-            format!("{:>pad$}{}", "", global_title, pad = global_pad),
+            "────── Global ──────", 
             Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)
         )));
         lines.push(Line::from(""));
         
         for (key, icon, desc) in &global_keys {
             lines.push(Line::from(vec![
-                Span::styled(format!(" {:>7} ", key), Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
-                Span::styled("→ ", Style::default().fg(theme.overlay)),
+                Span::styled(format!(" {:<7} ", key), Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
+                Span::styled("   ", Style::default().fg(theme.overlay)), // Cleaner spacer
                 Span::styled(format!("{} ", icon), Style::default()),
                 Span::styled(*desc, Style::default().fg(theme.text)),
             ]));
         }
+        
+        // Calculate popup size - fit content exactly
+        let max_height = (f.area().height as u16).saturating_sub(4); 
+        let popup_height = (lines.len() as u16 + 2).min(max_height); // +2 for borders
+        let popup_width = 32u16.min(f.area().width.saturating_sub(2));
+        
+        // Position at bottom-right
+        let popup_x = f.area().width.saturating_sub(popup_width + 1);
+        let popup_y = f.area().height.saturating_sub(popup_height + 2);
+        let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+        
+        // Clear background
+        f.render_widget(Clear, popup_area);
         
         let popup = Paragraph::new(lines)
             .alignment(Alignment::Left)
@@ -1929,7 +1923,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Rounded)
                 .border_style(Style::default().fg(theme.blue))
-                .style(Style::default().bg(theme.base)));
+                .title(format!(" {} ", title))
+                .title_alignment(Alignment::Left)
+                .style(Style::default().bg(Color::Reset)));
         f.render_widget(popup, popup_area);
     } else {
         // Minimal footer hint

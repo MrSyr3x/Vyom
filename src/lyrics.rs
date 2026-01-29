@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "mpd")]
-use lofty::{prelude::Accessor, file::TaggedFileExt, tag::ItemKey};
+use lofty::{file::TaggedFileExt, tag::ItemKey};
 
 #[derive(Debug, Deserialize)]
 pub struct LrclibResponse {

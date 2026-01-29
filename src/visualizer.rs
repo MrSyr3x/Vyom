@@ -207,7 +207,7 @@ impl Visualizer {
         // g=2.0 means it takes ~0.7s to fall from 1.0 to 0.0 from rest.
         // g=3.0 gives a nice snappy bounce.
         let gravity = 3.0; 
-        let hysteresis = 0.005;
+        let _hysteresis = 0.005;
 
         for i in 0..count {
             let mut input_val = bars[i];

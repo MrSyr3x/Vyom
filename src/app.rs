@@ -1,4 +1,4 @@
-use crate::player::{TrackInfo, PlayerTrait};
+use crate::player::TrackInfo;
 use crate::config::{AppConfig, EqPreset};
 use crate::lyrics::{LyricLine};
 use std::collections::HashMap;
@@ -263,7 +263,7 @@ impl App {
             .position(|p| p.name == config.last_preset_name)
             .unwrap_or(0); // Default to first (Custom or Flat)
 
-        let mut app = Self {
+        let app = Self {
             theme: crate::theme::load_current_theme(),
             is_running: true,
             track: None,
@@ -518,7 +518,7 @@ impl App {
         let defaults = AppConfig::get_default_presets();
         let default_names: Vec<&String> = defaults.iter().map(|p| &p.name).collect();
         
-        let user_presets: Vec<EqPreset> = self.presets.iter()
+        let _user_presets: Vec<EqPreset> = self.presets.iter()
             .filter(|p| !default_names.contains(&&p.name) || p.name == "Custom") // Keep Custom if modified? Actually Custom is in default list.
             .map(|p| p.clone())
             .collect();

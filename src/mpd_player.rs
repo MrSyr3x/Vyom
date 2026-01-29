@@ -124,10 +124,10 @@ impl PlayerTrait for MpdPlayer {
         // Metadata extraction with Queue Fallback 🛡️
         // Sometimes currentsong() lacks tags that queue() has.
         // If artist/album key fields are missing, verify against the queue.
-        let mut artist = song.artist.clone();
+        let _artist = song.artist.clone();
         // Album is NOT a field on mpd::Song, must access via tags
-        let mut album = find_tag(&song.tags, "Album");
-        let mut title = song.title.clone();
+        let _album = find_tag(&song.tags, "Album");
+        let _title = song.title.clone();
 
         // Metadata extraction with Queue Fallback 🛡️
         // Sometimes currentsong() lacks tags that queue() has.

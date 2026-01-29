@@ -3,9 +3,10 @@
 #![allow(unused_imports)]
 #![allow(unused_mut)]
 
-mod config;
+// mod config; // using vyom::config
+use vyom::config;
 
-use crate::config::AppConfig;
+use vyom::config::AppConfig;
 use anyhow::Result;
 use crossterm::{
     event::{Event, KeyCode, EventStream, KeyModifiers},
@@ -24,19 +25,22 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 
 
 
-mod app;
-mod artwork;
-mod theme; 
-mod lyrics;
-mod player; 
-mod ui;
-mod audio_device;
-mod dsp_eq;
-mod audio_pipeline;
-mod visualizer;
+// Modules now in lib.rs
+use vyom::app;
+use vyom::artwork;
+use vyom::theme;
+use vyom::lyrics;
+use vyom::player;
+use vyom::ui;
+use vyom::audio_device;
+use vyom::dsp_eq;
+use vyom::audio_pipeline;
+use vyom::visualizer;
+
 
 #[cfg(feature = "mpd")]
-mod mpd_player;
+#[cfg(feature = "mpd")]
+use vyom::mpd_player;
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -86,7 +90,7 @@ use clap::Parser;
 
 use app::{App, ArtworkState, LyricsState};
 use player::{TrackInfo}; 
-use crate::lyrics::{LyricsFetcher}; 
+use vyom::lyrics::{LyricsFetcher}; 
 use artwork::{ArtworkRenderer}; 
 
 
