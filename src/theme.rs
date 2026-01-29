@@ -39,9 +39,13 @@ struct ThemeFile {
     theme: Theme,
 }
 
-pub fn load_current_theme() -> Theme {
+pub fn get_theme_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let path = std::path::PathBuf::from(&home).join(".config/vyom/theme.toml");
+    std::path::PathBuf::from(&home).join(".config/vyom/theme.toml")
+}
+
+pub fn load_current_theme() -> Theme {
+    let path = get_theme_path();
 
     if path.exists() {
         if let Ok(content) = fs::read_to_string(&path) {

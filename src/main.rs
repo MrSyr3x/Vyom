@@ -20,6 +20,7 @@ use futures::{StreamExt};
 use lofty::{file::TaggedFileExt, tag::{Accessor, TagExt}};
 #[cfg(feature = "mpd")]
 use mpd::{Query, Term};
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 
 
 
@@ -301,19 +302,29 @@ async fn main() -> Result<()> {
     // 3. Theme Watcher Task 🎨
     let tx_theme = tx.clone();
     tokio::spawn(async move {
-        // We act like a dumb poller for now. 
-        let mut last_theme_debug = format!("{:?}", theme::load_current_theme());
+        // Use file modification time for efficient hot reloading 🌶️
+        let theme_path = theme::get_theme_path();
+        let mut last_modified = std::fs::metadata(&theme_path)
+            .and_then(|m| m.modified())
+            .ok();
 
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
             
-            // Reload & Check difference based on Debug impl (hacky but cheap)
-            let new_theme = theme::load_current_theme();
-            let new_debug = format!("{:?}", new_theme);
-            
-            if new_debug != last_theme_debug {
-                last_theme_debug = new_debug;
-                 if tx_theme.send(AppEvent::ThemeUpdate(new_theme)).await.is_err() { break; }
+            // Check file modification time
+            if let Ok(metadata) = std::fs::metadata(&theme_path) {
+                if let Ok(modified) = metadata.modified() {
+                    // If file modified or we never saw it before (and it exists)
+                    if last_modified.map_or(true, |last| modified > last) {
+                        last_modified = Some(modified);
+                        
+                        // Load and broadcast new theme
+                        let new_theme = theme::load_current_theme();
+                        if tx_theme.send(AppEvent::ThemeUpdate(new_theme)).await.is_err() { 
+                            break; 
+                        }
+                    }
+                }
             }
         }
     });
@@ -506,7 +517,7 @@ async fn main() -> Result<()> {
                                                 // 1. Folders
                                                 if let Ok(files) = mpd.listfiles(&current_path) {
                                                     for (kind, name) in files {
-                                                        let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                        let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
                                                         if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                                         
                                                         if kind == "directory" {
@@ -523,7 +534,7 @@ async fn main() -> Result<()> {
                                                 // 2. Songs
                                                 if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
                                                     for song in songs {
-                                                        let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                        let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                                         if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                                         
                                                         let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
@@ -583,15 +594,25 @@ async fn main() -> Result<()> {
                                 if !args.controller && !app.search_query.is_empty() {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         if let Ok(songs) = mpd.listall() {
-                                            let query_lower = app.search_query.to_lowercase();
-                                            app.library_items = songs.into_iter()
-                                                .filter(|s| {
-                                                    s.file.to_lowercase().contains(&query_lower) ||
-                                                    s.title.as_ref().map(|t| t.to_lowercase().contains(&query_lower)).unwrap_or(false) ||
-                                                    s.tags.iter().any(|(_, v)| v.to_lowercase().contains(&query_lower))
+                                            let matcher = SkimMatcherV2::default();
+                                            // Fuzzy Match 🔍
+                                            let mut matched_items: Vec<(i64, mpd::Song)> = songs.into_iter()
+                                                .filter_map(|s| {
+                                                    let search_text = format!("{} {} {}", 
+                                                        s.title.as_deref().unwrap_or(""), 
+                                                        s.artist.as_deref().unwrap_or(""),
+                                                        s.file
+                                                    );
+                                                    matcher.fuzzy_match(&search_text, &app.search_query).map(|score| (score, s))
                                                 })
+                                                .collect();
+                                            
+                                            // Sort by score (descending)
+                                            matched_items.sort_by(|a, b| b.0.cmp(&a.0));
+                                            
+                                            app.library_items = matched_items.into_iter()
                                                 .take(50)
-                                                .map(|s| app::LibraryItem {
+                                                .map(|(_, s)| app::LibraryItem {
                                                     name: s.title.unwrap_or_else(|| s.file.clone()),
                                                     item_type: app::LibraryItemType::Song,
                                                     artist: s.tags.iter().find(|(k,_)| k == "Artist").map(|(_,v)| v.clone()),
@@ -770,7 +791,7 @@ async fn main() -> Result<()> {
                                             let current_pos = app.library_selected as u32;
                                             let new_pos = current_pos + 1;
 
-                                            if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                            if mpd.shift(current_pos, new_pos as usize).is_ok() {
                                                  app.library_selected = new_pos as usize;
                                             }
                                         }
@@ -784,7 +805,7 @@ async fn main() -> Result<()> {
                                         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                             let current_pos = app.library_selected as u32;
                                             let new_pos = current_pos - 1;
-                                            if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                            if mpd.shift(current_pos, new_pos as usize).is_ok() {
 
                                                  app.library_selected = new_pos as usize;
                                             }
@@ -1030,7 +1051,7 @@ async fn main() -> Result<()> {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         let current_pos = app.library_selected as u32;
                                         let new_pos = current_pos - 1;
-                                        if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                        if mpd.shift(current_pos, new_pos as usize).is_ok() {
                                              app.library_selected = new_pos as usize;
                                         }
                                     }
@@ -1044,7 +1065,7 @@ async fn main() -> Result<()> {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                         let current_pos = app.library_selected as u32;
                                         let new_pos = current_pos + 1;
-                                        if let Ok(_) = mpd.shift(current_pos, new_pos as usize) {
+                                        if mpd.shift(current_pos, new_pos as usize).is_ok() {
                                              app.library_selected = new_pos as usize;
                                         }
                                     }
@@ -1088,7 +1109,7 @@ async fn main() -> Result<()> {
                                     // Get directories
                                     if let Ok(files) = mpd.listfiles("") {
                                         for (kind, path) in files {
-                                            let name = path.split('/').last().unwrap_or(&path).to_string();
+                                            let name = path.split('/').next_back().unwrap_or(&path).to_string();
                                             if name.starts_with('.') { continue; }
                                             
                                             if kind == "directory" {
@@ -1106,7 +1127,7 @@ async fn main() -> Result<()> {
                                     // Get songs with metadata from lsinfo
                                     if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: "".to_string(), ..Default::default() }) {
                                         for song in songs {
-                                            let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                             if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                             
                                             // Use metadata title, fallback to filename without extension
@@ -1314,10 +1335,10 @@ async fn main() -> Result<()> {
                                                     } else { false }
                                                 },
                                                 app::LibraryItemType::Album => {
-                                                     mpd.findadd(&mpd::Query::new().and(mpd::Term::Tag("Album".into()), &item.name)).is_ok()
+                                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Album".into()), &item.name)).is_ok()
                                                 },
                                                 app::LibraryItemType::Artist => {
-                                                     mpd.findadd(&mpd::Query::new().and(mpd::Term::Tag("Artist".into()), &item.name)).is_ok()
+                                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Artist".into()), &item.name)).is_ok()
                                                 },
                                                 app::LibraryItemType::Playlist => {
                                                      mpd.load(&item.name, ..).is_ok()
@@ -1358,7 +1379,7 @@ async fn main() -> Result<()> {
                                                             
                                                             if let Ok(pairs) = mpd.listfiles(path) {
                                                                 for (kind, name) in pairs {
-                                                                    let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                                    let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
                                                                     if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                                                     
                                                                     if kind == "directory" {
@@ -1375,7 +1396,7 @@ async fn main() -> Result<()> {
                                                             // Get songs with metadata from lsinfo
                                                             if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.clone(), ..Default::default() }) {
                                                                 for song in songs {
-                                                                    let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                                    let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                                                     if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                                                     
                                                                     // Use metadata title (ignore empty), fallback to RAW filename
@@ -1458,7 +1479,7 @@ async fn main() -> Result<()> {
                                             // 1. Folders
                                             if let Ok(files) = mpd.listfiles(&current_path) {
                                                 for (kind, name) in files {
-                                                    let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                                    let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
                                                     if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                                     
                                                     if kind == "directory" {
@@ -1475,7 +1496,7 @@ async fn main() -> Result<()> {
                                             // 2. Songs
                                             if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
                                                 for song in songs {
-                                                    let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                                    let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                                     if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                                     
                                                     let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
@@ -1545,7 +1566,7 @@ async fn main() -> Result<()> {
                                     
                                     if let Ok(files) = mpd.listfiles(&parent_path) {
                                         for (kind, name) in files {
-                                            let display_name = name.split('/').last().unwrap_or(&name).to_string();
+                                            let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
                                             if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
                                             
                                             if kind == "directory" {
@@ -1562,7 +1583,7 @@ async fn main() -> Result<()> {
                                     // Get songs with metadata from lsinfo
                                     if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: parent_path.clone(), ..Default::default() }) {
                                         for song in songs {
-                                            let filename = song.file.split('/').last().unwrap_or(&song.file).to_string();
+                                            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                             if filename.starts_with('.') || filename.trim().is_empty() { continue; }
                                             
                                             // Use metadata title (ignore empty), fallback to RAW filename

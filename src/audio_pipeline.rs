@@ -58,6 +58,12 @@ fn query_mpd_format() -> Option<(u32, u16, u16)> {
         }
     }
     
+    
+    parse_mpd_status(&response)
+}
+
+/// Pure function to parse MPD status response 🧪
+fn parse_mpd_status(response: &str) -> Option<(u32, u16, u16)> {
     // Parse audio: sample_rate:bits:channels
     for line in response.lines() {
         if line.starts_with("audio: ") {
@@ -71,7 +77,6 @@ fn query_mpd_format() -> Option<(u32, u16, u16)> {
             }
         }
     }
-    
     None
 }
 
@@ -620,5 +625,35 @@ fn run_fifo_audio_loop(
 impl AudioPipeline {
     pub fn start(&mut self) -> Result<(), String> {
         Err("EQ feature not enabled".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_mpd_status() {
+        let response = "volume: -1\nrepeat: 0\nrandom: 0\nsingle: 0\nconsume: 0\nplaylist: 2\nplaylistlength: 5\nmixrampdb: 0.000000\nstate: play\nsong: 3\nsongid: 4\ntime: 30:300\nelapsed: 30.000\nbitrate: 128\naudio: 44100:16:2\nnextsong: 4\nnextsongid: 5\n";
+        
+        let format = parse_mpd_status(response).unwrap();
+        assert_eq!(format.0, 44100);
+        assert_eq!(format.1, 16);
+        assert_eq!(format.2, 2);
+    }
+    
+    #[test]
+    fn test_parse_mpd_status_hires() {
+        let response = "state: play\naudio: 96000:24:2\n";
+        let format = parse_mpd_status(response).unwrap();
+        assert_eq!(format.0, 96000);
+        assert_eq!(format.1, 24);
+        assert_eq!(format.2, 2);
+    }
+    
+    #[test]
+    fn test_parse_mpd_status_invalid() {
+        let response = "state: stop\n";
+        assert!(parse_mpd_status(response).is_none());
     }
 }

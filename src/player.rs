@@ -114,6 +114,50 @@ impl MacOsPlayer {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
+
+
+    /// Pure function to parse AppleScript output for testing 🧪
+    fn parse_player_output(output: &str, app_name: &str) -> Option<TrackInfo> {
+        if output.trim() == "STOPPED" {
+            return None;
+        }
+
+        let parts: Vec<&str> = output.split("|||").collect();
+        if parts.len() < 7 {
+            return None;
+        }
+
+        let position_secs: f64 = parts[4].replace(',', ".").parse().unwrap_or(0.0);
+        
+        let state = match parts[5] {
+            "playing" => PlayerState::Playing,
+            "paused" => PlayerState::Paused,
+            _ => PlayerState::Stopped,
+        };
+        
+        let duration_ms: u64 = parts[3].parse::<f64>().unwrap_or(0.0) as u64;
+        let volume: u32 = if parts.len() >= 8 {
+            parts[7].parse().unwrap_or(0)
+        } else { 0 };
+
+        Some(TrackInfo {
+            name: parts[0].to_string(),
+            artist: parts[1].to_string(),
+            album: parts[2].to_string(),
+            duration_ms,
+            position_ms: (position_secs * 1000.0) as u64,
+            state,
+            artwork_url: Some(parts[6].to_string()).filter(|s| !s.is_empty() && s != "NONE"),
+            source: app_name.to_string(),
+            // Controller mode: no audiophile metadata
+            codec: None,
+            bitrate: None,
+            sample_rate: None,
+            bit_depth: None,
+            file_path: None,
+            volume: Some(volume),
+        })
+    }
 }
 
 impl PlayerTrait for MacOsPlayer {
@@ -151,48 +195,9 @@ impl PlayerTrait for MacOsPlayer {
             end tell
         "#, app_name, app_name);
 
+
         match Self::run_script(&script) {
-            Ok(output) => {
-                if output == "STOPPED" {
-                    return Ok(None);
-                }
-
-                let parts: Vec<&str> = output.split("|||").collect();
-                if parts.len() < 7 {
-                    return Ok(None);
-                }
-
-                let position_secs: f64 = parts[4].replace(',', ".").parse().unwrap_or(0.0);
-                
-                let state = match parts[5] {
-                    "playing" => PlayerState::Playing,
-                    "paused" => PlayerState::Paused,
-                    _ => PlayerState::Stopped,
-                };
-                
-                let duration_ms: u64 = parts[3].parse::<f64>().unwrap_or(0.0) as u64;
-                let volume: u32 = if parts.len() >= 8 {
-                    parts[7].parse().unwrap_or(0)
-                } else { 0 };
-
-                Ok(Some(TrackInfo {
-                    name: parts[0].to_string(),
-                    artist: parts[1].to_string(),
-                    album: parts[2].to_string(),
-                    duration_ms,
-                    position_ms: (position_secs * 1000.0) as u64,
-                    state,
-                    artwork_url: Some(parts[6].to_string()).filter(|s| !s.is_empty() && s != "NONE"),
-                    source: app_name.to_string(),
-                    // Controller mode: no audiophile metadata
-                    codec: None,
-                    bitrate: None,
-                    sample_rate: None,
-                    bit_depth: None,
-                    file_path: None,
-                    volume: Some(volume),
-                }))
-            },
+            Ok(output) => Ok(Self::parse_player_output(&output, app_name)),
             Err(_) => Ok(None)
         }
     }
@@ -300,6 +305,38 @@ impl PlayerTrait for MacOsPlayer {
         } else {
             Ok(false)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_spotify_output() {
+        // "Name|||Artist|||Album|||Duration|||Position|||State|||Artwork|||Volume"
+        let output = "Song Name|||Artist Name|||Album Name|||180000|||12.5|||playing|||http://art.url|||80";
+        let info = MacOsPlayer::parse_player_output(output, "Spotify").unwrap();
+        
+        assert_eq!(info.name, "Song Name");
+        assert_eq!(info.artist, "Artist Name");
+        assert_eq!(info.state, PlayerState::Playing);
+        assert_eq!(info.duration_ms, 180000);
+        assert_eq!(info.position_ms, 12500); // 12.5s * 1000
+        assert_eq!(info.volume, Some(80));
+    }
+
+    #[test]
+    fn test_parse_music_output() {
+        // Music app often returns duration in seconds, but we handle that in AppleScript? 
+        // Logic says: "tDuration to tDurSec * 1000" in AppleScript. So parsing expects ms.
+        let output = "My Song|||The Artist|||The Album|||240000|||60.0|||paused|||NONE|||100";
+        let info = MacOsPlayer::parse_player_output(output, "Music").unwrap();
+        
+        assert_eq!(info.name, "My Song");
+        assert_eq!(info.source, "Music");
+        assert_eq!(info.state, PlayerState::Paused);
+        assert_eq!(info.artwork_url, None);
     }
 }
 

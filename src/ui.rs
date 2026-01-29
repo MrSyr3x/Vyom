@@ -912,8 +912,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 let is_sel = actual_idx == app.library_selected;
                                 let num = actual_idx + 1;
                                 
-                                let title = if item.title.len() > title_w.saturating_sub(2) { format!("{}…", &item.title[..title_w.saturating_sub(3)]) } else { item.title.clone() };
-                                let artist = if item.artist.len() > artist_w.saturating_sub(1) { format!("{}…", &item.artist[..artist_w.saturating_sub(2)]) } else { item.artist.clone() };
+                                let title = truncate(&item.title, title_w.saturating_sub(2));
+                                let artist = truncate(&item.artist, artist_w.saturating_sub(1));
                                 let time = { let s = item.duration_ms / 1000; format!("{}:{:02}", s / 60, s % 60) };
                                 
                                 // Selection markers: ● for selected, ◉ for playing, ○ for normal
@@ -981,11 +981,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                     item.name.clone()
                                 };
                                 
-                                let name = if raw_name.len() > title_w.saturating_sub(2) { 
-                                    format!("{}…", &raw_name[..title_w.saturating_sub(3)]) 
-                                } else { 
-                                    raw_name
-                                };
+                                let name = truncate(&raw_name, title_w.saturating_sub(2));
                                 
                                 if is_folder {
                                     // Folder row
@@ -1004,11 +1000,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 } else {
                                     // Song row
                                     let artist = item.artist.clone().unwrap_or_default();
-                                    let artist_disp = if artist.len() > artist_w.saturating_sub(1) { 
-                                        format!("{}…", &artist[..artist_w.saturating_sub(2)]) 
-                                    } else { 
-                                        artist 
-                                    };
+                                    let artist_disp = truncate(&artist, artist_w.saturating_sub(1));
                                     let time = item.duration_ms.map(|ms| { 
                                         let s = ms / 1000; 
                                         format!("{}:{:02}", s / 60, s % 60) 
@@ -1069,17 +1061,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 let actual_idx = start_idx + display_idx;
                                 let is_sel = actual_idx == app.library_selected;
                                 
-                                let name = if item.name.len() > title_w.saturating_sub(2) { 
-                                    format!("{}…", &item.name[..title_w.saturating_sub(3)]) 
-                                } else { 
-                                    item.name.clone() 
-                                };
+                                let name = truncate(&item.name, title_w.saturating_sub(2));
                                 let artist = item.artist.clone().unwrap_or_default();
-                                let artist_disp = if artist.len() > artist_w.saturating_sub(1) { 
-                                    format!("{}…", &artist[..artist_w.saturating_sub(2)]) 
-                                } else { 
-                                    artist 
-                                };
+                                let artist_disp = truncate(&artist, artist_w.saturating_sub(1));
                                 let time = item.duration_ms.map(|ms| { 
                                     let s = ms / 1000; 
                                     format!("{}:{:02}", s / 60, s % 60) 
@@ -1140,7 +1124,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                                 let num = actual_idx + 1;
                                 
                                 let name_max = w.saturating_sub(12);
-                                let name = if pl.len() > name_max { format!("{}…", &pl[..name_max.saturating_sub(1)]) } else { pl.clone() };
+                                let name = truncate(&pl, name_max);
                                 
                                 let (marker, m_color, n_style) = if is_sel {
                                     ("●", cream, Style::default().fg(magenta).add_modifier(Modifier::BOLD))
@@ -1991,5 +1975,19 @@ mod tests {
         assert_eq!(new_visible_count, content_h, "List should be fully filled");
         assert!(new_start <= selected, "Start index must be before or equal to selected");
         assert!(new_start + content_h > selected, "Selected item must be within view");
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS 🛠️
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Safely truncate string to max characters, appending "…" if truncated 🛡️
+fn truncate(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() > max_width {
+        chars.into_iter().take(max_width.saturating_sub(1)).collect::<String>() + "…"
+    } else {
+        s.to_string()
     }
 }
