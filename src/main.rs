@@ -127,6 +127,63 @@ struct Args {
     mpd_port: u16,
 }
 
+// Helper to fetch directory contents (folders + songs)
+#[cfg(feature = "mpd")]
+fn fetch_directory_items(mpd: &mut mpd::Client, path: &str) -> Result<Vec<app::LibraryItem>, mpd::error::Error> {
+    let mut items: Vec<app::LibraryItem> = Vec::new();
+    
+    // 1. Folders
+    if let Ok(files) = mpd.listfiles(path) {
+        for (kind, name) in files {
+            let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
+            if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
+            
+            if kind == "directory" {
+                let full_path = if path.is_empty() { name.clone() } else { format!("{}/{}", path, name) };
+                items.push(app::LibraryItem {
+                    name: display_name,
+                    item_type: app::LibraryItemType::Folder,
+                    artist: None,
+                    duration_ms: None,
+                    path: Some(full_path),
+                });
+            }
+        }
+    }
+    
+    // 2. Songs
+    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.to_string(), ..Default::default() }) {
+        for song in songs {
+            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
+            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
+            
+            let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
+                Some(t) => t.clone(),
+                None => filename.clone(),
+            };
+            
+            items.push(app::LibraryItem {
+                name: title,
+                item_type: app::LibraryItemType::Song,
+                artist: song.artist.clone(),
+                duration_ms: song.duration.map(|d| d.as_millis() as u64),
+                path: Some(song.file),
+            });
+        }
+    }
+    
+    // Sort: folders first
+    items.sort_by(|a, b| {
+        match (&a.item_type, &b.item_type) {
+            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
+
+    Ok(items)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -360,8 +417,12 @@ async fn main() -> Result<()> {
 
         terminal.draw(|f| ui::ui(f, &mut app))?;
 
-        if let Some(event) = rx.recv().await {
-            match event {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                app.is_running = false;
+            }
+            Some(event) = rx.recv() => {
+                match event {
                 // ... (Input handling omitted)
                 // Mouse Interaction Removed as per User Request
                 AppEvent::Input(Event::Mouse(_)) => {},
@@ -508,54 +569,9 @@ async fn main() -> Result<()> {
                                             app::LibraryMode::Directory => {
                                                 // Restore Directory view (refresh from current path)
                                                 let current_path = app.browse_path.join("/");
-                                                let mut new_items: Vec<app::LibraryItem> = Vec::new();
-                                                
-                                                // 1. Folders
-                                                if let Ok(files) = mpd.listfiles(&current_path) {
-                                                    for (kind, name) in files {
-                                                        let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
-                                                        if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-                                                        
-                                                        if kind == "directory" {
-                                                            let full_path = if current_path.is_empty() { name.clone() } else { format!("{}/{}", current_path, name) };
-                                                            new_items.push(app::LibraryItem {
-                                                                name: display_name,
-                                                                item_type: app::LibraryItemType::Folder,
-                                                                artist: None, duration_ms: None, path: Some(full_path)
-                                                            });
-                                                        }
-                                                    }
+                                                if let Ok(items) = fetch_directory_items(&mut mpd, &current_path) {
+                                                    app.library_items = items;
                                                 }
-                                                
-                                                // 2. Songs
-                                                if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
-                                                    for song in songs {
-                                                        let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-                                                        if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-                                                        
-                                                        let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
-                                                            Some(t) => t.clone(),
-                                                            None => filename.clone(),
-                                                        };
-                                                        
-                                                        new_items.push(app::LibraryItem {
-                                                            name: title,
-                                                            item_type: app::LibraryItemType::Song,
-                                                            artist: song.artist.clone(),
-                                                            duration_ms: song.duration.map(|d| d.as_millis() as u64),
-                                                            path: Some(song.file),
-                                                        });
-                                                    }
-                                                }
-                                                
-                                                new_items.sort_by(|a, b| {
-                                                    match (&a.item_type, &b.item_type) {
-                                                        (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-                                                        (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-                                                        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                                                    }
-                                                });
-                                                app.library_items = new_items;
                                             },
                                             app::LibraryMode::Playlists => {
                                                 // Refresh playlists
@@ -1100,58 +1116,9 @@ async fn main() -> Result<()> {
                             if app.library_mode == app::LibraryMode::Directory && !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
                                     // Get directories from listfiles, songs with metadata from lsinfo
-                                    let mut items: Vec<app::LibraryItem> = Vec::new();
-                                    
-                                    // Get directories
-                                    if let Ok(files) = mpd.listfiles("") {
-                                        for (kind, path) in files {
-                                            let name = path.split('/').next_back().unwrap_or(&path).to_string();
-                                            if name.starts_with('.') { continue; }
-                                            
-                                            if kind == "directory" {
-                                                items.push(app::LibraryItem {
-                                                    name,
-                                                    item_type: app::LibraryItemType::Folder,
-                                                    artist: None,
-                                                    duration_ms: None,
-                                                    path: Some(path),
-                                                });
-                                            }
-                                        }
+                                    if let Ok(items) = fetch_directory_items(&mut mpd, "") {
+                                        app.library_items = items;
                                     }
-                                    
-                                    // Get songs with metadata from lsinfo
-                                    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: "".to_string(), ..Default::default() }) {
-                                        for song in songs {
-                                            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-                                            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-                                            
-                                            // Use metadata title, fallback to filename without extension
-                                            // Use metadata title (ignore empty), fallback to RAW filename
-                                            let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
-                                                Some(t) => t.clone(),
-                                                None => filename.clone(), // Nuclear option: Just show the raw filename string
-                                            };
-                                            
-                                            items.push(app::LibraryItem {
-                                                name: title,
-                                                item_type: app::LibraryItemType::Song,
-                                                artist: song.artist.clone(),
-                                                duration_ms: song.duration.map(|d| d.as_millis() as u64),
-                                                path: Some(song.file),
-                                            });
-                                        }
-                                    }
-                                    
-                                    // Sort: folders first, then songs alphabetically
-                                    items.sort_by(|a, b| {
-                                        match (&a.item_type, &b.item_type) {
-                                            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-                                            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-                                            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                                        }
-                                    });
-                                    app.library_items = items;
                                 }
                             }
                         },
@@ -1371,55 +1338,9 @@ async fn main() -> Result<()> {
                                                             app.library_selected = 0;
                                                             
                                                             // Get directories from listfiles
-                                                            let mut new_items: Vec<app::LibraryItem> = Vec::new();
-                                                            
-                                                            if let Ok(pairs) = mpd.listfiles(path) {
-                                                                for (kind, name) in pairs {
-                                                                    let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
-                                                                    if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-                                                                    
-                                                                    if kind == "directory" {
-                                                                        let full_path = format!("{}/{}", path, name);
-                                                                        new_items.push(app::LibraryItem {
-                                                                            name: display_name,
-                                                                            item_type: app::LibraryItemType::Folder,
-                                                                            artist: None, duration_ms: None, path: Some(full_path)
-                                                                        });
-                                                                    }
-                                                                }
+                                                            if let Ok(items) = fetch_directory_items(&mut mpd, path) {
+                                                                app.library_items = items;
                                                             }
-                                                            
-                                                            // Get songs with metadata from lsinfo
-                                                            if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.clone(), ..Default::default() }) {
-                                                                for song in songs {
-                                                                    let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-                                                                    if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-                                                                    
-                                                                    // Use metadata title (ignore empty), fallback to RAW filename
-                                                                    let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
-                                                                        Some(t) => t.clone(),
-                                                                        None => filename.clone(),
-                                                                    };
-                                                                    
-                                                                    new_items.push(app::LibraryItem {
-                                                                        name: title,
-                                                                        item_type: app::LibraryItemType::Song,
-                                                                        artist: song.artist.clone(),
-                                                                        duration_ms: song.duration.map(|d| d.as_millis() as u64),
-                                                                        path: Some(song.file),
-                                                                    });
-                                                                }
-                                                            }
-                                                            
-                                                            // Sort: folders first
-                                                            new_items.sort_by(|a, b| {
-                                                                match (&a.item_type, &b.item_type) {
-                                                                    (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-                                                                    (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-                                                                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                                                                }
-                                                            });
-                                                            app.library_items = new_items;
                                                         }
                                                     },
                                                     app::LibraryItemType::Song => {
@@ -1557,56 +1478,10 @@ async fn main() -> Result<()> {
                                         app.browse_path.join("/")
                                     };
                                     
-                                    // Get directories from listfiles
-                                    let mut new_items: Vec<app::LibraryItem> = Vec::new();
-                                    
-                                    if let Ok(files) = mpd.listfiles(&parent_path) {
-                                        for (kind, name) in files {
-                                            let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
-                                            if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-                                            
-                                            if kind == "directory" {
-                                                let full_path = if parent_path.is_empty() { name.clone() } else { format!("{}/{}", parent_path, name) };
-                                                new_items.push(app::LibraryItem {
-                                                    name: display_name,
-                                                    item_type: app::LibraryItemType::Folder,
-                                                    artist: None, duration_ms: None, path: Some(full_path)
-                                                });
-                                            }
-                                        }
+                                    // Get directory items
+                                    if let Ok(items) = fetch_directory_items(&mut mpd, &parent_path) {
+                                        app.library_items = items;
                                     }
-                                    
-                                    // Get songs with metadata from lsinfo
-                                    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: parent_path.clone(), ..Default::default() }) {
-                                        for song in songs {
-                                            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-                                            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-                                            
-                                            // Use metadata title (ignore empty), fallback to RAW filename
-                                            let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
-                                                Some(t) => t.clone(),
-                                                None => filename.clone(),
-                                            };
-                                            
-                                            new_items.push(app::LibraryItem {
-                                                name: title,
-                                                item_type: app::LibraryItemType::Song,
-                                                artist: song.artist.clone(),
-                                                duration_ms: song.duration.map(|d| d.as_millis() as u64),
-                                                path: Some(song.file),
-                                            });
-                                        }
-                                    }
-                                    
-                                    // Sort: folders first
-                                    new_items.sort_by(|a, b| {
-                                        match (&a.item_type, &b.item_type) {
-                                            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-                                            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-                                            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                                        }
-                                    });
-                                    app.library_items = new_items;
                                 }
                             }
                         },
@@ -1832,6 +1707,9 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        
+            }
+
         
         if !app.is_running { break; }
     }

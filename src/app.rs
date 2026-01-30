@@ -520,7 +520,7 @@ impl App {
         
         let _user_presets: Vec<EqPreset> = self.presets.iter()
             .filter(|p| !default_names.contains(&&p.name) || p.name == "Custom") // Keep Custom if modified? Actually Custom is in default list.
-            .map(|p| p.clone())
+            .cloned()
             .collect();
 
         // Actually, we should probably ONLY save presets that are NOT in the default list?

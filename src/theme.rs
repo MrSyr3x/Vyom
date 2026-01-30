@@ -16,8 +16,8 @@ pub struct Theme {
     pub cyan: Color,
 }
 
-impl Theme {
-    pub fn default() -> Self {
+impl Default for Theme {
+    fn default() -> Self {
         Self {
             base: Color::Rgb(30, 30, 46),
             surface: Color::Rgb(49, 50, 68),

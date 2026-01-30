@@ -113,7 +113,7 @@ impl ArtworkRenderer {
                         }
                     });
                     
-                    let result = best_match.or(candidates.first()).map(|&r| r);
+                    let result = best_match.or(candidates.first()).copied();
                     
                     if let Some(result) = result {
                         let high_res = result.artwork_url.replace("100x100bb", "600x600bb");
@@ -125,10 +125,7 @@ impl ArtworkRenderer {
         
         anyhow::bail!("No results found on iTunes")
     }
-    
-    /// Convert image to terminal-renderable lines using half-block characters
-    /// Each terminal cell represents 2 vertical pixels using ▀ (upper half block)
-    /// with foreground color for top pixel and background for bottom
+
     pub fn render_to_lines(img: &DynamicImage, target_width: u32, target_height: u32) -> Vec<(String, Vec<(u8, u8, u8, u8, u8, u8)>)> {
         use image::GenericImageView;
         
