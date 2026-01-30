@@ -149,22 +149,41 @@ impl LyricsFetcher {
             ("duration", duration_str.as_str()),
         ];
 
-        // 2. Try Exact (/get)
-        let resp = self.client.get(url).query(&params).send().await?;
-        if resp.status().is_success() {
-             let data: LrclibResponse = resp.json().await?;
-             let result = self.parse(data);
-             
-             if let LyricsFetchResult::Found(ref lines) = result {
-                 if let Some(path) = &cache_path {
-                     self.save_to_cache(path, lines);
-                 }
-             }
-             
-             match result {
-                 LyricsFetchResult::None => {}, // fallthrough
-                 _ => return Ok(result),
-             }
+        // 2. Try Exact (/get) with Retry 🔄
+        let mut attempt = 0;
+        const MAX_RETRIES: u8 = 2;
+
+        while attempt <= MAX_RETRIES {
+            let resp_result = self.client.get(url).query(&params).send().await;
+            
+            match resp_result {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        // If JSON parse fails, it's a data issue, don't retry network
+                        if let Ok(data) = resp.json::<LrclibResponse>().await {
+                            let result = self.parse(data);
+                            if let LyricsFetchResult::Found(ref lines) = result {
+                                if let Some(path) = &cache_path {
+                                    self.save_to_cache(path, lines);
+                                }
+                            }
+                            match result {
+                                LyricsFetchResult::None => break, // Fallthrough to Search
+                                _ => return Ok(result),
+                            }
+                        }
+                    } 
+                    break; // Request succeeded (even if 404), proceed to Search
+                },
+                Err(_) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                         // Don't error out completely, just log/proceed to search
+                         break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
         }
 
         // 3. Try Search (/search) with CLEAN title and ORIGINAL artist
@@ -258,8 +277,23 @@ impl LyricsFetcher {
         let q = format!("{} {}", artist, title);
         let params = [("q", q.as_str())];
 
-        let resp = self.client.get(url).query(&params).send().await?;
-        let results: Vec<LrclibResponse> = resp.json().await?;
+        let mut attempt = 0;
+        const MAX_RETRIES: u8 = 2;
+        
+        let resp = loop {
+            match self.client.get(url).query(&params).send().await {
+                Ok(response) => break Ok(response),
+                Err(_) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                         break Err(anyhow::anyhow!("Lyrics Network Error"));
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+        }?;
+
+        let results: Vec<LrclibResponse> = resp.json().await.unwrap_or_default();
         
         let target_dur = duration_ms as f64 / 1000.0;
 
