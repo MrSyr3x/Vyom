@@ -65,7 +65,7 @@ pub struct TagEditState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputMode {
     PlaylistSave,
-    PlaylistRename,
+
     EqSave,
 }
 
@@ -188,7 +188,7 @@ pub struct App {
     
     /// MPD Queue (playlist) 📋
     pub queue: Vec<QueueItem>,
-    pub _queue_scroll: usize,
+
     
     /// Smart Library Panel 📚
     pub library_mode: LibraryMode,
@@ -284,7 +284,7 @@ impl App {
             source_app: source_app.to_string(),
             view_mode: ViewMode::default(),
             queue: Vec::new(),
-            _queue_scroll: 0,
+
             library_mode: LibraryMode::default(),
             previous_library_mode: None,
             library_items: Vec::new(),

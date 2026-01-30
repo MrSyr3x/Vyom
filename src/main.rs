@@ -1,26 +1,22 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-#![allow(unused_mut)]
-
 // mod config; // using vyom::config
-use vyom::config;
 
 use vyom::config::AppConfig;
 use anyhow::Result;
 use crossterm::{
-    event::{Event, KeyCode, EventStream, KeyModifiers},
+    event::{Event, KeyCode, KeyModifiers, EventStream},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{
+    backend::CrosstermBackend,
+    Terminal,
+};
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
-use futures::{StreamExt};
+use futures::StreamExt;
 #[cfg(feature = "mpd")]
-use lofty::{file::TaggedFileExt, tag::{Accessor, TagExt}};
-#[cfg(feature = "mpd")]
-use mpd::{Query, Term};
+use lofty::{file::TaggedFileExt, tag::Accessor};
+
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 
 
@@ -32,10 +28,7 @@ use vyom::theme;
 use vyom::lyrics;
 use vyom::player;
 use vyom::ui;
-use vyom::audio_device;
-use vyom::dsp_eq;
 use vyom::audio_pipeline;
-use vyom::visualizer;
 
 
 #[cfg(feature = "mpd")]
@@ -44,7 +37,7 @@ use vyom::mpd_player;
 
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::unix::io::AsRawFd;
+
 
 const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
 
@@ -88,7 +81,7 @@ fn try_acquire_audio_lock() -> Option<File> {
 
 use clap::Parser;
 
-use app::{App, ArtworkState, LyricsState};
+use app::{ArtworkState, LyricsState};
 use player::{TrackInfo}; 
 use vyom::lyrics::{LyricsFetcher}; 
 use artwork::{ArtworkRenderer}; 
@@ -229,7 +222,7 @@ async fn main() -> Result<()> {
     let is_audio_master = audio_lock.is_some();
 
     // Load persisted state
-    let mut config = AppConfig::load();
+    let config = AppConfig::load();
     if config.eq_enabled && !is_audio_master {
          // Maybe log that EQ is visual only?
     }
@@ -243,7 +236,9 @@ async fn main() -> Result<()> {
     
     if is_audio_master {
         if let Err(e) = audio_pipeline.start() {
-           eprintln!("Audio pipeline: {} (EQ will be visual only)", e);
+            let msg = format!("Audio Error: {} (Visuals Only)", e);
+            eprintln!("{}", msg); // Keep log for stderr
+            app.show_toast(&msg);
         }
     } else {
         // We are secondary. No audio output.
@@ -394,9 +389,7 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                         },
-                                        app::InputMode::PlaylistRename => {
-                                             // ... existing rename logic ...
-                                        },
+
                                         app::InputMode::EqSave => {
                                             if !input.value.is_empty() {
                                                 app.save_preset(input.value.clone());
@@ -448,9 +441,8 @@ async fn main() -> Result<()> {
                                 if let Some(ref tag_state) = app.tag_edit {
                                     #[cfg(feature = "mpd")]
                                     if !tag_state.file_path.is_empty() {
-                                        // MPD music directory from config or env
-                                        let music_dir = std::env::var("MPD_MUSIC_DIR")
-                                            .unwrap_or_else(|_| "/Users/syr3x/Music".to_string());
+                                        // MPD music directory from config
+                                        let music_dir = &app.music_directory;
                                         let full_path = format!("{}/{}", music_dir, tag_state.file_path);
                                         
                                         // Write tags using lofty
@@ -697,7 +689,7 @@ async fn main() -> Result<()> {
                                 } else { true };
                                 
                                 if is_new_sequence {
-                                    if let Some(track) = &app.track {
+                                    if let Some(_track) = &app.track {
                                         // Start seek from CURRENT interpolated position
                                         app.seek_initial_pos = Some(app.get_current_position_ms() as f64 / 1000.0);
                                     } else {
@@ -745,7 +737,7 @@ async fn main() -> Result<()> {
                                 } else { true };
                                 
                                 if is_new_sequence {
-                                    if let Some(track) = &app.track {
+                                    if let Some(_track) = &app.track {
                                         // Start seek from CURRENT interpolated position
                                         app.seek_initial_pos = Some(app.get_current_position_ms() as f64 / 1000.0);
                                     } else {
@@ -1807,7 +1799,7 @@ async fn main() -> Result<()> {
                     }
 
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
-                        if let (LyricsState::Loaded(lyrics), Some(track)) = (&app.lyrics, &app.track) {
+                        if let (LyricsState::Loaded(lyrics), Some(_track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
                             // Find target line based on interpolated time
                             let target_idx = lyrics.iter()
@@ -1843,6 +1835,9 @@ async fn main() -> Result<()> {
         
         if !app.is_running { break; }
     }
+
+    // Stop Audio Pipeline 🛑
+    audio_pipeline.stop();
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
