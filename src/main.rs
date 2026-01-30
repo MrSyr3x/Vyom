@@ -1,35 +1,29 @@
 // mod config; // using vyom::config
 
-use vyom::config::AppConfig;
 use anyhow::Result;
 use crossterm::{
-    event::{Event, KeyCode, KeyModifiers, EventStream},
+    event::{Event, EventStream, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
-use std::{io, time::Duration};
-use tokio::sync::mpsc;
 use futures::StreamExt;
 #[cfg(feature = "mpd")]
 use lofty::{file::TaggedFileExt, tag::Accessor};
+use ratatui::{backend::CrosstermBackend, Terminal};
+use std::{io, time::Duration};
+use tokio::sync::mpsc;
+use vyom::config::AppConfig;
 
-use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
-
-
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 
 // Modules now in lib.rs
 use vyom::app;
 use vyom::artwork;
-use vyom::theme;
+use vyom::audio_pipeline;
 use vyom::lyrics;
 use vyom::player;
+use vyom::theme;
 use vyom::ui;
-use vyom::audio_pipeline;
-
 
 #[cfg(feature = "mpd")]
 #[cfg(feature = "mpd")]
@@ -38,7 +32,6 @@ use vyom::mpd_player;
 use std::fs::File;
 use std::io::{Read, Write};
 
-
 const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
 
 /// Try to acquire the audio lock.
@@ -46,7 +39,11 @@ const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
 /// Returns None if another instance holds the lock (we should be UI-only).
 fn try_acquire_audio_lock() -> Option<File> {
     // 1. Check if lock file exists
-    if let Ok(mut file) = std::fs::OpenOptions::new().read(true).write(true).open(LOCK_FILE_PATH) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(LOCK_FILE_PATH)
+    {
         let mut pid_str = String::new();
         if file.read_to_string(&mut pid_str).is_ok() {
             if let Ok(pid) = pid_str.trim().parse::<i32>() {
@@ -67,7 +64,7 @@ fn try_acquire_audio_lock() -> Option<File> {
         .create(true)
         .write(true)
         .truncate(true)
-        .open(LOCK_FILE_PATH) 
+        .open(LOCK_FILE_PATH)
     {
         let pid = std::process::id();
         let _ = write!(file, "{}", pid);
@@ -77,18 +74,14 @@ fn try_acquire_audio_lock() -> Option<File> {
     None
 }
 
-
-
 use clap::Parser;
 
 use app::{ArtworkState, LyricsState};
-use player::{TrackInfo}; 
-use vyom::lyrics::{LyricsFetcher}; 
-use artwork::{ArtworkRenderer}; 
+use artwork::ArtworkRenderer;
+use player::TrackInfo;
+use vyom::lyrics::LyricsFetcher;
 
-
-use theme::{Theme};
-
+use theme::Theme;
 
 enum AppEvent {
     Input(Event),
@@ -107,20 +100,20 @@ struct Args {
     /// Run inside tmux split (internal)
     #[arg(long)]
     standalone: bool,
-    
+
     /// Start in mini player mode (defaults to full UI)
     #[arg(long, short = 'm')]
     mini: bool,
-    
+
     /// Play MP3/FLAC music (Defaults to MPD Client mode)
     #[arg(long, short = 'c')]
     controller: bool,
-    
+
     /// MPD host (default: localhost)
     #[cfg(feature = "mpd")]
     #[arg(long, default_value = "localhost")]
     mpd_host: String,
-    
+
     /// MPD port (default: 6600)
     #[cfg(feature = "mpd")]
     #[arg(long, default_value_t = 6600)]
@@ -129,17 +122,26 @@ struct Args {
 
 // Helper to fetch directory contents (folders + songs)
 #[cfg(feature = "mpd")]
-fn fetch_directory_items(mpd: &mut mpd::Client, path: &str) -> Result<Vec<app::LibraryItem>, mpd::error::Error> {
+fn fetch_directory_items(
+    mpd: &mut mpd::Client,
+    path: &str,
+) -> Result<Vec<app::LibraryItem>, mpd::error::Error> {
     let mut items: Vec<app::LibraryItem> = Vec::new();
-    
+
     // 1. Folders
     if let Ok(files) = mpd.listfiles(path) {
         for (kind, name) in files {
             let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
-            if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-            
+            if display_name.starts_with('.') || display_name.trim().is_empty() {
+                continue;
+            }
+
             if kind == "directory" {
-                let full_path = if path.is_empty() { name.clone() } else { format!("{}/{}", path, name) };
+                let full_path = if path.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{}/{}", path, name)
+                };
                 items.push(app::LibraryItem {
                     name: display_name,
                     item_type: app::LibraryItemType::Folder,
@@ -150,18 +152,28 @@ fn fetch_directory_items(mpd: &mut mpd::Client, path: &str) -> Result<Vec<app::L
             }
         }
     }
-    
+
     // 2. Songs
-    if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: path.to_string(), ..Default::default() }) {
+    if let Ok(songs) = mpd.lsinfo(&mpd::Song {
+        file: path.to_string(),
+        ..Default::default()
+    }) {
         for song in songs {
-            let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-            if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-            
+            let filename = song
+                .file
+                .split('/')
+                .next_back()
+                .unwrap_or(&song.file)
+                .to_string();
+            if filename.starts_with('.') || filename.trim().is_empty() {
+                continue;
+            }
+
             let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
                 Some(t) => t.clone(),
                 None => filename.clone(),
             };
-            
+
             items.push(app::LibraryItem {
                 name: title,
                 item_type: app::LibraryItemType::Song,
@@ -171,14 +183,12 @@ fn fetch_directory_items(mpd: &mut mpd::Client, path: &str) -> Result<Vec<app::L
             });
         }
     }
-    
+
     // Sort: folders first
-    items.sort_by(|a, b| {
-        match (&a.item_type, &b.item_type) {
-            (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-            (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
+    items.sort_by(|a, b| match (&a.item_type, &b.item_type) {
+        (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
+        (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
     Ok(items)
@@ -191,9 +201,9 @@ async fn main() -> Result<()> {
     let is_tmux = std::env::var("TMUX").is_ok();
 
     // Smart Window Logic
-    // Default is Full UI (!mini). 
+    // Default is Full UI (!mini).
     let want_lyrics = !args.mini;
-    
+
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_str().unwrap();
 
@@ -205,12 +215,12 @@ async fn main() -> Result<()> {
     if is_tmux && !is_standalone && want_lyrics {
         // Build child command with all necessary flags
         let mut child_args = vec!["--standalone".to_string()];
-        
+
         // If user wants mini mode explicitly, we wouldn't be in this block.
         // But if we are here, we want full UI. Child inherits default behavior (no flags needed for full UI).
-        // However, we must ensure child doesn't infinite loop. 
+        // However, we must ensure child doesn't infinite loop.
         // passing --standalone prevents re-entry into this block.
-        
+
         // Pass controller flag if present
         if args.controller {
             child_args.push("--controller".to_string());
@@ -224,9 +234,9 @@ async fn main() -> Result<()> {
                 child_args.push(args.mpd_port.to_string());
             }
         }
-        
+
         let child_cmd = format!("{} {}", exe_path, child_args.join(" "));
-        
+
         // Auto-split logic (Tmux)
         let status = std::process::Command::new("tmux")
             .arg("split-window")
@@ -242,9 +252,8 @@ async fn main() -> Result<()> {
                 eprintln!("Failed to create tmux split: {}", e);
             }
         }
-    } 
+    }
     // No else block for Standalone Resize - User manages window size manually.
-
 
     // Setup terminal
     enable_raw_mode()?;
@@ -262,7 +271,7 @@ async fn main() -> Result<()> {
     let (is_mpd_mode, source_app) = if args.controller {
         // Auto-Pause MPD to prevent concurrent audio ⏸️
         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-            let _ = mpd.pause(true); 
+            let _ = mpd.pause(true);
         }
         (false, "Spotify / Apple Music")
     } else {
@@ -281,16 +290,16 @@ async fn main() -> Result<()> {
     // Load persisted state
     let config = AppConfig::load();
     if config.eq_enabled && !is_audio_master {
-         // Maybe log that EQ is visual only?
+        // Maybe log that EQ is visual only?
     }
 
-    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, &source_app, config);
-    
+    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, config);
+
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
-    
+
     // Attach Visualizer 📊
     audio_pipeline.attach_visualizer(app.visualizer.get_audio_buffer());
-    
+
     if is_audio_master {
         if let Err(e) = audio_pipeline.start() {
             let msg = format!("Audio Error: {} (Visuals Only)", e);
@@ -299,11 +308,11 @@ async fn main() -> Result<()> {
         }
     } else {
         // We are secondary. No audio output.
-        // Visuals might still work if we tap into the same FIFO? 
+        // Visuals might still work if we tap into the same FIFO?
         // For now, secondary = no audio processing = no visualizer (unless we share data, which is complex).
         app.show_toast("🔇 Shared Audio Mode (UI Only)");
     }
-    
+
     // Player Backend Selection 🎛️
     #[cfg(feature = "mpd")]
     let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
@@ -311,11 +320,12 @@ async fn main() -> Result<()> {
     } else {
         std::sync::Arc::from(player::get_player())
     };
-    
+
     #[cfg(not(feature = "mpd"))]
-    let player: std::sync::Arc<dyn player::PlayerTrait> = std::sync::Arc::from(player::get_player());
-    
-    let (tx, mut rx) = mpsc::channel(100); 
+    let player: std::sync::Arc<dyn player::PlayerTrait> =
+        std::sync::Arc::from(player::get_player());
+
+    let (tx, mut rx) = mpsc::channel(100);
 
     // Performance Optimization: Global HTTP Client (Reused)
     let client = reqwest::Client::builder()
@@ -323,14 +333,14 @@ async fn main() -> Result<()> {
         .build()
         .unwrap_or_default();
 
-
-
     // 1. Input Event Task
     let tx_input = tx.clone();
     tokio::spawn(async move {
         let mut reader = EventStream::new();
         while let Some(Ok(event)) = reader.next().await {
-            if tx_input.send(AppEvent::Input(event)).await.is_err() { break; }
+            if tx_input.send(AppEvent::Input(event)).await.is_err() {
+                break;
+            }
         }
     });
 
@@ -345,11 +355,12 @@ async fn main() -> Result<()> {
                 let track = player_ref.get_current_track();
                 let queue = player_ref.get_queue();
                 (track, queue)
-            }).await;
-            
+            })
+            .await;
+
             if let Ok((Ok(info), Ok(queue))) = track_result {
-                 let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
-                 let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
+                let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
+                let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
@@ -366,18 +377,22 @@ async fn main() -> Result<()> {
 
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            
+
             // Check file modification time
             if let Ok(metadata) = std::fs::metadata(&theme_path) {
                 if let Ok(modified) = metadata.modified() {
                     // If file modified or we never saw it before (and it exists)
-                    if last_modified.map_or(true, |last| modified > last) {
+                    if last_modified.is_none_or(|last| modified > last) {
                         last_modified = Some(modified);
-                        
+
                         // Load and broadcast new theme
                         let new_theme = theme::load_current_theme();
-                        if tx_theme.send(AppEvent::ThemeUpdate(new_theme)).await.is_err() { 
-                            break; 
+                        if tx_theme
+                            .send(AppEvent::ThemeUpdate(new_theme))
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
                     }
                 }
@@ -392,10 +407,11 @@ async fn main() -> Result<()> {
         let mut interval = tokio::time::interval(Duration::from_millis(16));
         loop {
             interval.tick().await;
-            if tx_tick.send(AppEvent::Tick).await.is_err() { break; }
+            if tx_tick.send(AppEvent::Tick).await.is_err() {
+                break;
+            }
         }
     });
-
 
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
@@ -408,7 +424,7 @@ async fn main() -> Result<()> {
                 app.last_scroll_time = None;
             }
         }
-        
+
         // Update visualizer bars 60fps (called before draw)
         if app.view_mode == app::ViewMode::Visualizer {
             // We request 64 bars which is the max rendering width we limited to
@@ -505,7 +521,7 @@ async fn main() -> Result<()> {
                                         // MPD music directory from config
                                         let music_dir = &app.music_directory;
                                         let full_path = format!("{}/{}", music_dir, tag_state.file_path);
-                                        
+
                                         // Write tags using lofty
                                         if let Ok(mut tagged_file) = lofty::read_from_path(&full_path) {
                                             let mut modified = false;
@@ -517,7 +533,7 @@ async fn main() -> Result<()> {
                                                 }
                                                 modified = true;
                                             }
-                                            
+
                                             if !modified {
                                                 if let Some(tag) = tagged_file.first_tag_mut() {
                                                     tag.set_title(tag_state.title.clone());
@@ -527,10 +543,10 @@ async fn main() -> Result<()> {
                                                     }
                                                 }
                                             }
-                                            
+
                                             // Save to file
                                             if let Ok(mut file) = std::fs::OpenOptions::new()
-                                                .read(true).write(true).open(&full_path) 
+                                                .read(true).write(true).open(&full_path)
                                             {
                                                 use lofty::file::AudioFile;
                                                 let _ = tagged_file.save_to(&mut file, lofty::config::WriteOptions::default());
@@ -558,10 +574,10 @@ async fn main() -> Result<()> {
                                 let target_mode = app.previous_library_mode.take().unwrap_or(app::LibraryMode::Directory);
                                 app.library_mode = target_mode;
                                 app.search_query.clear();
-                                
+
                                 // Reset selection
                                 app.library_selected = 0;
-                                
+
                                 #[cfg(feature = "mpd")]
                                 if !args.controller {
                                     if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
@@ -596,7 +612,7 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             },
-                                
+
 
                             KeyCode::Backspace => { app.search_query.pop(); },
                             KeyCode::Enter => {
@@ -610,18 +626,18 @@ async fn main() -> Result<()> {
                                             // Fuzzy Match 🔍
                                             let mut matched_items: Vec<(i64, mpd::Song)> = songs.into_iter()
                                                 .filter_map(|s| {
-                                                    let search_text = format!("{} {} {}", 
-                                                        s.title.as_deref().unwrap_or(""), 
+                                                    let search_text = format!("{} {} {}",
+                                                        s.title.as_deref().unwrap_or(""),
                                                         s.artist.as_deref().unwrap_or(""),
                                                         s.file
                                                     );
                                                     matcher.fuzzy_match(&search_text, &app.search_query).map(|score| (score, s))
                                                 })
                                                 .collect();
-                                            
+
                                             // Sort by score (descending)
                                             matched_items.sort_by(|a, b| b.0.cmp(&a.0));
-                                            
+
                                             app.library_items = matched_items.into_iter()
                                                 .take(50)
                                                 .map(|(_, s)| app::LibraryItem {
@@ -662,33 +678,33 @@ async fn main() -> Result<()> {
                                     app.is_running = false;
                                 }
                             },
-                            KeyCode::Char(' ') => { 
+                            KeyCode::Char(' ') => {
                                 if let Ok(is_playing) = player.play_pause() {
                                     app.show_toast(if is_playing { "▶ Play" } else { "⏸ Pause" });
                                 }
                             },
-                            KeyCode::Char('n') => { 
+                            KeyCode::Char('n') => {
                                 let _ = player.next();
                                 app.show_toast("⏭ Next Track");
                             },
-                            KeyCode::Char('p') => { 
+                            KeyCode::Char('p') => {
                                 let _ = player.prev();
                                 app.show_toast("⏮ Previous Track");
                             },
-                            KeyCode::Char('+') => { 
+                            KeyCode::Char('+') => {
                                 // Hardware/MPD Volume
                                 let _ = player.volume_up();
-                                
+
                                 // Software Gain (Hi-Res Pipeline) 🎚️
                                 app.app_volume = (app.app_volume.saturating_add(5)).min(100);
                                 audio_pipeline.set_volume(app.app_volume);
-                                
+
                                 app.show_toast(&format!("🔊 Volume: {}%", app.app_volume));
                             },
-                            KeyCode::Char('-') => { 
+                            KeyCode::Char('-') => {
                                 // Hardware/MPD Volume
                                 let _ = player.volume_down();
-                                
+
                                 // Software Gain (Hi-Res Pipeline) 🎚️
                                 app.app_volume = app.app_volume.saturating_sub(5);
                                 audio_pipeline.set_volume(app.app_volume);
@@ -703,7 +719,7 @@ async fn main() -> Result<()> {
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
                                 } else { true };
-                                
+
                                 if is_new_sequence {
                                     if let Some(_track) = &app.track {
                                         // Start seek from CURRENT interpolated position
@@ -716,10 +732,10 @@ async fn main() -> Result<()> {
                                     app.seek_accumulator -= 5.0;
                                 }
                                 app.last_seek_time = Some(now);
-                                
+
                                 if let Some(start_pos) = app.seek_initial_pos {
                                     let mut target = start_pos + app.seek_accumulator;
-                                    
+
                                     // Clamp to safe range (0.0 to Duration) to prevent panic
                                     if let Some(track) = &app.track {
                                         let duration = track.duration_ms as f64 / 1000.0;
@@ -728,7 +744,7 @@ async fn main() -> Result<()> {
                                     } else {
                                         target = target.max(0.0);
                                     }
-                                    
+
                                     // Non-blocking seek with track verification! 🚀
                                     let player_bg = player.clone();
                                     // Use name+artist as unique track identifier
@@ -751,7 +767,7 @@ async fn main() -> Result<()> {
                                 let is_new_sequence = if let Some(last) = app.last_seek_time {
                                     now.duration_since(last).as_millis() >= 500
                                 } else { true };
-                                
+
                                 if is_new_sequence {
                                     if let Some(_track) = &app.track {
                                         // Start seek from CURRENT interpolated position
@@ -764,10 +780,10 @@ async fn main() -> Result<()> {
                                     app.seek_accumulator += 5.0;
                                 }
                                 app.last_seek_time = Some(now);
-                                
+
                                 if let Some(start_pos) = app.seek_initial_pos {
                                     let mut target = start_pos + app.seek_accumulator;
-                                    
+
                                     // Clamp to safe range (0.0 to Duration)
                                     if let Some(track) = &app.track {
                                         let duration = track.duration_ms as f64 / 1000.0;
@@ -775,7 +791,7 @@ async fn main() -> Result<()> {
                                     } else {
                                         target = target.max(0.0);
                                     }
-                                    
+
                                     // Non-blocking seek with track verification! 🚀
                                     let player_bg = player.clone();
                                     // Use name+artist as unique track identifier
@@ -793,7 +809,7 @@ async fn main() -> Result<()> {
                                     app.show_toast(&format!("⏩ Seek: {:+.0}s", app.seek_accumulator));
                                 }
                             },
-                            
+
                             // Queue Reordering with J/K (Shift+j/k) 🔄
                             KeyCode::Char('J') if app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                                 if app.library_selected < app.queue.len().saturating_sub(1) {
@@ -853,12 +869,12 @@ async fn main() -> Result<()> {
                             KeyCode::Char('3') if !args.controller => app.view_mode = app::ViewMode::Library,
                             #[cfg(feature = "mpd")]
                             KeyCode::Char('4') if !args.controller => app.view_mode = app::ViewMode::EQ,
-                        
+
                         // Lyrics Navigation (j/k scroll, Enter to seek) 📜
                         KeyCode::Char('j') if app.view_mode == app::ViewMode::Lyrics => {
                             if let LyricsState::Loaded(ref lines) = &app.lyrics {
                                 let max = lines.len().saturating_sub(1);
-                                
+
                                 // If no selection yet, start from current playing line
                                 let current_playing = {
                                     let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
@@ -867,12 +883,12 @@ async fn main() -> Result<()> {
                                         .map(|i| if i > 0 { i - 1 } else { 0 })
                                         .unwrap_or(max)
                                 };
-                                
+
                                 let current = app.lyrics_selected.unwrap_or(current_playing);
                                 let new_sel = (current + 1).min(max);
                                 app.lyrics_selected = Some(new_sel);
                                 app.lyrics_offset = Some(new_sel);
-                                
+
                                 // CRITICAL: Mark scroll time to prevent auto-recenter!
                                 app.last_scroll_time = Some(std::time::Instant::now());
                             }
@@ -880,7 +896,7 @@ async fn main() -> Result<()> {
                         KeyCode::Char('k') if app.view_mode == app::ViewMode::Lyrics => {
                             if let LyricsState::Loaded(ref lines) = &app.lyrics {
                                 let max = lines.len().saturating_sub(1);
-                                
+
                                 // If no selection yet, start from current playing line
                                 let current_playing = {
                                     let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
@@ -889,12 +905,12 @@ async fn main() -> Result<()> {
                                         .map(|i| if i > 0 { i - 1 } else { 0 })
                                         .unwrap_or(max)
                                 };
-                                
+
                                 let current = app.lyrics_selected.unwrap_or(current_playing);
                                 let new_sel = current.saturating_sub(1);
                                 app.lyrics_selected = Some(new_sel);
                                 app.lyrics_offset = Some(new_sel);
-                                
+
                                 // CRITICAL: Mark scroll time to prevent auto-recenter!
                                 app.last_scroll_time = Some(std::time::Instant::now());
                             }
@@ -905,13 +921,13 @@ async fn main() -> Result<()> {
                                     if idx < lines.len() {
                                         let target_ms = lines[idx].timestamp_ms;
                                         let target_secs = target_ms as f64 / 1000.0;
-                                        
+
                                         // Non-blocking seek! 🚀
                                         let player_bg = player.clone();
                                         tokio::task::spawn_blocking(move || {
                                             let _ = player_bg.seek(target_secs);
                                         });
-                                        
+
                                         let mins = target_ms / 60000;
                                         let secs = (target_ms % 60000) / 1000;
                                         app.show_toast(&format!("🎤 Jump to {}:{:02}", mins, secs));
@@ -962,12 +978,17 @@ async fn main() -> Result<()> {
                             app.reset_eq();
                             app.show_toast("🔄 EQ Reset");
                         },
-                        // Reset single band: 0
+                        // Reset single band + Preamp/Balance: 0
                         KeyCode::Char('0') if app.view_mode == app::ViewMode::EQ => {
+                            // Reset current band
                             app.eq_bands[app.eq_selected] = 0.5;
+                            // Reset preamp/balance as requested by audit
+                            app.reset_preamp();
+                            app.reset_balance();
+
                             app.mark_custom();
                             app.sync_band_to_dsp(app.eq_selected);
-                            app.show_toast(&format!("↺ Band {} Reset", app.eq_selected + 1));
+                            app.show_toast(&format!("↺ Band {} + Preamp/Bal Reset", app.eq_selected + 1));
                         },
                         // Preset cycling: Tab for next, Shift+Tab for previous
                         KeyCode::Tab if app.view_mode == app::ViewMode::EQ => {
@@ -1054,7 +1075,7 @@ async fn main() -> Result<()> {
                                 app.show_audio_info = false;
                             }
                         },
-                        
+
                         // Queue Reordering (Mature Feature) 🔄
                         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) && app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue => {
                             if app.library_selected > 0 {
@@ -1100,7 +1121,7 @@ async fn main() -> Result<()> {
                             app.browse_path.clear();
                             app.search_query.clear();
                             app.search_active = false;
-                            
+
                             // Load playlists when entering Playlists mode
                             #[cfg(feature = "mpd")]
                             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
@@ -1110,7 +1131,7 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            
+
                             // Load root directory when entering Directory mode
                             #[cfg(feature = "mpd")]
                             if app.library_mode == app::LibraryMode::Directory && !args.controller {
@@ -1135,7 +1156,7 @@ async fn main() -> Result<()> {
                             app.library_items.clear();
                             app.browse_path.clear();
                             app.search_query.clear();
-                            
+
                             // Load playlists when entering Playlists mode
                             #[cfg(feature = "mpd")]
                             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
@@ -1336,7 +1357,7 @@ async fn main() -> Result<()> {
                                                         if let Some(path) = &item.path {
                                                             app.browse_path.push(item.name.clone());
                                                             app.library_selected = 0;
-                                                            
+
                                                             // Get directories from listfiles
                                                             if let Ok(items) = fetch_directory_items(&mut mpd, path) {
                                                                 app.library_items = items;
@@ -1383,7 +1404,7 @@ async fn main() -> Result<()> {
                             app.library_mode = target_mode;
                             app.search_query.clear();
                             app.library_selected = 0;
-                            
+
                             #[cfg(feature = "mpd")]
                             if !args.controller {
                                 if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
@@ -1392,13 +1413,13 @@ async fn main() -> Result<()> {
                                             // Restore Directory view
                                             let current_path = app.browse_path.join("/");
                                             let mut new_items: Vec<app::LibraryItem> = Vec::new();
-                                            
+
                                             // 1. Folders
                                             if let Ok(files) = mpd.listfiles(&current_path) {
                                                 for (kind, name) in files {
                                                     let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
                                                     if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-                                                    
+
                                                     if kind == "directory" {
                                                         let full_path = if current_path.is_empty() { name.clone() } else { format!("{}/{}", current_path, name) };
                                                         new_items.push(app::LibraryItem {
@@ -1409,18 +1430,18 @@ async fn main() -> Result<()> {
                                                     }
                                                 }
                                             }
-                                            
+
                                             // 2. Songs
                                             if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
                                                 for song in songs {
                                                     let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
                                                     if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-                                                    
+
                                                     let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
                                                         Some(t) => t.clone(),
                                                         None => filename.clone(),
                                                     };
-                                                    
+
                                                     new_items.push(app::LibraryItem {
                                                         name: title,
                                                         item_type: app::LibraryItemType::Song,
@@ -1430,7 +1451,7 @@ async fn main() -> Result<()> {
                                                     });
                                                 }
                                             }
-                                            
+
                                             new_items.sort_by(|a, b| {
                                                 match (&a.item_type, &b.item_type) {
                                                     (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
@@ -1466,7 +1487,7 @@ async fn main() -> Result<()> {
                             app.browse_path.pop();
                             app.library_items.clear();
                             app.library_selected = 0;
-                            
+
                             // Re-fetch items for the parent level
                             #[cfg(feature = "mpd")]
                             if !args.controller {
@@ -1477,7 +1498,7 @@ async fn main() -> Result<()> {
                                     } else {
                                         app.browse_path.join("/")
                                     };
-                                    
+
                                     // Get directory items
                                     if let Ok(items) = fetch_directory_items(&mut mpd, &parent_path) {
                                         app.library_items = items;
@@ -1505,13 +1526,13 @@ async fn main() -> Result<()> {
                     }
                 },
                 AppEvent::Input(_) => {},
-                
+
                 AppEvent::TrackUpdate(info) => {
                     app.track = info.clone();
                     app.last_track_update = Some(std::time::Instant::now());
                     if let Some(track) = info {
                         let id = format!("{}{}", track.name, track.artist);
-                        
+
                         // Gapless album detection: check if same album as previous track
                         if !track.album.is_empty() && !app.last_album.is_empty() {
                             app.gapless_mode = track.album == app.last_album;
@@ -1519,7 +1540,7 @@ async fn main() -> Result<()> {
                             app.gapless_mode = false;
                         }
                         app.last_album = track.album.clone();
-                        
+
                         if id != last_track_id {
                             last_track_id = id.clone();
                             // Critical: Set Loading state immediately
@@ -1531,7 +1552,7 @@ async fn main() -> Result<()> {
                             app.seek_accumulator = 0.0;
                             app.seek_initial_pos = None;
                             app.last_seek_time = None;
-                            
+
                             // 1. Check Cache
                             if let Some(cached) = app.lyrics_cache.get(&id) {
                                 app.lyrics = LyricsState::Loaded(cached.clone());
@@ -1541,13 +1562,13 @@ async fn main() -> Result<()> {
                                 let (artist, name, dur) = (track.artist.clone(), track.name.clone(), track.duration_ms);
                                 let fetch_id = id.clone();
                                 let file_path = track.file_path.clone();
-                                
+
                                 let client = client.clone();
                                 tokio::spawn(async move {
                                     let fetcher = LyricsFetcher::new(client);
                                     use crate::lyrics::LyricsFetchResult;
                                     match fetcher.fetch(&artist, &name, dur, file_path.as_ref()).await {
-                                        Ok(LyricsFetchResult::Found(lyrics)) => { 
+                                        Ok(LyricsFetchResult::Found(lyrics)) => {
                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics))).await;
                                         },
                                         Ok(LyricsFetchResult::Instrumental) => {
@@ -1583,7 +1604,7 @@ async fn main() -> Result<()> {
                                     }
                                 });
                             }
-                            
+
                             // 3. MPD Artwork: Extract embedded art from audio file 🎵
                             #[cfg(feature = "mpd")]
                             if track.source == "MPD" {
@@ -1595,7 +1616,7 @@ async fn main() -> Result<()> {
                                         let result = tokio::task::spawn_blocking(move || {
                                             ArtworkRenderer::extract_embedded_art(&fp)
                                         }).await;
-                                        
+
                                         match result {
                                             Ok(Ok(img)) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
                                             _ => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
@@ -1635,7 +1656,7 @@ async fn main() -> Result<()> {
                          }
                          app.lyrics_cache.insert(id.clone(), l.clone());
                     }
-                    
+
                     // Only update UI if we are still on the same song
                     if id == last_track_id {
                          app.lyrics = state;
@@ -1651,7 +1672,7 @@ async fn main() -> Result<()> {
 
                 AppEvent::Tick => {
                     app.on_tick();
-                    
+
                     // Poll Shuffle/Repeat status every ~2 seconds (120 ticks at 16ms/tick, roughly)
                     // Actually tick rate is 100ms? View main loop setup.
                     // Assuming ~10Hz or similar.
@@ -1681,11 +1702,11 @@ async fn main() -> Result<()> {
                                .position(|l| l.timestamp_ms > app.get_current_position_ms())
                                .map(|i| i.saturating_sub(1))
                                .unwrap_or(lyrics.len().saturating_sub(1));
-                            
+
                             // 2. Smooth Scroll Animation 🌊
                             // Update accumulator (16ms per tick)
                             app.smooth_scroll_accum += 0.016;
-                            
+
                             // Threshold: 0.05s (approx 20 lines/sec max speed)
                             // This prevents "teleporting" and ensures visible motion
                             if app.smooth_scroll_accum >= 0.05 {
@@ -1707,11 +1728,12 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        
+
             }
 
-        
-        if !app.is_running { break; }
+        if !app.is_running {
+            break;
+        }
     }
 
     // Stop Audio Pipeline 🛑
@@ -1720,7 +1742,7 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    
+
     // Save state on exit
     app.save_state();
 
@@ -1728,6 +1750,6 @@ async fn main() -> Result<()> {
     if is_audio_master {
         let _ = std::fs::remove_file(LOCK_FILE_PATH);
     }
-    
+
     Ok(())
 }

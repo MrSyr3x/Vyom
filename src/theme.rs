@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use ratatui::style::Color;
+use serde::{Deserialize, Serialize};
 use std::fs;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,20 +61,22 @@ pub fn load_current_theme() -> Theme {
     } else {
         // Auto-create default theme file if it doesn't exist
         let default_theme = Theme::default();
-        let wrapper = ThemeFile { theme: default_theme.clone() };
-        
+        let wrapper = ThemeFile {
+            theme: default_theme.clone(),
+        };
+
         // Ensure directory exists
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        
+
         // Write to file
         if let Ok(toml_str) = toml::to_string_pretty(&wrapper) {
             let _ = fs::write(&path, toml_str);
         }
-        
+
         return default_theme;
     }
-    
+
     Theme::default()
 }

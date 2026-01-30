@@ -1,5 +1,5 @@
 //! Audio device information module
-//! 
+//!
 //! Uses cpal to list audio output devices and SwitchAudioSource (macOS) to switch.
 
 #[cfg(feature = "eq")]
@@ -22,9 +22,9 @@ pub fn get_output_devices() -> Vec<AudioDevice> {
         .default_output_device()
         .and_then(|d| d.name().ok())
         .unwrap_or_default();
-    
+
     let mut devices = Vec::new();
-    
+
     if let Ok(output_devices) = host.output_devices() {
         for device in output_devices {
             if let Ok(name) = device.name() {
@@ -35,10 +35,10 @@ pub fn get_output_devices() -> Vec<AudioDevice> {
             }
         }
     }
-    
+
     // Deduplicate by name (macOS sometimes lists duplicates)
     devices.dedup_by(|a, b| a.name == b.name);
-    
+
     devices
 }
 
@@ -46,11 +46,11 @@ pub fn get_output_devices() -> Vec<AudioDevice> {
 #[cfg(feature = "eq")]
 pub fn get_output_device_name() -> String {
     let host = cpal::default_host();
-    
+
     match host.default_output_device() {
-        Some(device) => {
-            device.name().unwrap_or_else(|_| "Unknown Device".to_string())
-        }
+        Some(device) => device
+            .name()
+            .unwrap_or_else(|_| "Unknown Device".to_string()),
         None => "No Output Device".to_string(),
     }
 }
@@ -64,7 +64,7 @@ pub fn switch_audio_device(device_name: &str) -> bool {
         .arg("-s")
         .arg(device_name)
         .output();
-    
+
     match result {
         Ok(output) => output.status.success(),
         Err(_) => false,
@@ -81,19 +81,17 @@ pub fn switch_audio_device(_device_name: &str) -> bool {
 #[cfg(target_os = "macos")]
 pub fn get_devices_from_system() -> Vec<String> {
     let result = Command::new("SwitchAudioSource")
-        .arg("-a")  // List all devices
-        .arg("-t")  // Type: output
+        .arg("-a") // List all devices
+        .arg("-t") // Type: output
         .arg("output")
         .output();
-    
+
     match result {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        }
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -120,14 +118,14 @@ pub fn get_output_devices() -> Vec<AudioDevice> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_get_device_name() {
         let name = get_output_device_name();
         assert!(!name.is_empty());
         println!("Output device: {}", name);
     }
-    
+
     #[test]
     fn test_get_devices() {
         let devices = get_output_devices();
@@ -136,7 +134,7 @@ mod tests {
             println!("  {} {}", if d.is_default { "●" } else { "○" }, d.name);
         }
     }
-    
+
     #[test]
     fn test_get_system_devices() {
         let devices = get_devices_from_system();
