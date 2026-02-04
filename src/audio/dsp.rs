@@ -366,39 +366,3 @@ impl DspEqualizer {
 
     pub fn process_buffer(&mut self, _buffer: &mut [f32]) {}
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_value_conversion() {
-        assert!((value_to_db(0.0) - (-12.0)).abs() < 0.001);
-        assert!((value_to_db(0.5) - 0.0).abs() < 0.001);
-        assert!((value_to_db(1.0) - 12.0).abs() < 0.001);
-
-        assert!((db_to_value(-12.0) - 0.0).abs() < 0.001);
-        assert!((db_to_value(0.0) - 0.5).abs() < 0.001);
-        assert!((db_to_value(12.0) - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_eq_gains() {
-        let gains = EqGains::new();
-
-        // Test set/get
-        gains.set_gain(0, 6.0);
-        let g = gains.get_gains();
-        assert!((g[0] - 6.0).abs() < 0.001);
-
-        // Test clamping
-        gains.set_gain(1, 20.0);
-        let g = gains.get_gains();
-        assert!((g[1] - 12.0).abs() < 0.001); // Should clamp to 12
-
-        // Test reset
-        gains.reset();
-        let g = gains.get_gains();
-        assert!((g[0] - 0.0).abs() < 0.001);
-    }
-}

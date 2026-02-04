@@ -1,15 +1,13 @@
-use crate::config::{AppConfig, EqPreset};
-use crate::lyrics::LyricLine;
+use super::config::{AppConfig, EqPreset};
+use super::lyrics::LyricLine;
+use crate::audio::device as audio_device;
+use crate::audio::dsp::EqGains;
+use crate::audio::visualizer::Visualizer;
 use crate::player::TrackInfo;
+use crate::ui::theme::Theme;
+use image::DynamicImage;
 use std::collections::HashMap;
 use std::time::Instant;
-
-use image::DynamicImage;
-
-use crate::audio_device;
-use crate::dsp_eq::EqGains;
-use crate::theme::Theme;
-use crate::visualizer::Visualizer;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LyricsState {
@@ -269,7 +267,7 @@ impl App {
             .unwrap_or(0); // Default to first (Custom or Flat)
 
         let app = Self {
-            theme: crate::theme::load_current_theme(),
+            theme: crate::ui::theme::load_current_theme(),
             is_running: true,
             track: None,
             lyrics: LyricsState::Idle,

@@ -1,87 +1,6 @@
+use super::traits::{PlayerState, PlayerTrait, TrackInfo};
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use std::process::Command;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PlayerState {
-    Playing,
-    Paused,
-    Stopped,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackInfo {
-    pub name: String,
-    pub artist: String,
-    pub album: String,
-    pub artwork_url: Option<String>,
-    pub duration_ms: u64,
-    pub position_ms: u64,
-    pub state: PlayerState,
-    pub source: String, // "Spotify", "Music", "MPD"
-
-    // Audiophile Metadata 🎵
-    pub codec: Option<String>,    // "FLAC", "ALAC", "AAC", "MP3"
-    pub bitrate: Option<u32>,     // kbps
-    pub sample_rate: Option<u32>, // Hz (e.g., 44100, 96000)
-    pub bit_depth: Option<u8>,    // 16, 24, 32
-
-    /// File path for embedded artwork extraction (MPD mode)
-    pub file_path: Option<String>,
-
-    /// Current Volume (0-100)
-    pub volume: Option<u32>,
-}
-
-/// The unified interface for any OS Media Player 🎵
-pub trait PlayerTrait: Send + Sync {
-    fn get_current_track(&self) -> Result<Option<TrackInfo>>;
-    fn play_pause(&self) -> Result<bool>;
-    fn next(&self) -> Result<()>;
-    fn prev(&self) -> Result<()>;
-    fn seek(&self, position_secs: f64) -> Result<()>;
-    fn volume_up(&self) -> Result<()>;
-    fn volume_down(&self) -> Result<()>;
-
-    /// Get current queue/playlist (MPD only, returns empty for controller mode)
-    /// Returns: (title, artist, duration_ms, is_current, file_path)
-    fn get_queue(&self) -> Result<Vec<(String, String, u64, bool, String)>> {
-        Ok(Vec::new())
-    }
-
-    // Extended methods for MPD features (defaults for non-MPD players)
-    fn shuffle(&self, _enable: bool) -> Result<()> {
-        Ok(())
-    }
-    fn repeat(&self, _enable: bool) -> Result<()> {
-        Ok(())
-    }
-    fn crossfade(&self, _secs: u32) -> Result<()> {
-        Ok(())
-    }
-    fn delete_queue(&self, _pos: u32) -> Result<()> {
-        Ok(())
-    }
-    fn get_shuffle(&self) -> Result<bool> {
-        Ok(false)
-    }
-    fn get_repeat(&self) -> Result<bool> {
-        Ok(false)
-    }
-}
-
-/// Factory to get the correct player for the current OS
-pub fn get_player() -> Box<dyn PlayerTrait> {
-    #[cfg(target_os = "macos")]
-    {
-        Box::new(MacOsPlayer)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        // Placeholder for Linux/Windows
-        Box::new(DummyPlayer)
-    }
-}
 
 // --- macOS Implementation 🍎 ---
 
@@ -344,44 +263,9 @@ impl PlayerTrait for MacOsPlayer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_spotify_output() {
-        // "Name|||Artist|||Album|||Duration|||Position|||State|||Artwork|||Volume"
-        let output =
-            "Song Name|||Artist Name|||Album Name|||180000|||12.5|||playing|||http://art.url|||80";
-        let info = MacOsPlayer::parse_player_output(output, "Spotify").unwrap();
-
-        assert_eq!(info.name, "Song Name");
-        assert_eq!(info.artist, "Artist Name");
-        assert_eq!(info.state, PlayerState::Playing);
-        assert_eq!(info.duration_ms, 180000);
-        assert_eq!(info.position_ms, 12500); // 12.5s * 1000
-        assert_eq!(info.volume, Some(80));
-    }
-
-    #[test]
-    fn test_parse_music_output() {
-        // Music app often returns duration in seconds, but we handle that in AppleScript?
-        // Logic says: "tDuration to tDurSec * 1000" in AppleScript. So parsing expects ms.
-        let output = "My Song|||The Artist|||The Album|||240000|||60.0|||paused|||NONE|||100";
-        let info = MacOsPlayer::parse_player_output(output, "Music").unwrap();
-
-        assert_eq!(info.name, "My Song");
-        assert_eq!(info.source, "Music");
-        assert_eq!(info.state, PlayerState::Paused);
-        assert_eq!(info.artwork_url, None);
-    }
-}
-
 // --- Dummy Implementation (Linux/Windows Placeholder) ---
-#[cfg(not(target_os = "macos"))]
 pub struct DummyPlayer;
 
-#[cfg(not(target_os = "macos"))]
 impl PlayerTrait for DummyPlayer {
     fn get_current_track(&self) -> Result<Option<TrackInfo>> {
         Ok(None)

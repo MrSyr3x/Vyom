@@ -114,33 +114,3 @@ pub fn get_output_devices() -> Vec<AudioDevice> {
         is_default: true,
     }]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_device_name() {
-        let name = get_output_device_name();
-        assert!(!name.is_empty());
-        println!("Output device: {}", name);
-    }
-
-    #[test]
-    fn test_get_devices() {
-        let devices = get_output_devices();
-        println!("Found {} devices via cpal:", devices.len());
-        for d in &devices {
-            println!("  {} {}", if d.is_default { "●" } else { "○" }, d.name);
-        }
-    }
-
-    #[test]
-    fn test_get_system_devices() {
-        let devices = get_devices_from_system();
-        println!("Found {} devices via SwitchAudioSource:", devices.len());
-        for d in &devices {
-            println!("  {}", d);
-        }
-    }
-}

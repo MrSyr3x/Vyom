@@ -19,16 +19,16 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            base: Color::Rgb(30, 30, 46),
-            surface: Color::Rgb(49, 50, 68),
-            overlay: Color::Rgb(108, 112, 134),
-            text: Color::Rgb(205, 214, 244),
-            red: Color::Rgb(243, 139, 168),
-            green: Color::Rgb(166, 227, 161),
-            yellow: Color::Rgb(249, 226, 175),
-            blue: Color::Rgb(137, 180, 250),
-            magenta: Color::Rgb(203, 166, 247),
-            cyan: Color::Rgb(148, 226, 213),
+            base: Color::Rgb(30,30,46),
+            surface: Color::Rgb(49,50,68),
+            overlay: Color::Rgb(108,112,134),
+            text: Color::Rgb(205,214,244),
+            red: Color::Rgb(243,139,168),
+            green: Color::Rgb(166,227,161),
+            yellow: Color::Rgb(249,226,175),
+            blue: Color::Rgb(137,180,250),
+            magenta: Color::Rgb(203,166,247),
+            cyan: Color::Rgb(148,226,213),
         }
     }
 }

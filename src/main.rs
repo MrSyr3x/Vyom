@@ -12,17 +12,17 @@ use lofty::{file::TaggedFileExt, tag::Accessor};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
-use vyom::config::AppConfig;
+use vyom::app::config::AppConfig;
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 
 // Modules now in lib.rs
 use vyom::app;
 use vyom::artwork;
-use vyom::audio_pipeline;
-use vyom::lyrics;
+use vyom::audio::pipeline as audio_pipeline;
+
 use vyom::player;
-use vyom::theme;
+use vyom::ui::theme;
 use vyom::ui;
 
 #[cfg(feature = "mpd")]
@@ -79,7 +79,7 @@ use clap::Parser;
 use app::{ArtworkState, LyricsState};
 use artwork::ArtworkRenderer;
 use player::TrackInfo;
-use vyom::lyrics::LyricsFetcher;
+use vyom::app::lyrics::LyricsFetcher;
 
 use theme::Theme;
 
@@ -1566,7 +1566,7 @@ async fn main() -> Result<()> {
                                 let client = client.clone();
                                 tokio::spawn(async move {
                                     let fetcher = LyricsFetcher::new(client);
-                                    use crate::lyrics::LyricsFetchResult;
+                                    use vyom::app::lyrics::LyricsFetchResult;
                                     match fetcher.fetch(&artist, &name, dur, file_path.as_ref()).await {
                                         Ok(LyricsFetchResult::Found(lyrics)) => {
                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics))).await;
