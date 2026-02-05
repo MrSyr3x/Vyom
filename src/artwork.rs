@@ -22,6 +22,9 @@ pub struct ArtworkRenderer {
     client: Client,
 }
 
+pub type DualPixelColor = (u8, u8, u8, u8, u8, u8);
+pub type AsciiArtLine = (String, Vec<DualPixelColor>);
+
 impl ArtworkRenderer {
     pub fn new(client: Client) -> Self {
         Self { client }
@@ -140,7 +143,7 @@ impl ArtworkRenderer {
         img: &DynamicImage,
         target_width: u32,
         target_height: u32,
-    ) -> Vec<(String, Vec<(u8, u8, u8, u8, u8, u8)>)> {
+    ) -> Vec<AsciiArtLine> {
         use image::GenericImageView;
 
         // Resize image to target dimensions (height should be even for half-blocks)
@@ -151,12 +154,12 @@ impl ArtworkRenderer {
             image::imageops::FilterType::Triangle,
         );
 
-        let mut lines: Vec<(String, Vec<(u8, u8, u8, u8, u8, u8)>)> = Vec::new();
+        let mut lines: Vec<AsciiArtLine> = Vec::new();
 
         // Process 2 rows at a time
         for y in (0..actual_height).step_by(2) {
             let mut line_chars = String::new();
-            let mut line_colors: Vec<(u8, u8, u8, u8, u8, u8)> = Vec::new();
+            let mut line_colors: Vec<DualPixelColor> = Vec::new();
 
             for x in 0..target_width {
                 let top_pixel = resized.get_pixel(x, y);

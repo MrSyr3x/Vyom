@@ -84,12 +84,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Queue
             Span::styled(
                 format!("{} ", q_dot),
-                Style::default().fg(if queue_active {
-                    theme.green
-                } else {
-                    theme.green
-                }),
-            ), // Always green, just dimmed if inactive? No, let's keep it clean.
+                Style::default().fg(theme.green),
+            ),
             Span::styled(
                 "Queue",
                 if queue_active {
@@ -99,12 +95,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 } else {
                     Style::default().fg(theme.green)
                 },
-            ), // Inactive is now dimmed green instead of gray
+            ),
             Span::styled("      ", Style::default()),
             // Directory
             Span::styled(
                 format!("{} ", d_dot),
-                Style::default().fg(if dir_active { theme.blue } else { theme.blue }),
+                Style::default().fg(theme.blue),
             ),
             Span::styled(
                 "Directory",

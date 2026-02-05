@@ -44,7 +44,7 @@ pub trait PlayerTrait: Send + Sync {
 
     /// Get current queue/playlist (MPD only, returns empty for controller mode)
     /// Returns: (title, artist, duration_ms, is_current, file_path)
-    fn get_queue(&self) -> Result<Vec<(String, String, u64, bool, String)>> {
+    fn get_queue(&self) -> Result<Vec<QueueItem>> {
         Ok(Vec::new())
     }
 
@@ -68,3 +68,6 @@ pub trait PlayerTrait: Send + Sync {
         Ok(false)
     }
 }
+
+/// (title, artist, duration_ms, is_current, file_path)
+pub type QueueItem = (String, String, u64, bool, String);

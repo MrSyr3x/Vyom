@@ -54,7 +54,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
         // ━━━ BALANCE SLIDER ━━━
         let mut slider_w = (w * 50 / 100).max(21);
-        if slider_w % 2 == 0 {
+        if slider_w.is_multiple_of(2) {
             slider_w += 1;
         } // Force odd width for perfect center
         let pad = (w.saturating_sub(slider_w + 6)) / 2;
@@ -146,26 +146,26 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
         // Interpolate curve Y for each column (with sub-row precision)
         let mut curve_y_precise: Vec<f32> = vec![center_row as f32; graph_w];
-        for col in 0..graph_w {
+        for (col, val) in curve_y_precise.iter_mut().enumerate().take(graph_w) {
             let mut left_band = 0;
-            for i in 0..bands {
-                if col >= band_x[i] {
+            for (i, &band_pos) in band_x.iter().enumerate().take(bands) {
+                if col >= band_pos {
                     left_band = i;
                 }
             }
             let right_band = (left_band + 1).min(bands - 1);
 
             if col <= band_x[0] {
-                curve_y_precise[col] = band_y_precise[0];
+                *val = band_y_precise[0];
             } else if col >= band_x[bands - 1] {
-                curve_y_precise[col] = band_y_precise[bands - 1];
+                *val = band_y_precise[bands - 1];
             } else {
                 let x1 = band_x[left_band];
                 let x2 = band_x[right_band];
                 if x2 > x1 {
                     let t = (col - x1) as f32 / (x2 - x1) as f32;
                     let t = t * t * (3.0 - 2.0 * t); // smoothstep
-                    curve_y_precise[col] = band_y_precise[left_band] * (1.0 - t)
+                    *val = band_y_precise[left_band] * (1.0 - t)
                         + band_y_precise[right_band] * t;
                 }
             }
@@ -191,8 +191,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 Style::default().fg(muted),
             ));
 
-            for col in 0..graph_w {
-                let cy = curve_y_precise[col];
+            for (col, &cy) in curve_y_precise.iter().enumerate().take(graph_w) {
                 let cy_row = cy.round() as usize;
                 let is_on_curve = row == cy_row;
                 let is_band_col = band_x.contains(&col);

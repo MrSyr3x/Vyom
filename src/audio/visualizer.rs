@@ -204,9 +204,9 @@ impl Visualizer {
         self.last_update = Some(now);
 
         // Normalize first
-        for i in 0..count {
+        for val in bars.iter_mut().take(count) {
             let norm = if self.max_val > 0.0 {
-                bars[i] / self.max_val
+                *val / self.max_val
             } else {
                 0.0
             };
@@ -214,7 +214,7 @@ impl Visualizer {
             // If max_val is tiny, norm could be 100.0. Clamp it to 1.0.
             let norm = norm.min(1.0);
 
-            bars[i] = norm.powf(0.85);
+            *val = norm.powf(0.85);
         }
 
         // --- 2. Integral Smoothing ---
@@ -249,8 +249,8 @@ impl Visualizer {
         let gravity = 3.0;
         let _hysteresis = 0.005;
 
-        for i in 0..count {
-            let mut input_val = bars[i];
+        for (i, bar_val) in bars.iter_mut().enumerate().take(count) {
+            let mut input_val = *bar_val;
 
             // Silence Gate
             if input_val < 0.005 {
@@ -282,7 +282,7 @@ impl Visualizer {
 
             self.prev_bars[i] = display_val;
             self.velocities[i] = vel;
-            bars[i] = display_val;
+            *bar_val = display_val;
         }
 
         bars

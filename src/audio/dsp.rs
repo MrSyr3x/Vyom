@@ -218,8 +218,8 @@ impl DspEqualizer {
 
         // Check if any gains changed
         let mut needs_update = false;
-        for i in 0..10 {
-            if (current_gains[i] - self.last_gains[i]).abs() > 0.01 {
+        for (i, &gain) in current_gains.iter().enumerate() {
+            if (gain - self.last_gains[i]).abs() > 0.01 {
                 needs_update = true;
                 break;
             }
@@ -325,10 +325,10 @@ impl DspEqualizer {
 
     /// Reset filter state (call on extended silence to prevent transients)
     pub fn reset_filters(&mut self) {
-        for i in 0..10 {
+        for (i, &freq) in EQ_FREQUENCIES.iter().enumerate() {
             // Recreate filters with current coefficients to reset internal state
             let coeffs =
-                Self::make_peaking_coeffs(self.sample_rate, EQ_FREQUENCIES[i], self.last_gains[i]);
+                Self::make_peaking_coeffs(self.sample_rate, freq, self.last_gains[i]);
             self.filters_left[i] = biquad::DirectForm1::<f32>::new(coeffs);
             self.filters_right[i] = biquad::DirectForm1::<f32>::new(coeffs);
         }

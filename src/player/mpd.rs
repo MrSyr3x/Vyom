@@ -1,4 +1,4 @@
-use super::traits::{PlayerState, PlayerTrait, TrackInfo};
+use super::traits::{PlayerState, PlayerTrait, TrackInfo, QueueItem};
 use anyhow::{Context, Result};
 #[cfg(feature = "mpd")]
 use mpd::{Client, Song, State};
@@ -26,10 +26,7 @@ impl MpdPlayer {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn default() -> Self {
-        Self::new("localhost", 6600)
-    }
+
 
     fn connect(&self) -> Result<Client> {
         let addr = format!("{}:{}", self.host, self.port);
@@ -98,7 +95,7 @@ impl PlayerTrait for MpdPlayer {
         let (sample_rate, bit_depth, bitrate) = if let Some(audio) = status.audio {
             (Some(audio.rate), Some(audio.bits), None)
         } else {
-            (None, None, status.bitrate.map(|b| b))
+            (None, None, status.bitrate)
         };
 
         let duration_ms = song
@@ -253,7 +250,7 @@ impl PlayerTrait for MpdPlayer {
         Ok(())
     }
 
-    fn get_queue(&self) -> Result<Vec<(String, String, u64, bool, String)>> {
+    fn get_queue(&self) -> Result<Vec<QueueItem>> {
         let mut conn = self.connect()?;
         let status = conn.status()?;
         let queue = conn.queue()?;
@@ -268,7 +265,7 @@ impl PlayerTrait for MpdPlayer {
                 .map(|(_, v)| v.clone())
         };
 
-        let items: Vec<(String, String, u64, bool, String)> = queue
+        let items: Vec<QueueItem> = queue
             .iter()
             .enumerate()
             .map(|(i, song)| {

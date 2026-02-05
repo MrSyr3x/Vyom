@@ -125,11 +125,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                             .fg(theme.green)
                     } else {
                         match dist_from_center {
-                            1..=2 => Style::default().fg(theme.text),
-                            3..=4 => Style::default()
+                            1 => Style::default().fg(theme.text),
+                            2 => Style::default()
                                 .fg(theme.text)
                                 .add_modifier(Modifier::DIM),
-                            5..=6 => Style::default().fg(theme.overlay),
+                            3..=4 => Style::default().fg(theme.overlay),
+                            5..=6 => Style::default().fg(theme.surface),
                             _ => Style::default().fg(theme.base),
                         }
                     };
