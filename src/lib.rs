@@ -1,6 +1,7 @@
 pub mod app;
 pub mod artwork;
 pub mod audio;
+pub mod inputs;
 // pub mod audio_device; // Deprecated
 // pub mod audio_pipeline; // Deprecated
 // pub mod config; // Deprecated

@@ -507,8 +507,8 @@ fn render_keyhints(f: &mut Frame, app: &App) {
                 ("k/j", "📊", "Adjust gain"),
                 ("Tab", "🎵", "Next preset"),
                 ("e", "⚡", "Toggle EQ"),
-                ("r", "↺", "Reset all"),
-                ("0", "🎯", "Reset band"),
+                ("r", "↺", "Reset EQ"),
+                ("0", "🎯", "Reset Levels"),
                 ("g/G", "🔊", "Preamp ±1dB"),
                 ("b/B", "⚖️", "Balance ±0.1"),
                 ("c", "🔀", "Crossfade"),
@@ -527,6 +527,7 @@ fn render_keyhints(f: &mut Frame, app: &App) {
                 ("/", "🔍", "Search"),
                 ("a", "➕", "Add to Queue"),
                 ("s", "💾", "Save playlist"),
+                ("r", "✏️", "Rename playlist"),
                 ("d", "🗑️", "Delete/Remove"),
                 ("t", "🏷️", "Edit tags"),
                 ("J/K", "🔃", "Reorder"),
@@ -618,10 +619,21 @@ fn render_keyhints(f: &mut Frame, app: &App) {
         ]));
     }
 
-    // Calculate popup size - fit content exactly
+    // Calculate popup size - fit content exactly 📏
+    let content_width = keys.iter().chain(global_keys.iter())
+        .map(|(k, _i, d)| {
+            // " kkkkkkk    ii ddddddd"
+            // padding(1) + key(max 7) + padding(1) + spacer(3) + icon/space(3) + desc
+            // We use fixed 7 for key alignment, but if key > 7 it expands
+            2 + k.len().max(7) + 3 + 3 + d.len()
+        })
+        .max()
+        .unwrap_or(20) // Minimum width
+        .max(22); // "────── Global ──────" length
+
     let max_height = f.area().height.saturating_sub(4);
     let popup_height = (lines.len() as u16 + 2).min(max_height); // +2 for borders
-    let popup_width = 32u16.min(f.area().width.saturating_sub(2));
+    let popup_width = (content_width as u16 + 4).min(f.area().width.saturating_sub(2));
 
     // Position at bottom-right
     let popup_x = f.area().width.saturating_sub(popup_width + 1);

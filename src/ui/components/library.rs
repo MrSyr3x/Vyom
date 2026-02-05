@@ -15,12 +15,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     // Smart Library Panel 📚
     // let theme = &app.theme; // Already defined above
 
-    let title_text = match app.library_mode {
-        LibraryMode::Queue => " Queue ",
-        LibraryMode::Directory => " Directory ",
-        LibraryMode::Playlists => " Playlists ",
-        LibraryMode::Search => " Search ",
-    };
+    let title_text = " Library ";
 
     let lib_block = Block::default()
         .borders(ratatui::widgets::Borders::ALL)
@@ -426,9 +421,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         }
         LibraryMode::Search => {
             // Unified aesthetic for Search
-            let time_w = 6;
+            let _time_w = 6;
+            // Match Directory Layout: 25% Artist
             let artist_w = w / 4;
-            let title_w = w.saturating_sub(artist_w + time_w + 10);
+            // let title_w = w.saturating_sub(artist_w + time_w + 10); // Unused
             let content_h = h.saturating_sub(8);
 
             let green = theme.green;
@@ -437,9 +433,21 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             let grid = theme.surface;
 
             // ━━━ CENTERED TITLE (Removed - Moved to Border) ━━━
+            // ━━━ CENTERED TITLE ━━━
             lines.push(Line::from(""));
-            // let title = ... removed ...
-            // lines.push(Line::from(""));
+            let search_title = if app.search_query.is_empty() {
+                "  SEARCH  ".to_string()
+            } else {
+                format!("  SEARCH RESULTS: \"{}\"  ", app.search_query)
+            };
+            lines.push(
+                Line::from(Span::styled(
+                    search_title,
+                    Style::default().fg(green),
+                ))
+                .alignment(Alignment::Center),
+            );
+            lines.push(Line::from(""));
 
             // ━━━ CONTENT ━━━
             if app.library_items.is_empty() && !app.search_query.is_empty() {
@@ -481,9 +489,25 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     let actual_idx = start_idx + display_idx;
                     let is_sel = actual_idx == app.library_selected;
 
-                    let name = truncate(&item.name, title_w.saturating_sub(2));
+                    // Clean up name by removing path components if present
+                    let clean_name = item.name.split('/').last().unwrap_or(&item.name);
+                    
+                    // Dynamic Layout Calculation 📐
+                    // Prefix width: "  ● " (4) + "♪ " (2) = 6 chars
+                    let prefix_w = 6;
+                    
+                    let has_artist = !item.artist.as_deref().unwrap_or("").trim().is_empty();
+                    let has_time = item.duration_ms.unwrap_or(0) > 0;
+
+                    let row_time_w = if has_time { 6 } else { 0 };
+                    let row_artist_w = if has_artist { artist_w } else { 0 };
+                    
+                    // Give ALL remaining space to Title
+                    let row_title_w = w.saturating_sub(row_artist_w + row_time_w + prefix_w);
+
+                    let name = truncate(clean_name, row_title_w.saturating_sub(1));
                     let artist = item.artist.clone().unwrap_or_default();
-                    let artist_disp = truncate(&artist, artist_w.saturating_sub(1));
+                    let artist_disp = truncate(&artist, row_artist_w.saturating_sub(1));
                     let time = item
                         .duration_ms
                         .map(|ms| {
@@ -530,16 +554,16 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                                 "{} {:title_w$}",
                                 icon,
                                 name,
-                                title_w = title_w.saturating_sub(2)
+                                title_w = row_title_w.saturating_sub(1)
                             ),
                             t_style,
                         ),
                         Span::styled(
-                            format!("{:artist_w$}", artist_disp, artist_w = artist_w),
+                            format!("{:artist_w$}", artist_disp, artist_w = row_artist_w),
                             a_style,
                         ),
                         Span::styled(
-                            format!("{:>time_w$}", time, time_w = time_w),
+                            format!("{:>time_w$}", time, time_w = row_time_w),
                             tm_style,
                         ),
                     ]));
@@ -558,12 +582,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             let grid = theme.surface;
 
             // ━━━ CENTERED TITLE (Removed - Moved to Border) ━━━
+            // ━━━ CENTERED TITLE ━━━
             lines.push(Line::from(""));
-            // lines.push(Line::from(Span::styled(
-            //     format!("  PLAYLISTS  ·  {} saved  ", playlist_count),
-            //     Style::default().fg(magenta)
-            // )).alignment(Alignment::Center));
-            // lines.push(Line::from(""));
+            let playlist_count = app.playlists.len();
+            lines.push(Line::from(Span::styled(
+                format!("  PLAYLISTS  ·  {} saved  ", playlist_count),
+                Style::default().fg(magenta)
+            )).alignment(Alignment::Center));
+            lines.push(Line::from(""));
 
             // ━━━ CONTENT ━━━
             if app.playlists.is_empty() {

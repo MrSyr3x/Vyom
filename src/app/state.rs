@@ -62,6 +62,7 @@ pub enum InputMode {
     PlaylistSave,
 
     EqSave,
+    PlaylistRename(String), // Carries old name
 }
 
 /// Generic Input Popup State 📝

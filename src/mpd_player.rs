@@ -462,6 +462,13 @@ impl MpdPlayer {
         Ok(())
     }
 
+    /// Rename a playlist
+    pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<()> {
+        let mut conn = self.connect()?;
+        conn.pl_rename(old_name, new_name)?;
+        Ok(())
+    }
+
     /// Add song to queue by file path
     pub fn add_to_queue(&self, path: &str) -> Result<()> {
         let mut conn = self.connect()?;

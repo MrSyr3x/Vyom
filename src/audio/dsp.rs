@@ -109,6 +109,11 @@ impl EqGains {
         }
     }
 
+    /// Reset all bands to 0dB (Explicit alias)
+    pub fn reset_bands(&self) {
+        self.reset();
+    }
+
     /// Set preamp gain in dB (-12 to +12)
     pub fn set_preamp_db(&self, db: f32) {
         if let Ok(mut preamp) = self.preamp_db.write() {
