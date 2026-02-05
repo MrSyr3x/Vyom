@@ -176,7 +176,7 @@ pub async fn handle_input(
                             },
                             _ => {}
                         }
-                        return; // Don't process other key handlers while tag editor is open
+                        // Don't process other key handlers while tag editor is open
                     }
                     // When search is active, capture ALL character input (except special keys)
                     else if app.search_active {
@@ -279,19 +279,28 @@ pub async fn handle_input(
                             _ => {}
                         }
                     } else {
+                        // Priority Handler for Global Search 🔍
+                        // Ensures / works even if Directory mode or other states would otherwise shadow it
+                        #[cfg(feature = "mpd")]
+                        if key.code == KeyCode::Char('/') && !args.controller {
+                            app.view_mode = app::ViewMode::Library;
+                            // Save current mode before switching to Search, unless we are already searching
+                            if app.library_mode != app::LibraryMode::Search {
+                                app.previous_library_mode = Some(app.library_mode);
+                            }
+                            app.library_mode = app::LibraryMode::Search;
+                            app.search_active = true;
+                            // Critical: Clear items so we don't see previous Directory contents
+                            app.library_items.clear();
+                            app.library_selected = 0;
+                            return; // Consume event immediately
+                        }
+
                         // Normal key handling when NOT typing in search
                         match key.code {
-                            // Global search: / to jump to search from anywhere (MPD only)
-                            #[cfg(feature = "mpd")]
-                            KeyCode::Char('/') if !args.controller => {
-                                app.view_mode = app::ViewMode::Library;
-                                // Save current mode before switching to Search, unless we are already searching
-                                if app.library_mode != app::LibraryMode::Search {
-                                    app.previous_library_mode = Some(app.library_mode);
-                                }
-                                app.library_mode = app::LibraryMode::Search;
-                                app.search_active = true;
-                            },
+                            // Global search handler execution moved to high-priority block above
+                            // Left commented for reference:
+                            // KeyCode::Char('/') if !args.controller => { ... }
                             KeyCode::Char('q') => {
                                 // Close popups first, then quit (Neovim-style)
                                 if app.show_keyhints {
@@ -967,7 +976,8 @@ pub async fn handle_input(
                                                 },
                                             };
                                             if added {
-                                                app.show_toast(&format!("Added: {}", added_name));
+                                                let shuffle_msg = if app.shuffle { " (Shuffle ON)" } else { "" };
+                                                app.show_toast(&format!("Added: {}{}", added_name, shuffle_msg));
                                             }
                                          }
                                     }

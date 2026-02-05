@@ -26,7 +26,6 @@ use vyom::inputs::handle_input;
 
 
 #[cfg(feature = "mpd")]
-#[cfg(feature = "mpd")]
 use vyom::mpd_player;
 
 use std::fs::File;
@@ -266,29 +265,36 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         // Use file modification time for efficient hot reloading 🌶️
         let theme_path = theme::get_theme_path();
-        let mut last_modified = std::fs::metadata(&theme_path)
-            .and_then(|m| m.modified())
-            .ok();
+        let path_clone = theme_path.clone();
+        
+        let mut last_modified = tokio::task::spawn_blocking(move || {
+            std::fs::metadata(&path_clone)
+                .and_then(|m| m.modified())
+                .ok()
+        }).await.unwrap_or(None);
 
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
 
-            // Check file modification time
-            if let Ok(metadata) = std::fs::metadata(&theme_path) {
-                if let Ok(modified) = metadata.modified() {
-                    // If file modified or we never saw it before (and it exists)
-                    if last_modified.is_none_or(|last| modified > last) {
-                        last_modified = Some(modified);
+            // Check file modification time (blocking I/O wrapped)
+            let check_path = theme_path.clone(); // Clone for closure
+            let metadata_result = tokio::task::spawn_blocking(move || {
+                std::fs::metadata(&check_path).and_then(|m| m.modified())
+            }).await;
 
-                        // Load and broadcast new theme
-                        let new_theme = theme::load_current_theme();
-                        if tx_theme
-                            .send(AppEvent::ThemeUpdate(new_theme))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
+            if let Ok(Ok(modified)) = metadata_result {
+                // If file modified or we never saw it before (and it exists)
+                if last_modified.is_none_or(|last| modified > last) {
+                    last_modified = Some(modified);
+
+                    // Load and broadcast new theme
+                    let new_theme = theme::load_current_theme();
+                    if tx_theme
+                        .send(AppEvent::ThemeUpdate(new_theme))
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
             }
