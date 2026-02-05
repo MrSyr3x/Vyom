@@ -371,23 +371,24 @@ fn render_input(f: &mut Frame, app: &App) {
 
         f.render_widget(Clear, area);
 
-        let mut lines: Vec<Line> = Vec::new();
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                " > ",
-                Style::default()
-                    .fg(theme.green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(&input.value, Style::default().fg(theme.text)),
-            Span::styled(
-                "▌",
-                Style::default()
-                    .fg(theme.green)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ]));
+        let lines: Vec<Line> = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    " > ",
+                    Style::default()
+                        .fg(theme.green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(&input.value, Style::default().fg(theme.text)),
+                Span::styled(
+                    "▌",
+                    Style::default()
+                        .fg(theme.green)
+                        .add_modifier(Modifier::SLOW_BLINK),
+                ),
+            ]),
+        ];
 
         let block = Block::default()
             .borders(Borders::ALL)

@@ -34,7 +34,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     } else {
         // Use single-char bars for cleaner look
         // AUTO-SCALE: Use as many bars as fit (width/2), capped only by practical limits (256)
-        let bar_count = (width / 2).max(8).min(256);
+        let bar_count = (width / 2).clamp(8, 256);
 
         // 8-color gradient using Theme Colors 🎨
         let gradient = [

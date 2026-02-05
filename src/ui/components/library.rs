@@ -118,11 +118,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Playlists
             Span::styled(
                 format!("{} ", p_dot),
-                Style::default().fg(if pl_active {
-                    theme.magenta
-                } else {
-                    theme.magenta
-                }),
+                Style::default().fg(theme.magenta),
             ),
             Span::styled(
                 "Playlists",
@@ -490,7 +486,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     let is_sel = actual_idx == app.library_selected;
 
                     // Clean up name by removing path components if present
-                    let clean_name = item.name.split('/').last().unwrap_or(&item.name);
+                    // Clean up name by removing path components if present
+                    let clean_name = item.name.split('/').next_back().unwrap_or(&item.name);
                     
                     // Dynamic Layout Calculation 📐
                     // Prefix width: "  ● " (4) + "♪ " (2) = 6 chars

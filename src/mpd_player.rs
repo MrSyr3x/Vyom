@@ -30,11 +30,6 @@ impl MpdPlayer {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn default() -> Self {
-        Self::new("localhost", 6600)
-    }
-
     fn connect(&self) -> Result<Client> {
         let addr = format!("{}:{}", self.host, self.port);
         Client::connect(&addr).context("Failed to connect to MPD")
@@ -80,6 +75,13 @@ impl MpdPlayer {
 }
 
 #[cfg(feature = "mpd")]
+impl Default for MpdPlayer {
+    fn default() -> Self {
+        Self::new("localhost", 6600)
+    }
+}
+
+#[cfg(feature = "mpd")]
 impl PlayerTrait for MpdPlayer {
     fn get_current_track(&self) -> Result<Option<TrackInfo>> {
         let mut conn = self.connect()?;
@@ -102,7 +104,7 @@ impl PlayerTrait for MpdPlayer {
         let (sample_rate, bit_depth, bitrate) = if let Some(audio) = status.audio {
             (Some(audio.rate), Some(audio.bits), None)
         } else {
-            (None, None, status.bitrate.map(|b| b))
+            (None, None, status.bitrate)
         };
 
         let duration_ms = song
@@ -432,7 +434,7 @@ impl MpdPlayer {
                         .as_ref()
                         .map(|t| t.to_lowercase().contains(&query_lower))
                         .unwrap_or(false)
-                    || s.tags
+                        || s.tags
                         .iter()
                         .any(|(_, v)| v.to_lowercase().contains(&query_lower))
             })

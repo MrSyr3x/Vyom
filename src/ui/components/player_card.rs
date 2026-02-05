@@ -352,7 +352,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             };
 
             let width = gauge_area_rect.width as usize;
-            let occupied_width = (width as f64 * ratio.min(1.0).max(0.0)) as usize;
+            let occupied_width = (width as f64 * ratio.clamp(0.0, 1.0)) as usize;
             let fill_style = Style::default().fg(theme.magenta);
             let empty_style = Style::default().fg(theme.surface);
 
