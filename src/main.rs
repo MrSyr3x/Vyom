@@ -181,13 +181,14 @@ async fn main() -> Result<()> {
     let audio_lock = try_acquire_audio_lock();
     let is_audio_master = audio_lock.is_some();
 
-    // Load persisted state
-    let config = AppConfig::load();
-    if config.eq_enabled && !is_audio_master {
+    // Load persisted state (Split into UserConfig and PersistentState)
+    let (user_config, persistent_state) = AppConfig::load();
+    
+    if persistent_state.eq_enabled && !is_audio_master {
         // Maybe log that EQ is visual only?
     }
 
-    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, config);
+    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, user_config, persistent_state);
 
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
 
@@ -301,7 +302,46 @@ async fn main() -> Result<()> {
         }
     });
 
-    // 4. Animation Tick Task ⚡
+    // 4. Config Watcher Task (Hot Reloading) 🔧
+    let tx_config = tx.clone();
+    tokio::spawn(async move {
+        let config_path = AppConfig::get_config_path();
+        let path_clone = config_path.clone();
+        
+        let mut last_modified = tokio::task::spawn_blocking(move || {
+            std::fs::metadata(&path_clone)
+                .and_then(|m| m.modified())
+                .ok()
+        }).await.unwrap_or(None);
+
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            let check_path = config_path.clone();
+            let metadata_result = tokio::task::spawn_blocking(move || {
+                std::fs::metadata(&check_path).and_then(|m| m.modified())
+            }).await;
+
+            if let Ok(Ok(modified)) = metadata_result {
+                if last_modified.is_none_or(|last| modified > last) {
+                    last_modified = Some(modified);
+                    
+                    // Reload config to get new keys
+                    // Hot Reload: Reload config, verify keys changed
+                    let (new_user_config, _) = AppConfig::load(); 
+                    if tx_config
+                        .send(AppEvent::KeyConfigUpdate(Box::new(new_user_config.keys)))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // 5. Animation Tick Task ⚡
     let tx_tick = tx.clone();
     tokio::spawn(async move {
         // 60 FPS Update Rate (approx 16ms) - Back to smooth fluidity
@@ -485,6 +525,10 @@ async fn main() -> Result<()> {
                 },
                 AppEvent::ArtworkUpdate(data) => app.artwork = data,
                 AppEvent::ThemeUpdate(new_theme) => app.theme = new_theme,
+                AppEvent::KeyConfigUpdate(new_keys) => {
+                    app.keys = *new_keys;
+                    app.show_toast("🔧 Config Reloaded");
+                },
                 AppEvent::QueueUpdate(queue_data) => {
                     app.queue = queue_data.into_iter().map(|(title, artist, duration_ms, is_current, file_path)| {
                         app::QueueItem { title, artist, duration_ms, is_current, file_path }

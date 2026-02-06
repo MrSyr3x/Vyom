@@ -1,4 +1,5 @@
-use super::config::{AppConfig, EqPreset};
+use super::config::{AppConfig, EqPreset, PersistentState, UserConfig};
+use super::keys::KeyConfig;
 use super::lyrics::LyricLine;
 use crate::audio::device as audio_device;
 use crate::audio::dsp::EqGains;
@@ -155,6 +156,7 @@ pub struct QueueItem {
 
 pub struct App {
     pub theme: Theme,
+    pub keys: KeyConfig, // Store keys for runtime lookup
 
     pub is_running: bool,
     pub track: Option<TrackInfo>,
@@ -252,23 +254,35 @@ impl App {
         is_tmux: bool,
         is_mpd: bool,
         source_app: &str,
-        config: AppConfig,
+        user_config: UserConfig,
+        state: PersistentState,
     ) -> Self {
-        // Merge defaults with user presets
-        // If config.presets is empty, it means we don't have custom ones yet, but we should always have defaults available.
-        // Actually, let's keep user custom presets separate or append them?
-        // Let's create a combined list: Defaults + User Config Presets
+        // Merge defaults with user saved presets (from state)
+        // If state.presets is empty, it means we don't have custom ones yet, but we should always have defaults available.
         let mut presets = AppConfig::get_default_presets();
-        presets.extend(config.presets.clone());
+        presets.extend(state.presets.clone());
+
+        // RESTORE 'Custom' PRESET FROM STATE IF NEEDED 🧠
+        // Since we don't save "Custom" to persistent list (it's ephemeral), we might need to recreate it
+        // if that's what the user was using.
+        if state.last_preset_name == "Custom" {
+            // Check if Custom already exists (unlikely if we filtered it on save), but just in case
+            if !presets.iter().any(|p| p.name == "Custom") {
+                // Determine placement: It usually goes at the end or effectively becomes index-able.
+                // We'll append it.
+                presets.push(EqPreset::new("Custom", state.eq_bands));
+            }
+        }
 
         // Find index of last used preset
         let eq_preset_idx = presets
             .iter()
-            .position(|p| p.name == config.last_preset_name)
+            .position(|p| p.name == state.last_preset_name)
             .unwrap_or(0); // Default to first (Custom or Flat)
 
         let app = Self {
             theme: crate::ui::theme::load_current_theme(),
+            keys: user_config.keys.clone(), // Clone keys from user config
             is_running: true,
             track: None,
             lyrics: LyricsState::Idle,
@@ -300,16 +314,16 @@ impl App {
             visualizer_bars: vec![0.0; 60],
             visualizer: Visualizer::new(44100), // Default 44.1k, will adapt? Or fixed for vis?
 
-            // Persistence loading
-            eq_bands: config.eq_bands,
+            // Persistence loading from STATE
+            eq_bands: state.eq_bands,
             eq_selected: 0,
-            eq_enabled: config.eq_enabled,
+            eq_enabled: state.eq_enabled,
             eq_preset: eq_preset_idx,
             app_volume: 100,
-            preamp_db: config.preamp_db,
-            balance: config.balance,
-            crossfade_secs: config.crossfade,
-            replay_gain_mode: config.replay_gain_mode,
+            preamp_db: state.preamp_db,
+            balance: state.balance,
+            crossfade_secs: state.crossfade,
+            replay_gain_mode: state.replay_gain_mode,
 
             show_keyhints: false,   // Hidden by default
             show_audio_info: false, // Hidden by default
@@ -341,9 +355,9 @@ impl App {
 
             // Persistence & Custom Presets
             presets,
-            eq_preset_name: config.last_preset_name,
+            eq_preset_name: state.last_preset_name,
 
-            music_directory: config.music_directory,
+            music_directory: user_config.music_directory,
         };
 
         // CRITICAL FIX: Sync loaded EQ state to DSP engine immediately! 🔊
@@ -372,6 +386,8 @@ impl App {
     pub fn sync_eq_to_dsp(&self) {
         self.eq_gains.set_all_from_values(&self.eq_bands);
         self.eq_gains.set_enabled(self.eq_enabled);
+        self.eq_gains.set_preamp_db(self.preamp_db);
+        self.eq_gains.set_balance(self.balance);
     }
 
     /// Sync a single EQ band to DSP engine
@@ -397,6 +413,12 @@ impl App {
             self.eq_preset_name = "Flat".to_string();
         }
         self.eq_gains.reset();
+        
+        // Ensure "Custom" is stripped from STATE if it was saved?
+        // Actually save_state() handles stripping Custom.
+        
+        // Also save state to ensure the reset persists in state.toml too
+        self.save_state();
     }
 
     /// Toggle EQ enabled state
@@ -492,11 +514,13 @@ impl App {
     }
 
     /// Save current EQ bands as a new preset
+    /// Now saves to STATE.toml
     pub fn save_preset(&mut self, name: String) {
         let preset = EqPreset::new(&name, self.eq_bands);
         self.presets.push(preset);
         self.eq_preset = self.presets.len() - 1; // Switch to new preset
         self.eq_preset_name = name;
+        self.save_state();
     }
 
     /// Delete current preset (if not a builtin)
@@ -516,46 +540,34 @@ impl App {
             }
             // re-apply
             self.apply_preset();
+            self.save_state();
             return Ok(());
         }
         Err("No preset selected".to_string())
     }
 
     pub fn save_state(&self) {
-        // Collect only user presets (exclude defaults)
         let defaults = AppConfig::get_default_presets();
         let default_names: Vec<&String> = defaults.iter().map(|p| &p.name).collect();
 
-        let _user_presets: Vec<EqPreset> = self
-            .presets
-            .iter()
-            .filter(|p| !default_names.contains(&&p.name) || p.name == "Custom") // Keep Custom if modified? Actually Custom is in default list.
+        // Save only user presets that are NOT defaults and NOT "Custom"
+        // "Custom" is ephemeral state, handled by last_preset_name logic/restoration
+        let clean_presets: Vec<EqPreset> = self.presets.iter()
+            .filter(|p| !default_names.contains(&&p.name) && p.name != "Custom")
             .cloned()
             .collect();
 
-        // Actually, we should probably ONLY save presets that are NOT in the default list?
-        // But if user modified "Custom", we might want to save it if we allow it.
-        // For now, simple logic: Filter out any preset where Name + Bands matches a default?
-        // Simpler: Just filter by Name. If user names it "Bass Booster", tough luck, it's treated as default.
-        // Just saving unique names.
-
-        let config = AppConfig {
-            presets: self
-                .presets
-                .iter()
-                .filter(|p| !defaults.iter().any(|d| d.name == p.name))
-                .cloned()
-                .collect(),
-            last_preset_name: self.get_preset_name(),
+        let state = PersistentState {
+            last_preset_name: self.eq_preset_name.clone(),
             eq_enabled: self.eq_enabled,
             eq_bands: self.eq_bands,
             preamp_db: self.preamp_db,
             balance: self.balance,
             crossfade: self.crossfade_secs,
             replay_gain_mode: self.replay_gain_mode,
-            music_directory: self.music_directory.clone(),
+            presets: clean_presets,
         };
-        config.save();
+        state.save();
     }
 
     /// Cycle to next audio device and actually switch output

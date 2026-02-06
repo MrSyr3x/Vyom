@@ -10,6 +10,7 @@ pub enum AppEvent {
     LyricsUpdate(String, LyricsState),
     ArtworkUpdate(ArtworkState),
     ThemeUpdate(Theme),
+    KeyConfigUpdate(Box<crate::app::keys::KeyConfig>),
     QueueUpdate(Vec<(String, String, u64, bool, String)>),
     Tick,
 }
