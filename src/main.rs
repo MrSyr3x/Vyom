@@ -28,50 +28,7 @@ use vyom::inputs::handle_input;
 #[cfg(feature = "mpd")]
 use vyom::mpd_player;
 
-use std::fs::File;
-use std::io::{Read, Write};
 
-const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
-
-/// Try to acquire the audio lock.
-/// Returns Some(File) if we acquired the lock (and thus should play audio).
-/// Returns None if another instance holds the lock (we should be UI-only).
-fn try_acquire_audio_lock() -> Option<File> {
-    // 1. Check if lock file exists
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(LOCK_FILE_PATH)
-    {
-        let mut pid_str = String::new();
-        if file.read_to_string(&mut pid_str).is_ok() {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                // 2. Check if process is alive
-                unsafe {
-                    // kill(pid, 0) checks existence without sending a signal
-                    if libc::kill(pid, 0) == 0 {
-                        // Process is alive! We are secondary.
-                        return None;
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Create/Overwrite lock file
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(LOCK_FILE_PATH)
-    {
-        let pid = std::process::id();
-        let _ = write!(file, "{}", pid);
-        return Some(file);
-    }
-
-    None
-}
 
 use clap::Parser;
 use app::cli::Args;
@@ -105,47 +62,8 @@ async fn main() -> Result<()> {
     print!("\x1b]2;Vyom\x07");
 
     // 2. TMUX LOGIC
-    // Only auto-split if we WANT full UI (default) and aren't already the child process
-    if is_tmux && !is_standalone && want_lyrics {
-        // Build child command with all necessary flags
-        let mut child_args = vec!["--standalone".to_string()];
-
-        // If user wants mini mode explicitly, we wouldn't be in this block.
-        // But if we are here, we want full UI. Child inherits default behavior (no flags needed for full UI).
-        // However, we must ensure child doesn't infinite loop.
-        // passing --standalone prevents re-entry into this block.
-
-        // Pass controller flag if present
-        if args.controller {
-            child_args.push("--controller".to_string());
-        } else {
-            // Default is MPD, pass args if needed
-            #[cfg(feature = "mpd")]
-            {
-                child_args.push("--mpd-host".to_string());
-                child_args.push(args.mpd_host.clone());
-                child_args.push("--mpd-port".to_string());
-                child_args.push(args.mpd_port.to_string());
-            }
-        }
-
-        let child_cmd = format!("{} {}", exe_path, child_args.join(" "));
-
-        // Auto-split logic (Tmux)
-        let status = std::process::Command::new("tmux")
-            .arg("split-window")
-            .arg("-h")
-            .arg("-p")
-            .arg("22")
-            .arg(child_cmd)
-            .status();
-
-        match status {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                eprintln!("Failed to create tmux split: {}", e);
-            }
-        }
+    if app::tmux::handle_tmux_split(&args, exe_path, is_tmux, is_standalone, want_lyrics)? {
+        return Ok(());
     }
     // No else block for Standalone Resize - User manages window size manually.
 
@@ -178,7 +96,7 @@ async fn main() -> Result<()> {
     // 1. Initial State
     // Start Audio Pipeline 🔊 (FIFO → DSP EQ → Speakers)
     // SINGLETON CHECK: Only start audio if we acquire the lock
-    let audio_lock = try_acquire_audio_lock();
+    let audio_lock = app::lock::try_acquire_audio_lock();
     let is_audio_master = audio_lock.is_some();
 
     // Load persisted state (Split into UserConfig and PersistentState)
@@ -541,22 +459,18 @@ async fn main() -> Result<()> {
                     // Poll Shuffle/Repeat status every ~2 seconds (120 ticks at 16ms/tick, roughly)
                     // Actually tick rate is 100ms? View main loop setup.
                     // Assuming ~10Hz or similar.
-                    if args.controller {
-                         use std::time::{SystemTime, UNIX_EPOCH};
-                         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-                         // Simple 1s throttle: check if second changed or use counter
-                         // Using random counter for simplicity if we don't have global state here
-                         // Actually app.on_tick() handles seek accumulation.
-                         // Let's use a counter in App if available? No.
-                         // Use system time check.
-                         static mut LAST_SYNC: u64 = 0;
-                         unsafe {
-                             if now > LAST_SYNC {
-                                 LAST_SYNC = now;
-                                 if let Ok(s) = player.get_shuffle() { app.shuffle = s; }
-                                 if let Ok(r) = player.get_repeat() { app.repeat = r; }
-                             }
-                         }
+                    // Poll Shuffle/Repeat status every ~1 second
+                    // This is now enabled for BOTH Controller AND MPD modes
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                    
+                    static mut LAST_SYNC: u64 = 0;
+                    unsafe {
+                        if now > LAST_SYNC {
+                            LAST_SYNC = now;
+                            if let Ok(s) = player.get_shuffle() { app.shuffle = s; }
+                            if let Ok(r) = player.get_repeat() { app.repeat = r; }
+                        }
                     }
 
                     if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
@@ -613,7 +527,7 @@ async fn main() -> Result<()> {
 
     // Cleanup Lock File (if we own it)
     if is_audio_master {
-        let _ = std::fs::remove_file(LOCK_FILE_PATH);
+        app::lock::release_audio_lock();
     }
 
     Ok(())
