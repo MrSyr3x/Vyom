@@ -103,9 +103,19 @@ pub async fn handle_normal_mode(
                 target = target.max(0.0);
             }
 
+            // Increment Seek ID (Generation Counter) ⏩
+            app.seek_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
+            let global_seek_id = app.seek_id.clone();
+
             let player_bg = player.clone();
             let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
             tokio::task::spawn_blocking(move || {
+                // Check if a newer seek request has come in
+                if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
+                    return; // Stale request, discard 🗑️
+                }
+
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
                     let current_key = (current_track.name.clone(), current_track.artist.clone());
                     if original_track_key.as_ref() == Some(&current_key) {
@@ -146,9 +156,19 @@ pub async fn handle_normal_mode(
                 target = target.max(0.0);
             }
 
+            // Increment Seek ID (Generation Counter) ⏩
+            app.seek_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
+            let global_seek_id = app.seek_id.clone();
+
             let player_bg = player.clone();
             let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
             tokio::task::spawn_blocking(move || {
+                 // Check if a newer seek request has come in
+                if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
+                    return; // Stale request, discard 🗑️
+                }
+
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
                     let current_key = (current_track.name.clone(), current_track.artist.clone());
                     if original_track_key.as_ref() == Some(&current_key) {
@@ -169,12 +189,18 @@ pub async fn handle_normal_mode(
         if app.library_selected < app.queue.len().saturating_sub(1) {
             #[cfg(feature = "mpd")]
             if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+                    
                     let current_pos = app.library_selected as u32;
                     let new_pos = current_pos + 1;
                     if mpd.shift(current_pos, new_pos as usize).is_ok() {
                          app.library_selected = new_pos as usize;
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
         }
@@ -185,12 +211,18 @@ pub async fn handle_normal_mode(
         if app.library_selected > 0 {
             #[cfg(feature = "mpd")]
             if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+
                     let current_pos = app.library_selected as u32;
                     let new_pos = current_pos - 1;
                     if mpd.shift(current_pos, new_pos as usize).is_ok() {
                          app.library_selected = new_pos as usize;
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
         }
@@ -359,8 +391,15 @@ pub async fn handle_normal_mode(
              app.toggle_crossfade();
              #[cfg(feature = "mpd")]
              if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                    let _ = mpd.crossfade(app.crossfade_secs as i64);
+                {
+                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                    if let Some(mut mpd) = client {
+                        if mpd.ping().is_err() {
+                            if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                        }
+                        let _ = mpd.crossfade(app.crossfade_secs as i64);
+                        app.mpd_client = Some(mpd);
+                    }
                 }
              }
              return;
@@ -375,8 +414,15 @@ pub async fn handle_normal_mode(
                     3 => mpd::status::ReplayGain::Auto,
                     _ => mpd::status::ReplayGain::Off,
                 };
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                    let _ = mpd.replaygain(mode);
+                {
+                     let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                    if let Some(mut mpd) = client {
+                        if mpd.ping().is_err() {
+                            if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                        }
+                        let _ = mpd.replaygain(mode);
+                        app.mpd_client = Some(mpd);
+                    }
                 }
             }
             return;
@@ -419,18 +465,28 @@ pub async fn handle_normal_mode(
 
             #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
                     if let Ok(pls) = mpd.playlists() {
                         app.playlists = pls.iter().map(|p| p.name.clone()).collect();
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
              #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Directory && !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
                     if let Ok(items) = fetch_directory_items(&mut mpd, "") {
                         app.library_items = items;
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
             return;
@@ -450,10 +506,15 @@ pub async fn handle_normal_mode(
             
              #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
                     if let Ok(pls) = mpd.playlists() {
                         app.playlists = pls.iter().map(|p| p.name.clone()).collect();
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
             return;
@@ -539,7 +600,11 @@ pub async fn handle_normal_mode(
              // Delete logic...
              #[cfg(feature = "mpd")]
              if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
                     match app.library_mode {
                         app::LibraryMode::Queue => { let _ = mpd.delete(app.library_selected as u32); },
                         app::LibraryMode::Playlists => {
@@ -553,6 +618,7 @@ pub async fn handle_normal_mode(
                         },
                         _ => {}
                     }
+                    app.mpd_client = Some(mpd);
                 }
              }
              return;
@@ -561,7 +627,12 @@ pub async fn handle_normal_mode(
         if keys.matches(key, &keys.add_to_queue) && (app.library_mode == app::LibraryMode::Directory || app.library_mode == app::LibraryMode::Search) {
              #[cfg(feature = "mpd")]
              if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+
                     if !app.library_items.is_empty() {
                          if let Some(item) = app.library_items.get(app.library_selected) {
                             let mut added_name = item.name.clone();
@@ -602,6 +673,7 @@ pub async fn handle_normal_mode(
                             }
                          }
                     }
+                    app.mpd_client = Some(mpd);
                 }
              }
              return;
@@ -610,7 +682,12 @@ pub async fn handle_normal_mode(
         if keys.matches(key, &keys.enter_dir) {
              #[cfg(feature = "mpd")]
              if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+
                     match app.library_mode {
                         app::LibraryMode::Queue => {
                             let _ = mpd.switch(app.library_selected as u32);
@@ -654,6 +731,7 @@ pub async fn handle_normal_mode(
                             }
                         }
                     }
+                    app.mpd_client = Some(mpd);
                 }
              }
              return;
@@ -669,7 +747,12 @@ pub async fn handle_normal_mode(
 
             #[cfg(feature = "mpd")]
             if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+
                     match target_mode {
                         app::LibraryMode::Directory => {
                             // Restore Directory view
@@ -738,6 +821,7 @@ pub async fn handle_normal_mode(
                         },
                         _ => {}
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
             return;
@@ -752,7 +836,12 @@ pub async fn handle_normal_mode(
             // Re-fetch items for the parent level
             #[cfg(feature = "mpd")]
             if !args.controller {
-                if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+
                     // Build the path from browse_path
                     let parent_path = if app.browse_path.is_empty() {
                         "".to_string()
@@ -763,6 +852,7 @@ pub async fn handle_normal_mode(
                     if let Ok(items) = fetch_directory_items(&mut mpd, &parent_path) {
                         app.library_items = items;
                     }
+                    app.mpd_client = Some(mpd);
                 }
             }
              return;
@@ -796,14 +886,22 @@ pub async fn handle_normal_mode(
             app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
         } else {
             #[cfg(feature = "mpd")]
-            if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                if let Ok(status) = mpd.status() {
-                    let new_state = !status.random;
-                    let _ = mpd.random(new_state);
-                    app.shuffle = new_state;
-                    app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
+            {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                    if mpd.ping().is_err() {
+                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+                    if let Ok(status) = mpd.status() {
+                        let new_state = !status.random;
+                        let _ = mpd.random(new_state);
+                        app.shuffle = new_state;
+                        app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
+                    }
+                    app.mpd_client = Some(mpd);
                 }
             }
+
         }
          return;
     }
@@ -817,12 +915,19 @@ pub async fn handle_normal_mode(
             app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
         } else {
             #[cfg(feature = "mpd")]
-            if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-                if let Ok(status) = mpd.status() {
-                    let new_state = !status.repeat;
-                    let _ = mpd.repeat(new_state);
-                    app.repeat = new_state;
-                    app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
+            {
+                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                if let Some(mut mpd) = client {
+                     if mpd.ping().is_err() {
+                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                    }
+                    if let Ok(status) = mpd.status() {
+                        let new_state = !status.repeat;
+                        let _ = mpd.repeat(new_state);
+                        app.repeat = new_state;
+                        app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
+                    }
+                    app.mpd_client = Some(mpd);
                 }
             }
         }

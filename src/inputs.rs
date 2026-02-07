@@ -6,8 +6,7 @@ use crate::app::cli::Args;
 use crate::app::events::AppEvent;
 #[cfg(feature = "mpd")]
 use crate::app::library_helpers::fetch_directory_items;
-#[cfg(feature = "mpd")]
-use crate::mpd_player;
+
 #[cfg(feature = "mpd")]
 use lofty::file::TaggedFileExt;
 #[cfg(feature = "mpd")]
@@ -39,12 +38,19 @@ pub async fn handle_input(
                                             if !input.value.is_empty() {
                                                 #[cfg(feature = "mpd")]
                                                 {
-                                                    let player = mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port);
-                                                    if let Err(e) = player.save_playlist(&input.value) {
-                                                        app.show_toast(&format!("❌ Error: {}", e));
-                                                    } else {
-                                                        app.show_toast(&format!("💾 Saved: {}", input.value));
-                                                        app.playlists.push(input.value.clone());
+                                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                                                    if let Some(mut mpd) = client {
+                                                        if mpd.ping().is_err() {
+                                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                                                        }
+
+                                                        if let Err(e) = mpd.save(&input.value) {
+                                                            app.show_toast(&format!("❌ Error: {}", e));
+                                                        } else {
+                                                            app.show_toast(&format!("💾 Saved: {}", input.value));
+                                                            app.playlists.push(input.value.clone());
+                                                        }
+                                                        app.mpd_client = Some(mpd);
                                                     }
                                                 }
                                             }
@@ -61,13 +67,17 @@ pub async fn handle_input(
                                             if !input.value.is_empty() {
                                                 #[cfg(feature = "mpd")]
                                                 {
-                                                     let player = mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port);
-                                                     if let Err(e) = player.rename_playlist(&old_name, &input.value) {
-                                                         app.show_toast(&format!("❌ Error: {}", e));
-                                                     } else {
-                                                         app.show_toast(&format!("✏️ Renamed: {} -> {}", old_name, input.value));
-                                                         // Refresh playlists
-                                                         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                                                    if let Some(mut mpd) = client {
+                                                        if mpd.ping().is_err() {
+                                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                                                        }
+
+                                                        if let Err(e) = mpd.pl_rename(&old_name, &input.value) {
+                                                             app.show_toast(&format!("❌ Error: {}", e));
+                                                        } else {
+                                                             app.show_toast(&format!("✏️ Renamed: {} -> {}", old_name, input.value));
+                                                             // Refresh playlists
                                                              if let Ok(playlists) = mpd.playlists() {
                                                                  app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
                                                                  // Update library items if in Playlist mode
@@ -79,8 +89,9 @@ pub async fn handle_input(
                                                                      }).collect();
                                                                  }
                                                              }
-                                                         }
-                                                     }
+                                                        }
+                                                        app.mpd_client = Some(mpd);
+                                                    }
                                                 }
                                             }
                                         },
@@ -193,7 +204,11 @@ pub async fn handle_input(
 
                                 #[cfg(feature = "mpd")]
                                 if !args.controller {
-                                    if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                                    if let Some(mut mpd) = client {
+                                        if mpd.ping().is_err() {
+                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                                        }
                                         match target_mode {
                                             app::LibraryMode::Directory => {
                                                 // Restore Directory view (refresh from current path)
@@ -222,6 +237,7 @@ pub async fn handle_input(
                                             },
                                             _ => {}
                                         }
+                                        app.mpd_client = Some(mpd);
                                     }
                                 }
                             },
@@ -233,7 +249,12 @@ pub async fn handle_input(
                                 // Perform MPD search
                                 #[cfg(feature = "mpd")]
                                 if !args.controller && !app.search_query.is_empty() {
-                                    if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
+                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
+                                    if let Some(mut mpd) = client {
+                                        if mpd.ping().is_err() {
+                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                                        }
+
                                         if let Ok(songs) = mpd.listall() {
                                             let matcher = SkimMatcherV2::default();
                                             // Fuzzy Match 🔍
@@ -263,6 +284,7 @@ pub async fn handle_input(
                                                 .collect();
                                             app.library_selected = 0;
                                         }
+                                        app.mpd_client = Some(mpd);
                                     }
                                 }
                             },

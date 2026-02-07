@@ -378,6 +378,8 @@ pub fn run_fifo_audio_loop(
 
         let mut reader = BufReader::with_capacity(65536, fifo);
 
+        let mut float_buffer = Vec::with_capacity(buffer_frames * channels as usize);
+
         while running.load(Ordering::SeqCst) {
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
@@ -386,8 +388,10 @@ pub fn run_fifo_audio_loop(
                 }
                 Ok(bytes_read) => {
                     let frames = bytes_read / frame_size;
-                    let mut float_buffer = Vec::with_capacity(frames * channels as usize);
-
+                    
+                    // REUSE BUFFER ♻️
+                    float_buffer.clear();
+                    
                     for frame in 0..frames {
                         for ch in 0..channels as usize {
                             let offset = frame * frame_size + ch * bytes_per_sample_val;
@@ -441,8 +445,8 @@ pub fn run_fifo_audio_loop(
                     equalizer.process_buffer(&mut float_buffer);
 
                     if let Ok(mut buffer) = ring_buffer.lock() {
-                        for sample in float_buffer {
-                            buffer.push_back(sample);
+                        for sample in &float_buffer {
+                            buffer.push_back(*sample);
                         }
                         // Larger limit for Hi-Res
                         while buffer.len() > 65536 {

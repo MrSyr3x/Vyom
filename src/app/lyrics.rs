@@ -40,7 +40,7 @@ impl LyricsFetcher {
         Self { client }
     }
 
-    fn get_cache_path(&self, artist: &str, title: &str) -> Option<PathBuf> {
+    fn get_cache_path(artist: &str, title: &str) -> Option<PathBuf> {
         let home = std::env::var("HOME").ok()?;
         let safe_artist = artist.replace("/", "_");
         let safe_title = title.replace("/", "_");
@@ -54,7 +54,7 @@ impl LyricsFetcher {
         Some(path)
     }
 
-    fn load_from_cache(&self, path: &PathBuf) -> Option<Vec<LyricLine>> {
+    fn load_from_cache(path: &PathBuf) -> Option<Vec<LyricLine>> {
         if path.exists() {
             if let Ok(file) = fs::File::open(path) {
                 if let Ok(lyrics) = serde_json::from_reader(file) {
@@ -65,7 +65,7 @@ impl LyricsFetcher {
         None
     }
 
-    fn save_to_cache(&self, path: &PathBuf, lyrics: &Vec<LyricLine>) {
+    fn save_to_cache(path: &PathBuf, lyrics: &Vec<LyricLine>) {
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -134,20 +134,34 @@ impl LyricsFetcher {
         duration_ms: u64,
         file_path: Option<&String>,
     ) -> Result<LyricsFetchResult> {
-        // 0. Check Local File (Embedded or LRC) 📂
+        // 0. Check Local File (Embedded or LRC) 📂 - BLOCKING WRAPPER
         if let Some(path_str) = file_path {
-            if let Some(local_res) = self.fetch_impl_local(path_str) {
-                return Ok(local_res);
+            let p = path_str.clone();
+            let local_res = tokio::task::spawn_blocking(move || {
+                Self::fetch_impl_local(&p)
+            }).await?;
+            
+            if let Some(res) = local_res {
+                return Ok(res);
             }
         }
 
-        // 1. Check Disk Cache 💾
-        let cache_path = self.get_cache_path(artist, title);
-        if let Some(path) = &cache_path {
-            if let Some(cached_lyrics) = self.load_from_cache(path) {
-                // Disk cache only stores Found lyrics for now
-                return Ok(LyricsFetchResult::Found(cached_lyrics));
-            }
+        // 1. Check Disk Cache 💾 - BLOCKING WRAPPER
+        let artist_owned = artist.to_string();
+        let title_owned = title.to_string();
+        
+        let (cache_path, cached_lyrics) = tokio::task::spawn_blocking(move || {
+            let path = Self::get_cache_path(&artist_owned, &title_owned);
+            let lyrics = if let Some(p) = &path {
+                Self::load_from_cache(p)
+            } else {
+                None
+            };
+            (path, lyrics)
+        }).await?;
+
+        if let Some(lyrics) = cached_lyrics {
+             return Ok(LyricsFetchResult::Found(lyrics));
         }
 
         let url = "https://lrclib.net/api/get";
@@ -177,7 +191,12 @@ impl LyricsFetcher {
                             let result = self.parse(data);
                             if let LyricsFetchResult::Found(ref lines) = result {
                                 if let Some(path) = &cache_path {
-                                    self.save_to_cache(path, lines);
+                                    let path_clone = path.clone();
+                                    let lines_clone = lines.clone();
+                                    // Save in background, don't await
+                                    tokio::task::spawn_blocking(move || {
+                                        Self::save_to_cache(&path_clone, &lines_clone);
+                                    });
                                 }
                             }
                             match result {
@@ -203,7 +222,11 @@ impl LyricsFetcher {
         let search_res = self.search(artist, &safe_title, duration_ms).await?;
         if let LyricsFetchResult::Found(ref lines) = search_res {
             if let Some(path) = &cache_path {
-                self.save_to_cache(path, lines);
+                let path_clone = path.clone();
+                let lines_clone = lines.clone();
+                 tokio::task::spawn_blocking(move || {
+                    Self::save_to_cache(&path_clone, &lines_clone);
+                });
             }
             return Ok(search_res);
         }
@@ -217,7 +240,11 @@ impl LyricsFetcher {
             let primary_res = self.search(&safe_artist, &safe_title, duration_ms).await?;
             if let LyricsFetchResult::Found(ref lines) = primary_res {
                 if let Some(path) = &cache_path {
-                    self.save_to_cache(path, lines);
+                    let path_clone = path.clone();
+                    let lines_clone = lines.clone();
+                    tokio::task::spawn_blocking(move || {
+                        Self::save_to_cache(&path_clone, &lines_clone);
+                    });
                 }
             }
             Ok(primary_res)
@@ -227,7 +254,7 @@ impl LyricsFetcher {
         }
     }
 
-    fn fetch_impl_local(&self, path_str: &str) -> Option<LyricsFetchResult> {
+    fn fetch_impl_local(path_str: &str) -> Option<LyricsFetchResult> {
         let path = Path::new(path_str);
 
         // A. Check sidecar .lrc file
@@ -237,7 +264,7 @@ impl LyricsFetcher {
                 // Determine if synced or plain by checking for timestamps
                 let is_synced = content.contains(']');
                 if is_synced {
-                    let lines = self.parse_lrc_content(&content);
+                    let lines = Self::parse_lrc_content(&content);
                     if !lines.is_empty() {
                         return Some(LyricsFetchResult::Found(lines));
                     }
@@ -258,7 +285,7 @@ impl LyricsFetcher {
                     if let Some(lyrics) = tag.get_string(&ItemKey::Lyrics).map(|s| s.to_string()) {
                         let is_synced = lyrics.contains(']');
                         if is_synced {
-                            let lines = self.parse_lrc_content(&lyrics);
+                            let lines = Self::parse_lrc_content(&lyrics);
                             if !lines.is_empty() {
                                 return Some(LyricsFetchResult::Found(lines));
                             }
@@ -271,14 +298,14 @@ impl LyricsFetcher {
         None
     }
 
-    fn parse_lrc_content(&self, content: &str) -> Vec<LyricLine> {
+    fn parse_lrc_content(content: &str) -> Vec<LyricLine> {
         let mut lines = Vec::new();
         for line in content.lines() {
             if let Some(idx) = line.find(']') {
                 if line.starts_with('[') {
                     let timestamp_str = &line[1..idx];
                     let text = line[idx + 1..].trim().to_string();
-                    if let Some(ms) = self.parse_timestamp(timestamp_str) {
+                    if let Some(ms) = Self::parse_timestamp(timestamp_str) {
                         lines.push(LyricLine {
                             timestamp_ms: ms,
                             text,
@@ -353,7 +380,7 @@ impl LyricsFetcher {
 
         let raw_opt = data.synced_lyrics.or(data.plain_lyrics);
         if let Some(raw) = raw_opt {
-            let lines = self.parse_lrc_content(&raw);
+            let lines = Self::parse_lrc_content(&raw);
             if lines.is_empty() {
                 LyricsFetchResult::None
             } else {
@@ -371,7 +398,7 @@ impl LyricsFetcher {
         }
         let raw_opt = data.synced_lyrics.as_ref().or(data.plain_lyrics.as_ref());
         if let Some(raw) = raw_opt {
-            let lines = self.parse_lrc_content(raw);
+            let lines = Self::parse_lrc_content(raw);
             if lines.is_empty() {
                 LyricsFetchResult::None
             } else {
@@ -382,7 +409,7 @@ impl LyricsFetcher {
         }
     }
 
-    fn parse_timestamp(&self, ts: &str) -> Option<u64> {
+    fn parse_timestamp(ts: &str) -> Option<u64> {
         let parts: Vec<&str> = ts.split(':').collect();
         if parts.len() != 2 {
             return None;

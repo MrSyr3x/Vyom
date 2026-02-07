@@ -1,8 +1,8 @@
 class Vyom < Formula
   desc "A minimalist, transparent music player for the terminal"
   homepage "https://github.com/MrSyr3x/vyom"
-  url "https://github.com/MrSyr3x/vyom.git", tag: "v1.0.225"
-  version "1.0.225"
+  url "https://github.com/MrSyr3x/vyom.git", tag: "v1.0.229"
+  version "1.0.229"
   license "MIT"
 
   depends_on "rust" => :build

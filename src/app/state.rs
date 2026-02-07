@@ -9,6 +9,8 @@ use crate::ui::theme::Theme;
 use image::DynamicImage;
 use std::collections::HashMap;
 use std::time::Instant;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LyricsState {
@@ -172,6 +174,7 @@ pub struct App {
     pub seek_accumulator: f64,
     pub last_seek_time: Option<Instant>,
     pub seek_initial_pos: Option<f64>,
+    pub seek_id: Arc<AtomicUsize>, // Generation counter for seek requests
 
     // Animation State 🌊
     pub smooth_scroll_accum: f64,
@@ -246,6 +249,10 @@ pub struct App {
 
     /// Music directory for local file operations 📂
     pub music_directory: String,
+
+    /// Persistent MPD Connection 🔌
+    #[cfg(feature = "mpd")]
+    pub mpd_client: Option<mpd::Client>,
 }
 
 impl App {
@@ -294,6 +301,7 @@ impl App {
             seek_accumulator: 0.0,
             last_seek_time: None,
             seek_initial_pos: None,
+            seek_id: Arc::new(AtomicUsize::new(0)),
             smooth_scroll_accum: 0.0,
             last_track_update: None,
             app_show_lyrics,
@@ -358,6 +366,9 @@ impl App {
             eq_preset_name: state.last_preset_name,
 
             music_directory: user_config.music_directory,
+
+            #[cfg(feature = "mpd")]
+            mpd_client: None,
         };
 
         // CRITICAL FIX: Sync loaded EQ state to DSP engine immediately! 🔊
