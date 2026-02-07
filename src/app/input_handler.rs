@@ -366,7 +366,7 @@ pub async fn handle_normal_mode(
         if keys.matches(key, &keys.reset_levels) {
             app.reset_preamp();
             app.reset_balance();
-            app.mark_custom();
+            // app.mark_custom(); // Removed to keep current preset
             app.sync_band_to_dsp(app.eq_selected);
             app.show_toast("🎯 Levels Reset");
             return;
