@@ -1,8 +1,8 @@
 class Vyom < Formula
   desc "A minimalist, transparent music player for the terminal"
   homepage "https://github.com/MrSyr3x/vyom"
-  url "https://github.com/MrSyr3x/vyom.git", tag: "v1.0.229"
-  version "1.0.229"
+  url "https://github.com/MrSyr3x/vyom.git", tag: "v1.0.230"
+  version "1.0.230"
   license "MIT"
 
   depends_on "rust" => :build
@@ -18,6 +18,6 @@ class Vyom < Formula
 
   test do
     # Simple test to verify version
-    assert_match "vyom 0.1.0", shell_output("#{bin}/vyom --version")
+    assert_match "vyom 1.0.230", shell_output("#{bin}/vyom --version")
   end
 end

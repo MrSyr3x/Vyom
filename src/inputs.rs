@@ -6,6 +6,8 @@ use crate::app::cli::Args;
 use crate::app::events::AppEvent;
 #[cfg(feature = "mpd")]
 use crate::app::library_helpers::fetch_directory_items;
+#[cfg(feature = "mpd")]
+use crate::app::with_mpd;
 
 #[cfg(feature = "mpd")]
 use lofty::file::TaggedFileExt;
@@ -38,19 +40,19 @@ pub async fn handle_input(
                                             if !input.value.is_empty() {
                                                 #[cfg(feature = "mpd")]
                                                 {
-                                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                                                    if let Some(mut mpd) = client {
-                                                        if mpd.ping().is_err() {
-                                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                                                        }
+                                                    let val = input.value.clone();
+                                                    let result = with_mpd(app, args, |mpd| {
+                                                        mpd.save(&val).map_err(|e| e.to_string())
+                                                    });
 
-                                                        if let Err(e) = mpd.save(&input.value) {
-                                                            app.show_toast(&format!("❌ Error: {}", e));
-                                                        } else {
-                                                            app.show_toast(&format!("💾 Saved: {}", input.value));
-                                                            app.playlists.push(input.value.clone());
+                                                    if let Some(res) = result {
+                                                        match res {
+                                                            Ok(_) => {
+                                                                app.show_toast(&format!("💾 Saved: {}", val));
+                                                                app.playlists.push(val);
+                                                            },
+                                                            Err(e) => app.show_toast(&format!("❌ Error: {}", e)),
                                                         }
-                                                        app.mpd_client = Some(mpd);
                                                     }
                                                 }
                                             }
@@ -67,30 +69,31 @@ pub async fn handle_input(
                                             if !input.value.is_empty() {
                                                 #[cfg(feature = "mpd")]
                                                 {
-                                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                                                    if let Some(mut mpd) = client {
-                                                        if mpd.ping().is_err() {
-                                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
+                                                    let new_name = input.value.clone();
+                                                    let old = old_name.clone();
+                                                    
+                                                    let result = with_mpd(app, args, |mpd| {
+                                                        match mpd.pl_rename(&old, &new_name) {
+                                                            Ok(_) => mpd.playlists().map_err(|e| e.to_string()),
+                                                            Err(e) => Err(e.to_string())
                                                         }
+                                                    });
 
-                                                        if let Err(e) = mpd.pl_rename(&old_name, &input.value) {
-                                                             app.show_toast(&format!("❌ Error: {}", e));
-                                                        } else {
-                                                             app.show_toast(&format!("✏️ Renamed: {} -> {}", old_name, input.value));
-                                                             // Refresh playlists
-                                                             if let Ok(playlists) = mpd.playlists() {
-                                                                 app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
-                                                                 // Update library items if in Playlist mode
-                                                                 if app.library_mode == app::LibraryMode::Playlists {
+                                                    if let Some(res) = result {
+                                                        match res {
+                                                            Ok(playlists) => {
+                                                                app.show_toast(&format!("✏️ Renamed: {} -> {}", old, new_name));
+                                                                app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                                                                if app.library_mode == app::LibraryMode::Playlists {
                                                                      app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
                                                                          name: p.clone(),
                                                                          item_type: app::LibraryItemType::Playlist,
                                                                          artist: None, duration_ms: None, path: None
                                                                      }).collect();
-                                                                 }
-                                                             }
+                                                                }
+                                                            },
+                                                            Err(e) => app.show_toast(&format!("❌ Error: {}", e)),
                                                         }
-                                                        app.mpd_client = Some(mpd);
                                                     }
                                                 }
                                             }
@@ -204,40 +207,37 @@ pub async fn handle_input(
 
                                 #[cfg(feature = "mpd")]
                                 if !args.controller {
-                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                                    if let Some(mut mpd) = client {
-                                        if mpd.ping().is_err() {
-                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                                        }
-                                        match target_mode {
+                                    let target = target_mode;
+                                    let current_path = app.browse_path.join("/");
+
+                                    if let Some(items) = with_mpd(app, args, |mpd| {
+                                        match target {
                                             app::LibraryMode::Directory => {
-                                                // Restore Directory view (refresh from current path)
-                                                let current_path = app.browse_path.join("/");
-                                                if let Ok(items) = fetch_directory_items(&mut mpd, &current_path) {
-                                                    app.library_items = items;
-                                                }
+                                                fetch_directory_items(mpd, &current_path).ok().map(|i| (None, i))
                                             },
                                             app::LibraryMode::Playlists => {
-                                                // Refresh playlists
                                                 if let Ok(playlists) = mpd.playlists() {
-                                                    app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
-                                                    app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
-                                                        name: p.clone(),
+                                                    let items = playlists.iter().map(|p| app::LibraryItem {
+                                                        name: p.name.clone(),
                                                         item_type: app::LibraryItemType::Playlist,
                                                         artist: None, duration_ms: None, path: None
                                                     }).collect();
-                                                }
+                                                    Some((Some(playlists), items))
+                                                } else { None }
                                             },
-                                            app::LibraryMode::Queue => {
-                                                // Queue is updated via idle/status logic, but we can ensure items match queue
-                                                // Repopulating library_items from queue is optional if UI uses app.queue directly
-                                                // But usually Queue view uses app.queue.
-                                                // ensure library items is cleared so we dont show search results in queue mode
-                                                app.library_items.clear();
-                                            },
-                                            _ => {}
+                                            _ => Some((None, Vec::new()))
                                         }
-                                        app.mpd_client = Some(mpd);
+                                    }).flatten() {
+                                        let (playlists_opt, items) = items;
+                                        if let Some(playlists) = playlists_opt {
+                                             app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                                        }
+                                        
+                                        if target == app::LibraryMode::Directory || target == app::LibraryMode::Playlists {
+                                             app.library_items = items;
+                                        } else if target == app::LibraryMode::Queue {
+                                             app.library_items.clear();
+                                        }
                                     }
                                 }
                             },
@@ -249,42 +249,34 @@ pub async fn handle_input(
                                 // Perform MPD search
                                 #[cfg(feature = "mpd")]
                                 if !args.controller && !app.search_query.is_empty() {
-                                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                                    if let Some(mut mpd) = client {
-                                        if mpd.ping().is_err() {
-                                             if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                                        }
+                                    if let Some(songs) = with_mpd(app, args, |mpd| mpd.listall().ok()).flatten() {
+                                        let matcher = SkimMatcherV2::default();
+                                        // Fuzzy Match 🔍
+                                        let mut matched_items: Vec<(i64, mpd::Song)> = songs.into_iter()
+                                            .filter_map(|s| {
+                                                let search_text = format!("{} {} {}",
+                                                    s.title.as_deref().unwrap_or(""),
+                                                    s.artist.as_deref().unwrap_or(""),
+                                                    s.file
+                                                );
+                                                matcher.fuzzy_match(&search_text, &app.search_query).map(|score| (score, s))
+                                            })
+                                            .collect();
 
-                                        if let Ok(songs) = mpd.listall() {
-                                            let matcher = SkimMatcherV2::default();
-                                            // Fuzzy Match 🔍
-                                            let mut matched_items: Vec<(i64, mpd::Song)> = songs.into_iter()
-                                                .filter_map(|s| {
-                                                    let search_text = format!("{} {} {}",
-                                                        s.title.as_deref().unwrap_or(""),
-                                                        s.artist.as_deref().unwrap_or(""),
-                                                        s.file
-                                                    );
-                                                    matcher.fuzzy_match(&search_text, &app.search_query).map(|score| (score, s))
-                                                })
-                                                .collect();
+                                        // Sort by score (descending)
+                                        matched_items.sort_by(|a, b| b.0.cmp(&a.0));
 
-                                            // Sort by score (descending)
-                                            matched_items.sort_by(|a, b| b.0.cmp(&a.0));
-
-                                            app.library_items = matched_items.into_iter()
-                                                .take(50)
-                                                .map(|(_, s)| app::LibraryItem {
-                                                    name: s.title.clone().unwrap_or_else(|| s.file.clone()),
-                                                    item_type: app::LibraryItemType::Song,
-                                                    artist: s.artist.clone().or_else(|| s.tags.iter().find(|(k,_)| k == "Artist").map(|(_,v)| v.clone())),
-                                                    duration_ms: s.duration.map(|d| d.as_millis() as u64),
-                                                    path: Some(s.file),
-                                                })
-                                                .collect();
-                                            app.library_selected = 0;
-                                        }
-                                        app.mpd_client = Some(mpd);
+                                        app.library_items = matched_items.into_iter()
+                                            .take(50)
+                                            .map(|(_, s)| app::LibraryItem {
+                                                name: s.title.clone().unwrap_or_else(|| s.file.clone()),
+                                                item_type: app::LibraryItemType::Song,
+                                                artist: s.artist.clone().or_else(|| s.tags.iter().find(|(k,_)| k == "Artist").map(|(_,v)| v.clone())),
+                                                duration_ms: s.duration.map(|d| d.as_millis() as u64),
+                                                path: Some(s.file),
+                                            })
+                                            .collect();
+                                        app.library_selected = 0;
                                     }
                                 }
                             },

@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use crate::app::{self, App, LyricsState};
+#[cfg(feature = "mpd")]
+use crate::app::with_mpd;
 use crate::player::PlayerTrait;
 use crate::audio::pipeline::AudioPipeline;
 use crate::app::cli::Args;
@@ -188,19 +190,17 @@ pub async fn handle_normal_mode(
     if keys.matches(key, &keys.move_down) && app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue {
         if app.library_selected < app.queue.len().saturating_sub(1) {
             #[cfg(feature = "mpd")]
+            #[cfg(feature = "mpd")]
             if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-                    
-                    let current_pos = app.library_selected as u32;
-                    let new_pos = current_pos + 1;
-                    if mpd.shift(current_pos, new_pos as usize).is_ok() {
-                         app.library_selected = new_pos as usize;
-                    }
-                    app.mpd_client = Some(mpd);
+                let current_pos = app.library_selected as u32;
+                let new_pos = current_pos + 1;
+                
+                let success = with_mpd(app, args, |mpd| {
+                    mpd.shift(current_pos, new_pos as usize).is_ok()
+                }).unwrap_or(false);
+
+                if success {
+                     app.library_selected = new_pos as usize;
                 }
             }
         }
@@ -210,19 +210,17 @@ pub async fn handle_normal_mode(
     if keys.matches(key, &keys.move_up) && app.view_mode == app::ViewMode::Library && app.library_mode == app::LibraryMode::Queue {
         if app.library_selected > 0 {
             #[cfg(feature = "mpd")]
+            #[cfg(feature = "mpd")]
             if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
+                let current_pos = app.library_selected as u32;
+                let new_pos = current_pos - 1;
+                
+                let success = with_mpd(app, args, |mpd| {
+                    mpd.shift(current_pos, new_pos as usize).is_ok()
+                }).unwrap_or(false);
 
-                    let current_pos = app.library_selected as u32;
-                    let new_pos = current_pos - 1;
-                    if mpd.shift(current_pos, new_pos as usize).is_ok() {
-                         app.library_selected = new_pos as usize;
-                    }
-                    app.mpd_client = Some(mpd);
+                if success {
+                     app.library_selected = new_pos as usize;
                 }
             }
         }
@@ -391,21 +389,16 @@ pub async fn handle_normal_mode(
              app.toggle_crossfade();
              #[cfg(feature = "mpd")]
              if !args.controller {
-                {
-                    let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                    if let Some(mut mpd) = client {
-                        if mpd.ping().is_err() {
-                            if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                        }
-                        let _ = mpd.crossfade(app.crossfade_secs as i64);
-                        app.mpd_client = Some(mpd);
-                    }
-                }
+                let secs = app.crossfade_secs as i64;
+                with_mpd(app, args, |mpd| {
+                    let _ = mpd.crossfade(secs);
+                });
              }
              return;
         }
         if keys.matches(key, &keys.replay_gain) {
             app.replay_gain_mode = (app.replay_gain_mode + 1) % 4;
+            #[cfg(feature = "mpd")]
             #[cfg(feature = "mpd")]
             if !args.controller {
                 let mode = match app.replay_gain_mode {
@@ -414,16 +407,9 @@ pub async fn handle_normal_mode(
                     3 => mpd::status::ReplayGain::Auto,
                     _ => mpd::status::ReplayGain::Off,
                 };
-                {
-                     let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                    if let Some(mut mpd) = client {
-                        if mpd.ping().is_err() {
-                            if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                        }
-                        let _ = mpd.replaygain(mode);
-                        app.mpd_client = Some(mpd);
-                    }
-                }
+                with_mpd(app, args, |mpd| {
+                    let _ = mpd.replaygain(mode);
+                });
             }
             return;
         }
@@ -465,28 +451,21 @@ pub async fn handle_normal_mode(
 
             #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-                    if let Ok(pls) = mpd.playlists() {
-                        app.playlists = pls.iter().map(|p| p.name.clone()).collect();
-                    }
-                    app.mpd_client = Some(mpd);
+                if let Some(playlists) = with_mpd(app, args, |mpd| {
+                    mpd.playlists().ok()
+                }).flatten() {
+                    app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
                 }
             }
              #[cfg(feature = "mpd")]
+             #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Directory && !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-                    if let Ok(items) = fetch_directory_items(&mut mpd, "") {
-                        app.library_items = items;
-                    }
-                    app.mpd_client = Some(mpd);
+                if let Some(items) = with_mpd(app, args, |mpd| {
+                    fetch_directory_items(mpd, "").ok()
+                }) {
+                     if let Some(i) = items {
+                        app.library_items = i;
+                     }
                 }
             }
             return;
@@ -506,15 +485,10 @@ pub async fn handle_normal_mode(
             
              #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Playlists && !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-                    if let Ok(pls) = mpd.playlists() {
-                        app.playlists = pls.iter().map(|p| p.name.clone()).collect();
-                    }
-                    app.mpd_client = Some(mpd);
+                if let Some(playlists) = with_mpd(app, args, |mpd| {
+                    mpd.playlists().ok()
+                }).flatten() {
+                    app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
                 }
             }
             return;
@@ -597,28 +571,34 @@ pub async fn handle_normal_mode(
         }
         
         if keys.matches(key, &keys.delete_item) {
-             // Delete logic...
              #[cfg(feature = "mpd")]
              if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-                    match app.library_mode {
-                        app::LibraryMode::Queue => { let _ = mpd.delete(app.library_selected as u32); },
-                        app::LibraryMode::Playlists => {
-                             if let Some(name) = app.playlists.get(app.library_selected) {
-                                let _ = mpd.pl_remove(name);
-                                if let Ok(pls) = mpd.playlists() {
-                                    app.playlists = pls.iter().map(|p| p.name.clone()).collect();
-                                }
-                                if app.library_selected > 0 { app.library_selected -= 1; }
-                            }
+                use crate::app::LibraryMode;
+                let mode = app.library_mode;
+                let selected = app.library_selected;
+                let pl_name = if mode == LibraryMode::Playlists {
+                    app.playlists.get(selected).cloned()
+                } else { None };
+
+                let new_playlists = with_mpd(app, args, |mpd| {
+                    match mode {
+                        LibraryMode::Queue => { let _ = mpd.delete(selected as u32); None },
+                        LibraryMode::Playlists => {
+                             if let Some(name) = pl_name {
+                                let _ = mpd.pl_remove(&name);
+                                mpd.playlists().ok() // Return new playlists
+                            } else { None }
                         },
-                        _ => {}
+                        _ => None
                     }
-                    app.mpd_client = Some(mpd);
+                });
+
+                if let Some(Some(pls)) = new_playlists {
+                    app.playlists = pls.iter().map(|p| p.name.clone()).collect();
+                }
+                
+                if mode == LibraryMode::Playlists && app.library_selected > 0 && app.library_selected >= app.playlists.len() {
+                     app.library_selected = app.library_selected.saturating_sub(1);
                 }
              }
              return;
@@ -627,18 +607,15 @@ pub async fn handle_normal_mode(
         if keys.matches(key, &keys.add_to_queue) && (app.library_mode == app::LibraryMode::Directory || app.library_mode == app::LibraryMode::Search) {
              #[cfg(feature = "mpd")]
              if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-
-                    if !app.library_items.is_empty() {
-                         if let Some(item) = app.library_items.get(app.library_selected) {
-                            let mut added_name = item.name.clone();
-                            let added = match item.item_type {
+                 if !app.library_items.is_empty() {
+                     let item = app.library_items.get(app.library_selected).cloned();
+                     
+                     if let Some(target_item) = item {
+                         let (result, shuffle_on) = with_mpd(app, args, |mpd| {
+                             let mut added_name = target_item.name.clone();
+                             let added = match target_item.item_type {
                                 app::LibraryItemType::Song => {
-                                    if let Some(path) = &item.path {
+                                    if let Some(path) = &target_item.path {
                                         let song = mpd::Song {
                                             file: path.clone(),
                                             ..Default::default()
@@ -647,19 +624,19 @@ pub async fn handle_normal_mode(
                                     } else { false }
                                 },
                                 app::LibraryItemType::Album => {
-                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Album".into()), &item.name)).is_ok()
+                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Album".into()), &target_item.name)).is_ok()
                                 },
                                 app::LibraryItemType::Artist => {
-                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Artist".into()), &item.name)).is_ok()
+                                     mpd.findadd(mpd::Query::new().and(mpd::Term::Tag("Artist".into()), &target_item.name)).is_ok()
                                 },
                                 app::LibraryItemType::Playlist => {
-                                     mpd.load(&item.name, ..).is_ok()
+                                     mpd.load(&target_item.name, ..).is_ok()
                                 },
                                 app::LibraryItemType::Folder => {
-                                     if let Some(path) = &item.path {
+                                     if let Some(path) = &target_item.path {
                                          use crate::app::library_helpers::queue_folder_recursive;
-                                         if queue_folder_recursive(&mut mpd, path).is_ok() {
-                                             added_name = item.name.clone(); 
+                                         if queue_folder_recursive(mpd, path).is_ok() {
+                                             added_name = target_item.name.clone(); 
                                              true
                                          } else { 
                                              false 
@@ -667,14 +644,16 @@ pub async fn handle_normal_mode(
                                      } else { false }
                                 },
                             };
-                            if added {
-                                let shuffle_msg = if app.shuffle { " (Shuffle ON)" } else { "" };
-                                app.show_toast(&format!("Added: {}{}", added_name, shuffle_msg));
-                            }
+                            let shuffle = if let Ok(s) = mpd.status() { s.random } else { false };
+                            (if added { Some(added_name) } else { None }, shuffle)
+                         }).unwrap_or((None, false)); // Default to no add false shuffle if connection failed
+
+                         if let Some(added_name) = result {
+                             let shuffle_msg = if shuffle_on { " (Shuffle ON)" } else { "" };
+                             app.show_toast(&format!("Added: {}{}", added_name, shuffle_msg));
                          }
-                    }
-                    app.mpd_client = Some(mpd);
-                }
+                     }
+                 }
              }
              return;
         }
@@ -682,30 +661,31 @@ pub async fn handle_normal_mode(
         if keys.matches(key, &keys.enter_dir) {
              #[cfg(feature = "mpd")]
              if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                         if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-
-                    match app.library_mode {
+                 // Clone needed state
+                 let mode = app.library_mode;
+                 let item = app.library_items.get(app.library_selected).cloned();
+                 let pl_name = if mode == app::LibraryMode::Playlists {
+                     app.playlists.get(app.library_selected).cloned()
+                 } else { None };
+                 let queue_idx = if mode == app::LibraryMode::Queue { Some(app.library_selected as u32) } else { None };
+                 
+                 let item_clone = item.clone();
+                 let result_items = with_mpd(app, args, |mpd| {
+                    match mode {
                         app::LibraryMode::Queue => {
-                            let _ = mpd.switch(app.library_selected as u32);
+                            if let Some(idx) = queue_idx { let _ = mpd.switch(idx); }
+                            None
                         }
                         app::LibraryMode::Directory => {
-                            if let Some(item) = app.library_items.get(app.library_selected) {
-                                match &item.item_type {
+                            if let Some(target) = item_clone {
+                                match target.item_type {
                                     app::LibraryItemType::Folder => {
-                                        if let Some(path) = &item.path {
-                                            app.browse_path.push(item.name.clone());
-                                            app.library_selected = 0;
-                                            if let Ok(items) = fetch_directory_items(&mut mpd, path) {
-                                                app.library_items = items;
-                                            }
+                                        if let Some(path) = &target.path {
+                                            return fetch_directory_items(mpd, path).ok();
                                         }
                                     },
                                     app::LibraryItemType::Song => {
-                                        if let Some(path) = &item.path {
+                                        if let Some(path) = &target.path {
                                             if let Ok(id) = mpd.push(mpd::song::Song { file: path.clone(), ..Default::default() }) {
                                                  let _ = mpd.switch(id);
                                             }
@@ -714,25 +694,48 @@ pub async fn handle_normal_mode(
                                     _ => {}
                                 }
                             }
+                            None
                         }
                         app::LibraryMode::Search => { 
-                            if let Some(item) = app.library_items.get(app.library_selected) {
-                                if let Some(path) = &item.path {
+                            if let Some(target) = item_clone {
+                                if let Some(path) = &target.path {
                                     let song = mpd::Song { file: path.clone(), ..Default::default() };
                                     if let Ok(id) = mpd.push(&song) {
                                         let _ = mpd.switch(id);
                                     }
                                 }
                             }
+                            None
                         },
                         app::LibraryMode::Playlists => {
-                            if let Some(pl) = app.playlists.get(app.library_selected) {
-                                let _ = mpd.load(pl, ..);
+                            if let Some(pl) = pl_name {
+                                let _ = mpd.load(&pl, ..);
                             }
+                            None
                         }
                     }
-                    app.mpd_client = Some(mpd);
-                }
+                 });
+
+                 // Post-processing for Directory change
+                 if mode == app::LibraryMode::Directory {
+                    if let Some(Some(items)) = result_items {
+                         // We successfully fetched items, meaning we descended
+                         if let Some(target) = item {
+                             if let Some(_path) = target.path {
+                                 // Update path in app *after* (so we don't break logic if fetch fails?) 
+                                 // Actually safe to update now
+                                 // Wait, `path` here is full path. `browse_path` is usually a list of components?
+                                 // Looking at old code: `app.browse_path.push(item.name.clone());`
+                                 // We need to replicate that.
+                                 if target.item_type == app::LibraryItemType::Folder {
+                                     app.browse_path.push(target.name);
+                                     app.library_selected = 0;
+                                     app.library_items = items;
+                                 }
+                             }
+                         }
+                    }
+                 }
              }
              return;
         }
@@ -747,81 +750,35 @@ pub async fn handle_normal_mode(
 
             #[cfg(feature = "mpd")]
             if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
-
+                let current_path = app.browse_path.join("/");
+                
+                let (new_items, new_playlists) = with_mpd(app, args, |mpd| {
                     match target_mode {
                         app::LibraryMode::Directory => {
-                            // Restore Directory view
-                            let current_path = app.browse_path.join("/");
-                            let mut new_items: Vec<app::LibraryItem> = Vec::new();
-
-                            // 1. Folders
-                            if let Ok(files) = mpd.listfiles(&current_path) {
-                                for (kind, name) in files {
-                                    let display_name = name.split('/').next_back().unwrap_or(&name).to_string();
-                                    if display_name.starts_with('.') || display_name.trim().is_empty() { continue; }
-
-                                    if kind == "directory" {
-                                        let full_path = if current_path.is_empty() { name.clone() } else { format!("{}/{}", current_path, name) };
-                                        new_items.push(app::LibraryItem {
-                                            name: display_name,
-                                            item_type: app::LibraryItemType::Folder,
-                                            artist: None, duration_ms: None, path: Some(full_path)
-                                        });
-                                    }
-                                }
-                            }
-
-                            // 2. Songs
-                            if let Ok(songs) = mpd.lsinfo(&mpd::Song { file: current_path.clone(), ..Default::default() }) {
-                                for song in songs {
-                                    let filename = song.file.split('/').next_back().unwrap_or(&song.file).to_string();
-                                    if filename.starts_with('.') || filename.trim().is_empty() { continue; }
-
-                                    let title = match song.title.as_ref().filter(|t| !t.trim().is_empty()) {
-                                        Some(t) => t.clone(),
-                                        None => filename.clone(),
-                                    };
-
-                                    new_items.push(app::LibraryItem {
-                                        name: title,
-                                        item_type: app::LibraryItemType::Song,
-                                        artist: song.artist.clone(),
-                                        duration_ms: song.duration.map(|d| d.as_millis() as u64),
-                                        path: Some(song.file),
-                                    });
-                                }
-                            }
-
-                            new_items.sort_by(|a, b| {
-                                match (&a.item_type, &b.item_type) {
-                                    (app::LibraryItemType::Folder, app::LibraryItemType::Song) => std::cmp::Ordering::Less,
-                                    (app::LibraryItemType::Song, app::LibraryItemType::Folder) => std::cmp::Ordering::Greater,
-                                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                                }
-                            });
-                            app.library_items = new_items;
+                            (fetch_directory_items(mpd, &current_path).ok(), None)
                         },
                         app::LibraryMode::Playlists => {
                             if let Ok(playlists) = mpd.playlists() {
-                                app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
-                                app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
-                                    name: p.clone(),
+                                let items = playlists.iter().map(|p| app::LibraryItem {
+                                    name: p.name.clone(),
                                     item_type: app::LibraryItemType::Playlist,
                                     artist: None, duration_ms: None, path: None
                                 }).collect();
-                            }
+                                (Some(items), Some(playlists))
+                            } else { (None, None) }
                         },
-                        app::LibraryMode::Queue => {
-                            app.library_items.clear();
-                        },
-                        _ => {}
+                        _ => (None, None)
                     }
-                    app.mpd_client = Some(mpd);
+                }).unwrap_or((None, None));
+
+                if let Some(items) = new_items {
+                    app.library_items = items;
+                }
+                if let Some(playlists) = new_playlists {
+                    app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                }
+                if target_mode == app::LibraryMode::Queue {
+                    app.library_items.clear();
                 }
             }
             return;
@@ -836,23 +793,17 @@ pub async fn handle_normal_mode(
             // Re-fetch items for the parent level
             #[cfg(feature = "mpd")]
             if !args.controller {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
+                // Build the path from browse_path
+                let parent_path = if app.browse_path.is_empty() {
+                    "".to_string()
+                } else {
+                    app.browse_path.join("/")
+                };
 
-                    // Build the path from browse_path
-                    let parent_path = if app.browse_path.is_empty() {
-                        "".to_string()
-                    } else {
-                        app.browse_path.join("/")
-                    };
-
-                    if let Ok(items) = fetch_directory_items(&mut mpd, &parent_path) {
-                        app.library_items = items;
-                    }
-                    app.mpd_client = Some(mpd);
+                if let Some(items) = with_mpd(app, args, |mpd| {
+                    fetch_directory_items(mpd, &parent_path).ok()
+                }).flatten() {
+                    app.library_items = items;
                 }
             }
              return;
@@ -887,18 +838,17 @@ pub async fn handle_normal_mode(
         } else {
             #[cfg(feature = "mpd")]
             {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                    if mpd.ping().is_err() {
-                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
+                let new_shuffle_state = with_mpd(app, args, |mpd| {
                     if let Ok(status) = mpd.status() {
-                        let new_state = !status.random;
-                        let _ = mpd.random(new_state);
-                        app.shuffle = new_state;
-                        app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
-                    }
-                    app.mpd_client = Some(mpd);
+                         let new_state = !status.random;
+                         let _ = mpd.random(new_state);
+                         Some(new_state)
+                    } else { None }
+                }).flatten();
+
+                if let Some(state) = new_shuffle_state {
+                    app.shuffle = state;
+                    app.show_toast(&format!("🔀 Shuffle: {}", if state { "ON" } else { "OFF" }));
                 }
             }
 
@@ -916,21 +866,22 @@ pub async fn handle_normal_mode(
         } else {
             #[cfg(feature = "mpd")]
             {
-                let client = app.mpd_client.take().or_else(|| mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)).ok());
-                if let Some(mut mpd) = client {
-                     if mpd.ping().is_err() {
-                        if let Ok(c) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) { mpd = c; }
-                    }
+                let new_repeat_state = with_mpd(app, args, |mpd| {
                     if let Ok(status) = mpd.status() {
-                        let new_state = !status.repeat;
-                        let _ = mpd.repeat(new_state);
-                        app.repeat = new_state;
-                        app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
-                    }
-                    app.mpd_client = Some(mpd);
+                         let new_state = !status.repeat;
+                         let _ = mpd.repeat(new_state);
+                         Some(new_state)
+                    } else { None }
+                }).flatten();
+
+                if let Some(state) = new_repeat_state {
+                    app.repeat = state;
+                    app.show_toast(&format!("🔁 Repeat: {}", if state { "ON" } else { "OFF" }));
                 }
             }
         }
 
     }
 }
+
+
