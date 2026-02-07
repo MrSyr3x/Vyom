@@ -473,7 +473,7 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    if app.last_scroll_time.is_none() && app.lyrics_offset.is_some() {
+                    if app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some()) {
                         if let (LyricsState::Loaded(lyrics), Some(_track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
                             // Find target line based on interpolated time
@@ -489,17 +489,42 @@ async fn main() -> Result<()> {
                             // Threshold: 0.05s (approx 20 lines/sec max speed)
                             // This prevents "teleporting" and ensures visible motion
                             if app.smooth_scroll_accum >= 0.05 {
+                                let mut done_offset = false;
+                                let mut done_selected = false;
+
+                                // Animate Offset (Viewport)
                                 if let Some(curr) = &mut app.lyrics_offset {
                                     if *curr < target_idx {
                                         *curr += 1;
                                     } else if *curr > target_idx {
                                         *curr -= 1;
                                     } else {
-                                        // Reached target
-                                        app.lyrics_offset = None;
-                                        app.lyrics_selected = None;
+                                        done_offset = true;
                                     }
+                                } else {
+                                    done_offset = true;
                                 }
+
+                                // Animate Selection (Highlight) - The Fix!
+                                if let Some(curr_sel) = &mut app.lyrics_selected {
+                                    if *curr_sel < target_idx {
+                                        *curr_sel += 1;
+                                    } else if *curr_sel > target_idx {
+                                        *curr_sel -= 1;
+                                    } else {
+                                        done_selected = true;
+                                    }
+                                } else {
+                                    // If no selection, we don't need to animate it (or set it to target? no leave it)
+                                    done_selected = true;
+                                }
+                                
+                                // Clean up if both reached target
+                                if done_offset && done_selected {
+                                    app.lyrics_offset = None;
+                                    app.lyrics_selected = None;
+                                }
+
                                 app.smooth_scroll_accum = 0.0;
                             }
                         }
