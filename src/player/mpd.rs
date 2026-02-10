@@ -13,16 +13,11 @@ pub struct MpdPlayer {
 
 #[cfg(feature = "mpd")]
 impl MpdPlayer {
-    pub fn new(host: &str, port: u16) -> Self {
-        // Get music directory from MPD config or use default
-        let music_dir = std::env::var("HOME")
-            .map(|h| format!("{}/Music", h))
-            .unwrap_or_else(|_| "/Users/syr3x/Music".to_string());
-
+    pub fn new(host: &str, port: u16, music_directory: String) -> Self {
         Self {
             host: host.to_string(),
             port,
-            music_directory: music_dir,
+            music_directory,
         }
     }
 
@@ -69,6 +64,16 @@ impl MpdPlayer {
         status
             .audio
             .map(|audio| (audio.rate, audio.bits as u16, audio.chans as u16))
+    }
+}
+
+#[cfg(feature = "mpd")]
+impl Default for MpdPlayer {
+    fn default() -> Self {
+        let music_dir = std::env::var("HOME")
+            .map(|h| format!("{}/Music", h))
+            .unwrap_or_else(|_| "/Users/syr3x/Music".to_string());
+        Self::new("localhost", 6600, music_dir)
     }
 }
 
@@ -444,6 +449,13 @@ impl MpdPlayer {
     pub fn save_playlist(&self, name: &str) -> Result<()> {
         let mut conn = self.connect()?;
         conn.save(name)?;
+        Ok(())
+    }
+
+    /// Rename a playlist
+    pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<()> {
+        let mut conn = self.connect()?;
+        conn.pl_rename(old_name, new_name)?;
         Ok(())
     }
 

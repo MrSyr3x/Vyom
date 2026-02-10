@@ -25,8 +25,8 @@ use vyom::ui;
 use vyom::inputs::handle_input;
 
 
-#[cfg(feature = "mpd")]
-use vyom::mpd_player;
+// #[cfg(feature = "mpd")]
+// use vyom::mpd_player;
 
 
 
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
         // Maybe log that EQ is visual only?
     }
 
-    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, user_config, persistent_state);
+    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, user_config.clone(), persistent_state);
 
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
 
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
     // Player Backend Selection 🎛️
     #[cfg(feature = "mpd")]
     let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
-        std::sync::Arc::new(mpd_player::MpdPlayer::new(&args.mpd_host, args.mpd_port))
+        std::sync::Arc::new(player::MpdPlayer::new(&args.mpd_host, args.mpd_port, user_config.music_directory.clone()))
     } else {
         std::sync::Arc::from(player::get_player())
     };
