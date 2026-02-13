@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.234] - 2026-02-13
+### Fixed
+- **CI**: Updated Homebrew workflow (renamed secret to `VYOMTOKEN`).
+
 ## [1.0.233] - 2026-02-13
 ### Fixed
 - **Audio Engine**: Implemented robust WAV header parsing for MPD HTTP streams to fix intermittent audio speed/pitch issues.
