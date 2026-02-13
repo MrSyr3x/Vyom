@@ -324,6 +324,16 @@ async fn main() -> Result<()> {
                             last_track_id = id.clone();
                             // Critical: Set Loading state immediately
                             app.lyrics = LyricsState::Loading;
+                            
+                            // Audio Engine: Check for sample rate change 🎵 (REMOVED: Caused sped up audio)
+                            // if let Some(rate) = track.sample_rate {
+                            //    if rate > 0 && rate != audio_pipeline.get_sample_rate() {
+                            //        let _ = audio_pipeline.update_sample_rate(rate);
+                            //        app.show_toast(&format!("⟳ Rate: {}Hz", rate));
+                            //    }
+                            // }
+
+                            // Critical Fix: Reset manual scroll state on song change
                             // Critical Fix: Reset manual scroll state on song change
                             app.lyrics_offset = None;
                             app.last_scroll_time = None;

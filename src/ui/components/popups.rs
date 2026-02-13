@@ -347,7 +347,6 @@ fn render_toast(f: &mut Frame, app: &App) {
                 let style = Style::default().fg(theme.blue).add_modifier(Modifier::BOLD);
 
                 let text = Paragraph::new(Line::from(vec![
-                    Span::styled("✓ ", style),
                     Span::styled(message.as_str(), style),
                 ]))
                 .alignment(Alignment::Center)

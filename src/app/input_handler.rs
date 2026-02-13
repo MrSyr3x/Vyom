@@ -460,12 +460,10 @@ pub async fn handle_normal_mode(
              #[cfg(feature = "mpd")]
              #[cfg(feature = "mpd")]
             if app.library_mode == app::LibraryMode::Directory && !args.controller {
-                if let Some(items) = with_mpd(app, args, |mpd| {
+                if let Some(Some(items)) = with_mpd(app, args, |mpd| {
                     fetch_directory_items(mpd, "").ok()
                 }) {
-                     if let Some(i) = items {
-                        app.library_items = i;
-                     }
+                    app.library_items = items;
                 }
             }
             return;
@@ -606,8 +604,7 @@ pub async fn handle_normal_mode(
 
         if keys.matches(key, &keys.add_to_queue) && (app.library_mode == app::LibraryMode::Directory || app.library_mode == app::LibraryMode::Search) {
              #[cfg(feature = "mpd")]
-             if !args.controller {
-                 if !app.library_items.is_empty() {
+             if !args.controller && !app.library_items.is_empty() {
                      let item = app.library_items.get(app.library_selected).cloned();
                      
                      if let Some(target_item) = item {
@@ -653,7 +650,6 @@ pub async fn handle_normal_mode(
                              app.show_toast(&format!("Added: {}{}", added_name, shuffle_msg));
                          }
                      }
-                 }
              }
              return;
         }

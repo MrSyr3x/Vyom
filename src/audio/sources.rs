@@ -109,7 +109,7 @@ fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
 pub fn run_http_audio_loop(
     host: &str,
     port: u16,
-    format: &AudioInputFormat,
+    initial_format: &AudioInputFormat,
     eq_gains: EqGains,
     running: Arc<AtomicBool>,
     global_volume: Arc<std::sync::atomic::AtomicU8>,
@@ -121,74 +121,92 @@ pub fn run_http_audio_loop(
         .default_output_device()
         .ok_or("No output device available")?;
 
-    let stream_config = StreamConfig {
-        channels: format.channels,
-        sample_rate: cpal::SampleRate(format.sample_rate),
-        buffer_size: cpal::BufferSize::Default,
-    };
-
-    let mut equalizer = DspEqualizer::new(format.sample_rate as f32, eq_gains);
+    let mut _current_stream: Option<cpal::Stream> = None;
+    let mut current_sample_rate = initial_format.sample_rate;
+    let mut current_channels = initial_format.channels;
 
     let ring_buffer = Arc::new(std::sync::Mutex::new(
         std::collections::VecDeque::<f32>::with_capacity(32768),
     ));
-    let ring_buffer_clone = ring_buffer.clone();
-
+    
     let fade_level = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let fade_level_clone = fade_level.clone();
+    
+    // VISUALIZER: Clone buffer ref
+    let vis_buffer_orig = vis_buffer.clone();
 
-    const FADE_SPEED: f32 = 0.005;
+    // Helper to build stream
+    let build_stream = |sample_rate: u32, channels: u16| -> Result<cpal::Stream, String> {
+        let stream_config = StreamConfig {
+            channels,
+            sample_rate: cpal::SampleRate(sample_rate),
+            buffer_size: cpal::BufferSize::Default,
+        };
 
-    // VISUALIZER: Clone buffer ref for callback
-    let vis_buffer_clone = vis_buffer.clone();
-    let channels = format.channels as usize;
+        // Output stream doesn't do processing anymore, it just plays from buffer!
+        // Wait, stream callback DOES processing (fade/gain).
+        // It does NOT do EQ. EQ is done in the read loop.
+        
+        let rb_clone = ring_buffer.clone();
+        let fl_clone = fade_level.clone();
+        let gv_clone = global_volume.clone();
+        let vb_clone = vis_buffer_orig.clone();
+        
+        const FADE_SPEED: f32 = 0.005;
+        let channels_usize = channels as usize;
 
-    let stream = device
-        .build_output_stream(
-            &stream_config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let mut buffer = if let Ok(buf) = ring_buffer_clone.lock() {
-                    buf
-                } else {
-                    return; // Mutex poison - skip
-                };
-                let mut fade = f32::from_bits(fade_level_clone.load(Ordering::Relaxed));
-
-                // Calculate Gain 🎚️
-                let vol = global_volume.load(Ordering::Relaxed);
-                let gain = (vol as f32 / 100.0).powf(3.0); // Cubic taper for natural feel
-
-                for sample in data.iter_mut() {
-                    if let Some(s) = buffer.pop_front() {
-                        if fade < 1.0 {
-                            fade = (fade + FADE_SPEED).min(1.0);
-                        }
-                        *sample = s * fade * gain;
+        let stream = device
+            .build_output_stream(
+                &stream_config,
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    let mut buffer = if let Ok(buf) = rb_clone.lock() {
+                        buf
                     } else {
-                        if fade > 0.0 {
-                            fade = (fade - FADE_SPEED).max(0.0);
+                        return;
+                    };
+                    let mut fade = f32::from_bits(fl_clone.load(Ordering::Relaxed));
+
+                    // Calculate Gain 🎚️
+                    let vol = gv_clone.load(Ordering::Relaxed);
+                    let gain = (vol as f32 / 100.0).powf(3.0);
+
+                    for sample in data.iter_mut() {
+                        if let Some(s) = buffer.pop_front() {
+                            if fade < 1.0 {
+                                fade = (fade + FADE_SPEED).min(1.0);
+                            }
+                            *sample = s * fade * gain;
+                        } else {
+                            if fade > 0.0 {
+                                fade = (fade - FADE_SPEED).max(0.0);
+                            }
+                            *sample = 0.0;
                         }
-                        *sample = 0.0;
                     }
-                }
 
-                // Send copy of samples to visualizer
-                if let Some(vis) = &vis_buffer_clone {
-                    Visualizer::push_samples(vis, data, channels);
-                }
+                    // Visualize
+                    if let Some(vis) = &vb_clone {
+                         Visualizer::push_samples(vis, data, channels_usize);
+                    }
 
-                fade_level_clone.store(fade.to_bits(), Ordering::Relaxed);
-            },
-            |err| eprintln!("Audio stream error: {}", err),
-            None,
-        )
-        .map_err(|e| format!("Failed to build output stream: {}", e))?;
+                    fl_clone.store(fade.to_bits(), Ordering::Relaxed);
+                },
+                |err| eprintln!("Audio stream error: {}", err),
+                None,
+            )
+            .map_err(|e| format!("Failed to build output stream: {}", e))?;
+            
+        stream.play().map_err(|e| format!("Failed to play stream: {}", e))?;
+        Ok(stream)
+    };
 
-    stream
-        .play()
-        .map_err(|e| format!("Failed to play stream: {}", e))?;
+    // Initial stream build (fallback)
+    _current_stream = Some(build_stream(current_sample_rate, current_channels)?);
 
     let mut read_buffer = vec![0u8; 8192];
+    
+    // EQ instance for processing loop (needs to match sample rate too!)
+    // We'll recreate it if rate changes.
+    let mut processing_eq = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
 
     while running.load(Ordering::SeqCst) {
         let tcp_stream = match connect_to_http_stream(host, port) {
@@ -201,11 +219,50 @@ pub fn run_http_audio_loop(
 
         let mut reader = BufReader::with_capacity(16384, tcp_stream);
 
-        // Skip WAV header (44 bytes)
+        // 1. Read WAV Header (44 bytes) for TRUTH 🕵️‍♂️
         let mut header = [0u8; 44];
         if reader.read_exact(&mut header).is_err() {
             thread::sleep(Duration::from_millis(100));
             continue;
+        }
+        
+        // 2. Parse Format
+        let mut new_rate = current_sample_rate;
+        let mut new_channels = current_channels;
+        
+        // Check for RIFF/WAVE signature
+        if &header[0..4] == b"RIFF" && &header[8..12] == b"WAVE" && &header[12..16] == b"fmt " {
+             // channels at offset 22 (u16)
+             new_channels = u16::from_le_bytes([header[22], header[23]]);
+             // sample rate at offset 24 (u32)
+             new_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
+             
+             // Sanity checks
+             if new_channels == 0 || new_channels > 8 { new_channels = 2; }
+             if !(8000..=192000).contains(&new_rate) { new_rate = 44100; }
+        }
+
+        // 3. Reconfigure Stream if changed
+        if new_rate != current_sample_rate || new_channels != current_channels {
+             eprintln!("⟳ Audio Format Changed: {}Hz / {}ch", new_rate, new_channels);
+             current_sample_rate = new_rate;
+             current_channels = new_channels;
+             
+             // Update EQ for processing loop
+             processing_eq = DspEqualizer::new(new_rate as f32, eq_gains.clone());
+             
+             // Rebuild cpal stream
+             // Dropping old stream (by overwriting Option) stops it
+             _current_stream = match build_stream(new_rate, new_channels) {
+                 Ok(s) => Some(s),
+                 Err(e) => {
+                     eprintln!("Failed to rebuild stream: {}", e);
+                     // Try to keep old one? Or fallback?
+                     // If rebuild fails, we are kind of stuck. Wait and retry?
+                     thread::sleep(Duration::from_secs(1));
+                     continue;
+                 }
+             };
         }
 
         if let Ok(mut buffer) = ring_buffer.lock() {
@@ -215,7 +272,7 @@ pub fn run_http_audio_loop(
         while running.load(Ordering::SeqCst) {
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
-                    equalizer.reset_filters();
+                    processing_eq.reset_filters();
                     break;
                 }
                 Ok(bytes_read) => {
@@ -232,7 +289,7 @@ pub fn run_http_audio_loop(
                         }
                     }
 
-                    equalizer.process_buffer(&mut float_buffer);
+                    processing_eq.process_buffer(&mut float_buffer);
 
                     if let Ok(mut buffer) = ring_buffer.lock() {
                         for sample in float_buffer {
@@ -250,7 +307,7 @@ pub fn run_http_audio_loop(
                     continue
                 }
                 Err(_) => {
-                    equalizer.reset_filters();
+                    processing_eq.reset_filters();
                     break;
                 }
             }
