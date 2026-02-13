@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.235] - 2026-02-13
+### Fixed
+- **CI**: Replaced Homebrew workflow with manual shell script to ensure correct authentication and file paths for external tap.
+
 ## [1.0.234] - 2026-02-13
 ### Fixed
 - **CI**: Updated Homebrew workflow (renamed secret to `VYOMTOKEN`).
