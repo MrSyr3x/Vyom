@@ -1,0 +1,51 @@
+name: Update Homebrew Formula
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Calculate SHA256
+        id: shasum
+        run: |
+          # Download tarball
+          VERSION=${GITHUB_REF#refs/tags/v}
+          URL="https://github.com/MrSyr3x/vyom/archive/refs/tags/v${VERSION}.tar.gz"
+          wget $URL -O vyom.tar.gz
+          echo "sha256=$(sha256sum vyom.tar.gz | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Update Formula
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          SHA=${{ steps.shasum.outputs.sha256 }}
+          
+          # Update URL
+          sed -i "s|url \".*\"|url \"https://github.com/MrSyr3x/vyom/archive/refs/tags/v${VERSION}.tar.gz\"|" Formula/vyom.rb
+          
+          # Update Version
+          sed -i "s|version \".*\"|version \"${VERSION}\"|" Formula/vyom.rb
+          
+          # Update SHA256
+          if grep -q "sha256" Formula/vyom.rb; then
+            # Replace existing sha256
+            sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/vyom.rb
+          else
+            # Add sha256 after version (indentation 2 spaces)
+            sed -i "/version \"${VERSION}\"/a \  sha256 \"${SHA}\"" Formula/vyom.rb
+          fi
+          
+          # Verify content
+          cat Formula/vyom.rb
+          
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vyom.rb
+          git commit -m "chore(brew): update formula to v${GITHUB_REF#refs/tags/v}"
+          git push origin HEAD:master
