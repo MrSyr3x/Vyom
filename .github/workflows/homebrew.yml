@@ -8,16 +8,60 @@ jobs:
   homebrew:
     runs-on: ubuntu-latest
     steps:
-      - name: Update Homebrew Formula
-        uses: mislav/bump-homebrew-formula-action@v3
-        with:
-          # The formula name
-          formula-name: vyom
-          # The tap repository
-          homebrew-tap: MrSyr3x/homebrew-vyom
-          # The new URL
-          download-url: https://github.com/MrSyr3x/termony/archive/refs/tags/${{ github.ref_name }}.tar.gz
-          # Commit message
-          commit-message: "update formula to {{version}}"
+      - name: Update Formula
         env:
-          COMMITTER_TOKEN: ${{ secrets.VYOMTOKEN }}
+          TOKEN: ${{ secrets.VYOMTOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # 1. Setup Variables
+          VERSION=${TAG#v}
+          URL="https://github.com/MrSyr3x/termony/archive/refs/tags/${TAG}.tar.gz"
+          
+          echo "Processing Release: $TAG (Version: $VERSION)"
+          echo "Download URL: $URL"
+          
+          # 2. Calculate SHA256
+          wget $URL -O release.tar.gz
+          SHA=$(sha256sum release.tar.gz | awk '{print $1}')
+          echo "SHA256: $SHA"
+          
+          # 3. Clone Tap (Using Token)
+          git clone --depth 1 https://x-access-token:${TOKEN}@github.com/MrSyr3x/homebrew-vyom.git tap
+          cd tap
+          
+          # 4. Configure Git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 5. Check File Location
+          FILE="vyom.rb"
+          if [ ! -f "$FILE" ]; then
+            FILE="Formula/vyom.rb"
+          fi
+          
+          if [ ! -f "$FILE" ]; then
+            echo "Error: Could not find vyom.rb or Formula/vyom.rb"
+            exit 1
+          fi
+          
+          echo "Updating file: $FILE"
+          
+          # 6. Update Content (sed for Linux)
+          # Update URL
+          sed -i "s|url \".*\"|url \"${URL}\"|" $FILE
+          
+          # Update Version (if present)
+          sed -i "s|version \".*\"|version \"${VERSION}\"|" $FILE
+          
+          # Update SHA256
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" $FILE
+          
+          # 7. Commit and Push
+          git add $FILE
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore(brew): update formula to ${TAG}"
+            git push origin HEAD:main
+            echo "Successfully pushed update to main!"
+          fi
