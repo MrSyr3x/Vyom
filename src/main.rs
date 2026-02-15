@@ -74,9 +74,8 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // In Tmux, we assume full split/window, so show lyrics by default.
-    // In Standalone, strict mode applies.
-    let app_show_lyrics = want_lyrics || is_tmux;
+    // In Tmux, we assume full split/window, so show lyrics by default UNLESS mini mode is requested.
+    let app_show_lyrics = want_lyrics; // This is already !args.mini
 
     // Determine backend mode and source app name
     #[cfg(feature = "mpd")]
