@@ -41,6 +41,7 @@ pub trait PlayerTrait: Send + Sync {
     fn seek(&self, position_secs: f64) -> Result<()>;
     fn volume_up(&self) -> Result<()>;
     fn volume_down(&self) -> Result<()>;
+    fn set_volume(&self, volume: u8) -> Result<()>;
 
     /// Get current queue/playlist (MPD only, returns empty for controller mode)
     /// Returns: (title, artist, duration_ms, is_current, file_path)

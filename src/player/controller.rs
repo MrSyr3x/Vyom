@@ -181,7 +181,7 @@ impl PlayerTrait for MacOsPlayer {
     fn volume_up(&self) -> Result<()> {
         if let Some(app) = self.detect_active_player() {
             Self::run_script(&format!(
-                "tell application \"{}\" to set sound volume to (sound volume + 10)",
+                "tell application \"{}\" to set sound volume to (sound volume + 5)",
                 app
             ))?;
         }
@@ -191,8 +191,19 @@ impl PlayerTrait for MacOsPlayer {
     fn volume_down(&self) -> Result<()> {
         if let Some(app) = self.detect_active_player() {
             Self::run_script(&format!(
-                "tell application \"{}\" to set sound volume to (sound volume - 10)",
+                "tell application \"{}\" to set sound volume to (sound volume - 5)",
                 app
+            ))?;
+        }
+        Ok(())
+    }
+
+    fn set_volume(&self, volume: u8) -> Result<()> {
+        if let Some(app) = self.detect_active_player() {
+            let vol = volume.min(100);
+            Self::run_script(&format!(
+                "tell application \"{}\" to set sound volume to {}",
+                app, vol
             ))?;
         }
         Ok(())
@@ -286,6 +297,9 @@ impl PlayerTrait for DummyPlayer {
         Ok(())
     }
     fn volume_down(&self) -> Result<()> {
+        Ok(())
+    }
+    fn set_volume(&self, _volume: u8) -> Result<()> {
         Ok(())
     }
 }

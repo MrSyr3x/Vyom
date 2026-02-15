@@ -61,19 +61,27 @@ pub async fn handle_normal_mode(
 
     // Volume Up ('+')
     if keys.matches(key, &keys.volume_up) {
-        let _ = player.volume_up();
-        app.app_volume = (app.app_volume.saturating_add(5)).min(100);
-        audio_pipeline.set_volume(app.app_volume);
-        app.show_toast(&format!("🔊 Volume: {}%", app.app_volume));
+        let new_vol = (app.app_volume.saturating_add(5)).min(100);
+        app.app_volume = new_vol;
+        app.last_volume_action = Some(std::time::Instant::now());
+        audio_pipeline.set_volume(new_vol);
+        if let Err(e) = player.set_volume(new_vol) {
+             app.show_toast(&format!("Error: {}", e));
+        }
+        app.show_toast(&format!("🔊 Volume: {}%", new_vol));
         return;
     }
 
     // Volume Down ('-')
     if keys.matches(key, &keys.volume_down) {
-        let _ = player.volume_down();
-        app.app_volume = app.app_volume.saturating_sub(5);
-        audio_pipeline.set_volume(app.app_volume);
-        app.show_toast(&format!("🔉 Volume: {}%", app.app_volume));
+        let new_vol = app.app_volume.saturating_sub(5);
+        app.app_volume = new_vol;
+        app.last_volume_action = Some(std::time::Instant::now());
+        audio_pipeline.set_volume(new_vol);
+        if let Err(e) = player.set_volume(new_vol) {
+             app.show_toast(&format!("Error: {}", e));
+        }
+        app.show_toast(&format!("🔉 Volume: {}%", new_vol));
         return;
     }
 

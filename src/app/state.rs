@@ -181,6 +181,7 @@ pub struct App {
 
     // Playback Timing State ⏱️
     pub last_track_update: Option<std::time::Instant>,
+    pub last_volume_action: Option<std::time::Instant>, // Grace period for volume sync 🛡️
 
     pub app_show_lyrics: bool,
     pub is_tmux: bool,      // Layout logic
@@ -304,6 +305,7 @@ impl App {
             seek_id: Arc::new(AtomicUsize::new(0)),
             smooth_scroll_accum: 0.0,
             last_track_update: None,
+            last_volume_action: None,
             app_show_lyrics,
             is_tmux,
             is_mpd,
@@ -327,7 +329,7 @@ impl App {
             eq_selected: 0,
             eq_enabled: state.eq_enabled,
             eq_preset: eq_preset_idx,
-            app_volume: 100,
+            app_volume: state.volume,
             preamp_db: state.preamp_db,
             balance: state.balance,
             crossfade_secs: state.crossfade,
@@ -576,6 +578,7 @@ impl App {
             balance: self.balance,
             crossfade: self.crossfade_secs,
             replay_gain_mode: self.replay_gain_mode,
+            volume: self.app_volume,
             presets: clean_presets,
         };
         state.save();

@@ -118,6 +118,8 @@ async fn main() -> Result<()> {
             eprintln!("{}", msg); // Keep log for stderr
             app.show_toast(&msg);
         }
+        // CRITICAL: Apply persisted volume immediately 🔊
+        audio_pipeline.set_volume(app.app_volume);
     } else {
         // We are secondary. No audio output.
         // Visuals might still work if we tap into the same FIFO?
@@ -309,6 +311,25 @@ async fn main() -> Result<()> {
                     app.track = info.clone();
                     app.last_track_update = Some(std::time::Instant::now());
                     if let Some(track) = info {
+                        // Sync Volume from Player 🔊
+                        // GRACE PERIOD: Ignore player updates for 1s after user action
+                        // EXCEPTION: MPD volume sync disabled because it often reports 0 (disabled mixer) causing UI reset loop
+                        let ignore_sync = app.last_volume_action
+                            .map(|t| t.elapsed() < std::time::Duration::from_millis(1000))
+                            .unwrap_or(false)
+                            || track.source == "MPD";
+
+                        if !ignore_sync {
+                            if let Some(vol) = track.volume {
+                                let new_vol = (vol as u8).min(100);
+                                // TOLERANCE: Allow +/- 1 variance to prevent Spotify jitter (55 vs 54) 🤏
+                                if (app.app_volume as i16 - new_vol as i16).abs() > 1 {
+                                    app.app_volume = new_vol;
+                                    audio_pipeline.set_volume(new_vol);
+                                }
+                            }
+                        }
+
                         let id = format!("{}{}", track.name, track.artist);
 
                         // Gapless album detection: check if same album as previous track
@@ -564,5 +585,6 @@ async fn main() -> Result<()> {
         app::lock::release_audio_lock();
     }
 
-    Ok(())
+    // Force Exit to bypass slow Tokio unwind of blocking tasks (AppleScript/MPD) 🚀
+    std::process::exit(0);
 }

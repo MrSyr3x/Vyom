@@ -255,6 +255,13 @@ impl PlayerTrait for MpdPlayer {
         Ok(())
     }
 
+    fn set_volume(&self, volume: u8) -> Result<()> {
+        let mut conn = self.connect()?;
+        let new_vol = (volume as i8).clamp(0, 100);
+        conn.volume(new_vol)?;
+        Ok(())
+    }
+
     fn get_queue(&self) -> Result<Vec<QueueItem>> {
         let mut conn = self.connect()?;
         let status = conn.status()?;

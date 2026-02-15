@@ -45,6 +45,8 @@ pub struct PersistentState {
     pub crossfade: u32,
     #[serde(default)]
     pub replay_gain_mode: u8,
+    #[serde(default = "default_volume")]
+    pub volume: u8,
     // Moved from UserConfig:
     #[serde(default)]
     pub presets: Vec<EqPreset>,
@@ -57,6 +59,10 @@ fn default_music_dir() -> String {
 
 fn default_bands() -> [f32; 10] {
     [0.5; 10]
+}
+
+fn default_volume() -> u8 {
+    50
 }
 
 impl Default for UserConfig {
@@ -78,6 +84,7 @@ impl Default for PersistentState {
             balance: 0.0,
             crossfade: 0,
             replay_gain_mode: 0,
+            volume: 50,
             presets: Vec::new(),
         }
     }
@@ -100,6 +107,8 @@ struct LegacyConfigMixin {
     pub crossfade: u32,
     #[serde(default)]
     pub replay_gain_mode: u8,
+    #[serde(default = "default_volume")]
+    pub volume: u8,
     #[serde(default)]
     pub presets: Vec<EqPreset>,
 }
@@ -167,6 +176,7 @@ impl AppConfig {
                             balance: legacy.balance,
                             crossfade: legacy.crossfade,
                             replay_gain_mode: legacy.replay_gain_mode,
+                            volume: legacy.volume,
                             presets: legacy.presets, // Migrate presets too
                         };
                         s.save(); // Save to new state.toml immediately
