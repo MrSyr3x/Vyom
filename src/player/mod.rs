@@ -5,7 +5,7 @@ pub mod traits;
 pub use controller::{DummyPlayer, MacOsPlayer};
 #[cfg(feature = "mpd")]
 pub use mpd::MpdPlayer;
-pub use traits::{PlayerState, PlayerTrait, TrackInfo};
+pub use traits::{PlayerState, PlayerTrait, TrackInfo, RepeatMode, QueueItem};
 
 /// Factory to get the correct player for the current OS
 pub fn get_player() -> Box<dyn PlayerTrait> {

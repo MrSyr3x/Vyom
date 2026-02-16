@@ -1,5 +1,6 @@
-use super::traits::{PlayerState, PlayerTrait, TrackInfo, QueueItem};
+use super::traits::{PlayerState, PlayerTrait, TrackInfo, QueueItem, RepeatMode};
 use anyhow::{Context, Result};
+use std::sync::Mutex;
 #[cfg(feature = "mpd")]
 use mpd::{Client, Song, State};
 
@@ -9,278 +10,215 @@ pub struct MpdPlayer {
     host: String,
     port: u16,
     music_directory: String,
+    client: Mutex<Option<Client>>,
 }
 
 #[cfg(feature = "mpd")]
 impl MpdPlayer {
-    pub fn new(host: &str, port: u16, music_directory: String) -> Self {
+    pub fn new(host: String, port: u16, music_directory: String) -> Self {
         Self {
-            host: host.to_string(),
+            host,
             port,
             music_directory,
+            client: Mutex::new(None),
         }
     }
 
-
-
-    fn connect(&self) -> Result<Client> {
-        let addr = format!("{}:{}", self.host, self.port);
-        Client::connect(&addr).context("Failed to connect to MPD")
-    }
-
-    fn extract_audio_info(
-        &self,
-        song: &Song,
-    ) -> (Option<String>, Option<u32>, Option<u32>, Option<u8>) {
-        // MPD provides audio format in status, but we can infer from file extension
-        let path = &song.file;
-        let codec = if path.ends_with(".flac") {
-            Some("FLAC".to_string())
-        } else if path.ends_with(".mp3") {
-            Some("MP3".to_string())
-        } else if path.ends_with(".m4a") || path.ends_with(".aac") {
-            Some("AAC".to_string())
-        } else if path.ends_with(".wav") {
-            Some("WAV".to_string())
-        } else if path.ends_with(".ogg") {
-            Some("OGG".to_string())
-        } else if path.ends_with(".opus") {
-            Some("OPUS".to_string())
+    /// Get a mutable reference to the MPD client, reconnecting if necessary.
+    fn with_client<F, T>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut mpd::Client) -> Result<T>,
+    {
+        // 1. Lock the mutex 🔒
+        let mut client_guard = self.client.lock().map_err(|_| anyhow::anyhow!("MPD client mutex poisoned"))?;
+        
+        // 2. Check connection status
+        let needs_connect = if let Some(client) = client_guard.as_mut() {
+             if client.status().is_err() {
+                 true
+             } else {
+                 false
+             }
         } else {
-            None
+            true
         };
 
-        // Bitrate, Sample Rate, Bit Depth come from status.audio
-        // We'll populate these from status in get_current_track
-        (codec, None, None, None)
+        // 3. Reconnect if needed
+        if needs_connect {
+            let addr = format!("{}:{}", self.host, self.port);
+             match mpd::Client::connect(&addr) {
+                Ok(c) => {
+                    *client_guard = Some(c);
+                }
+                Err(e) => {
+                    *client_guard = None; 
+                    return Err(anyhow::anyhow!("Failed to connect to MPD at {}: {}", addr, e));
+                }
+            }
+        }
+
+        // 4. Use the client
+        if let Some(client) = client_guard.as_mut() {
+            f(client)
+        } else {
+            // Should be unreachable if connect logic works
+             Err(anyhow::anyhow!("No MPD connection"))
+        }
     }
 
     /// Get current audio format from MPD status
     /// Returns (sample_rate, bit_depth, channels)
     pub fn get_audio_format(&self) -> Option<(u32, u16, u16)> {
-        let mut conn = self.connect().ok()?;
-        let status = conn.status().ok()?;
-
-        status
-            .audio
-            .map(|audio| (audio.rate, audio.bits as u16, audio.chans as u16))
+        self.with_client(|client| {
+            let status = client.status()?;
+            Ok(status
+                .audio
+                .map(|audio| (audio.rate, audio.bits as u16, audio.chans as u16)))
+        }).ok().flatten()
     }
 }
 
 #[cfg(feature = "mpd")]
 impl Default for MpdPlayer {
     fn default() -> Self {
-        let music_dir = std::env::var("HOME")
-            .map(|h| format!("{}/Music", h))
-            .unwrap_or_else(|_| "/Users/syr3x/Music".to_string());
-        Self::new("localhost", 6600, music_dir)
+        let music_dir = dirs::audio_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join("Music")))
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        Self::new("localhost".to_string(), 6600, music_dir)
     }
 }
 
 #[cfg(feature = "mpd")]
 impl PlayerTrait for MpdPlayer {
     fn get_current_track(&self) -> Result<Option<TrackInfo>> {
-        let mut conn = self.connect()?;
+        self.with_client(|client| {
+            let current_song = client.currentsong().ok().flatten();
+            let status = client.status()?;
 
-        let status = conn.status()?;
-        let song = match conn.currentsong()? {
-            Some(s) => s,
-            None => return Ok(None),
-        };
+            if let Some(song) = current_song {
+                let position_ms = status.elapsed.map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64).unwrap_or(0);
+                let duration_ms = status.duration.map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64).unwrap_or(0);
 
-        let state = match status.state {
-            State::Play => PlayerState::Playing,
-            State::Pause => PlayerState::Paused,
-            State::Stop => PlayerState::Stopped,
-        };
-
-        let (codec, _, _, _) = self.extract_audio_info(&song);
-
-        // Extract audio format from status
-        let (sample_rate, bit_depth, bitrate) = if let Some(audio) = status.audio {
-            (Some(audio.rate), Some(audio.bits), None)
-        } else {
-            (None, None, status.bitrate)
-        };
-
-        let duration_ms = song
-            .duration
-            .map(|d| d.as_secs() * 1000 + d.subsec_millis() as u64)
-            .unwrap_or(0);
-
-        let position_ms = status
-            .elapsed
-            .map(|d| d.as_secs() * 1000 + d.subsec_millis() as u64)
-            .unwrap_or(0);
-
-        // Helper closure to find tag value (case-insensitive)
-        let find_tag = |tags: &[(String, String)], key: &str| -> Option<String> {
-            let key_lower = key.to_lowercase();
-            tags.iter()
-                .find(|(k, _)| k.to_lowercase() == key_lower)
-                .map(|(_, v)| v.clone())
-        };
-
-        // Build absolute file path for embedded artwork extraction
-        let file_path = format!("{}/{}", self.music_directory, song.file);
-
-        // Metadata extraction with Queue Fallback 🛡️
-        // Sometimes currentsong() lacks tags that queue() has.
-        // If artist/album key fields are missing, verify against the queue.
-        let mut artist = song.artist.clone();
-        // Album is NOT a field on mpd::Song, must access via tags
-        let mut album = find_tag(&song.tags, "Album");
-        let mut title = song.title.clone();
-
-        if artist.is_none() || album.is_none() {
-            if let Ok(queue) = conn.queue() {
-                if let Some(queue_song) = queue.iter().find(|s| s.place == song.place) {
-                    // Found match in queue
-                    if queue_song.file == song.file {
-                        if artist.is_none() {
-                            artist = queue_song.artist.clone();
-                        }
-                        if album.is_none() {
-                            album = find_tag(&queue_song.tags, "Album");
-                        }
-                        if title.is_none() {
-                            title = queue_song.title.clone();
-                        }
-                    }
+                let file_path = if !song.file.starts_with('/') {
+                    format!("{}/{}", self.music_directory, song.file)
                 } else {
-                    // Try finding by path if place match failed
-                    if let Some(queue_song_path) = queue.iter().find(|s| s.file == song.file) {
-                        if artist.is_none() {
-                            artist = queue_song_path.artist.clone();
-                        }
-                        if album.is_none() {
-                            album = find_tag(&queue_song_path.tags, "Album");
-                        }
-                        if title.is_none() {
-                            title = queue_song_path.title.clone();
-                        }
-                    }
-                }
-            }
-        }
+                    song.file.clone()
+                };
 
-        let final_artist = artist
-            .or_else(|| find_tag(&song.tags, "Artist"))
-            .or_else(|| find_tag(&song.tags, "AlbumArtist"))
-            .or_else(|| find_tag(&song.tags, "Composer"))
-            .unwrap_or_else(|| "Unknown Artist".to_string());
+                let artwork_url = None; // Placeholder
 
-        Ok(Some(TrackInfo {
-            name: title
-                .or_else(|| find_tag(&song.tags, "Title"))
-                .unwrap_or_else(|| song.file.clone()),
-            artist: final_artist,
-            album: album
-                .or_else(|| find_tag(&song.tags, "Album"))
-                .unwrap_or_else(|| "Unknown Album".to_string()),
-            artwork_url: None, // Will be extracted from embedded art
-            duration_ms,
-            position_ms,
-            state,
-            source: "MPD".to_string(),
-            codec,
-            bitrate,
-            sample_rate,
-            bit_depth,
-            file_path: Some(file_path),
-            volume: if status.volume >= 0 {
-                Some(status.volume as u32)
+                let audio_format = status.audio.map(|a| (a.rate, a.bits, a.chans));
+                
+                // Helper to find tag
+                let find_tag = |tags: &[(String, String)], key: &str| -> Option<String> {
+                    let key_lower = key.to_lowercase();
+                    tags.iter()
+                        .find(|(k, _)| k.to_lowercase() == key_lower)
+                        .map(|(_, v)| v.clone())
+                };
+
+                let album = find_tag(&song.tags, "Album").unwrap_or_else(|| "Unknown".to_string());
+
+                Ok(Some(TrackInfo {
+                    name: song.title.unwrap_or_else(|| "Unknown".to_string()),
+                    artist: song.artist.unwrap_or_else(|| "Unknown".to_string()),
+                    album,
+                    duration_ms,
+                    position_ms,
+                    state: match status.state {
+                        State::Play => PlayerState::Playing,
+                        State::Pause => PlayerState::Paused,
+                        State::Stop => PlayerState::Stopped,
+                    },
+                    artwork_url,
+                    source: "MPD".to_string(),
+                    codec: None, 
+                    bitrate: status.bitrate.map(|b| b as u32),
+                    sample_rate: audio_format.map(|(r, _, _)| r),
+                    bit_depth: audio_format.map(|(_, b, _)| b as u8),
+                    file_path: Some(file_path),
+                    volume: Some(status.volume.abs() as u32),
+                }))
             } else {
-                None
-            },
-        }))
+                Ok(None)
+            }
+        })
     }
 
     fn play_pause(&self) -> Result<bool> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        match status.state {
-            State::Play => {
-                conn.pause(true)?;
-                Ok(false) // Now Paused
-            }
-            State::Pause => {
-                conn.pause(false)?;
-                Ok(true) // Now Playing
-            }
-            State::Stop => {
-                conn.play()?;
-                Ok(true) // Now Playing
-            }
-        }
+        self.with_client(|client| {
+            let status = client.status()?;
+            match status.state {
+                State::Play => client.pause(true)?,
+                State::Pause | State::Stop => client.play()?,
+            };
+            Ok(status.state != State::Play) 
+        })
     }
 
     fn next(&self) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.next()?;
-        Ok(())
+        self.with_client(|client| client.next().context("Failed to skip to next track"))
     }
 
     fn prev(&self) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.prev()?;
-        Ok(())
+         self.with_client(|client| client.prev().context("Failed to skip to previous track"))
     }
 
     fn seek(&self, position_secs: f64) -> Result<()> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        if let Some(song_pos) = status.song {
-            conn.seek(
-                song_pos.pos,
-                std::time::Duration::from_secs_f64(position_secs),
-            )?;
-        }
-        Ok(())
+        self.with_client(|client| {
+             let song = client.currentsong()?.context("No song playing")?;
+             let place = song.place.context("No song place")?;
+             client.seek(place.id, position_secs).context("Failed to seek")
+        })
     }
 
     fn volume_up(&self) -> Result<()> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        let new_vol = (status.volume + 5).min(100);
-        conn.volume(new_vol)?;
-        Ok(())
+        self.with_client(|client| {
+             let status = client.status()?;
+             let vol = status.volume;
+             if vol >= 0 {
+                 let new_vol = (vol + 5).min(100);
+                 client.volume(new_vol as i8)?;
+             }
+             Ok(())
+        })
     }
 
     fn volume_down(&self) -> Result<()> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        let new_vol = status.volume.saturating_sub(5);
-        conn.volume(new_vol)?;
-        Ok(())
+        self.with_client(|client| {
+             let status = client.status()?;
+             let vol = status.volume;
+             if vol >= 0 {
+                 let new_vol = (vol - 5).max(0);
+                 client.volume(new_vol as i8)?;
+             }
+             Ok(())
+        })
     }
 
     fn set_volume(&self, volume: u8) -> Result<()> {
-        let mut conn = self.connect()?;
-        let new_vol = (volume as i8).clamp(0, 100);
-        conn.volume(new_vol)?;
-        Ok(())
+        self.with_client(|client| {
+            client.volume(volume.min(100) as i8).context("Failed to set volume")
+        })
     }
 
     fn get_queue(&self) -> Result<Vec<QueueItem>> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        let queue = conn.queue()?;
+        self.with_client(|client| {
+            let queue = client.queue()?;
+            let current_song = client.currentsong().ok().flatten();
+            let current_id = current_song.and_then(|s| s.place).map(|p| p.id);
 
-        let current_pos = status.song.map(|s| s.pos);
+            // Helper closure to find tag value (case-insensitive)
+            let find_tag = |tags: &[(String, String)], key: &str| -> Option<String> {
+                let key_lower = key.to_lowercase();
+                tags.iter()
+                    .find(|(k, _)| k.to_lowercase() == key_lower)
+                    .map(|(_, v)| v.clone())
+            };
 
-        // Helper closure to find tag value (case-insensitive)
-        let find_tag = |tags: &[(String, String)], key: &str| -> Option<String> {
-            let key_lower = key.to_lowercase();
-            tags.iter()
-                .find(|(k, _)| k.to_lowercase() == key_lower)
-                .map(|(_, v)| v.clone())
-        };
-
-        let items: Vec<QueueItem> = queue
-            .iter()
-            .enumerate()
-            .map(|(i, song)| {
+            Ok(queue.into_iter().map(|song| {
+                let id = song.place.map(|p| p.id).unwrap_or_default();
                 let title = song.title.clone().unwrap_or_else(|| song.file.clone());
                 let artist = song
                     .artist
@@ -293,50 +231,65 @@ impl PlayerTrait for MpdPlayer {
                     .duration
                     .map(|d| d.as_secs() * 1000 + d.subsec_millis() as u64)
                     .unwrap_or(0);
-                let is_current = Some(i as u32) == current_pos;
-                let file_path = song.file.clone();
-
-                (title, artist, duration_ms, is_current, file_path)
-            })
-            .collect();
-
-        Ok(items)
+                
+                (
+                    title,
+                    artist,
+                    duration_ms,
+                    Some(id.0) == current_id.map(|i| i.0),
+                    song.file.clone()
+                )
+            }).collect())
+        })
     }
 
     fn shuffle(&self, enable: bool) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.random(enable)?;
-        Ok(())
+        self.with_client(|client| client.random(enable).context("Failed to toggle shuffle"))
     }
 
-    fn repeat(&self, enable: bool) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.repeat(enable)?;
-        Ok(())
+    fn repeat(&self, mode: RepeatMode) -> Result<()> {
+        self.with_client(|client| {
+            match mode {
+                RepeatMode::Off => {
+                    client.repeat(false)?;
+                    client.single(false)?;
+                }
+                RepeatMode::Playlist => {
+                    client.repeat(true)?;
+                    client.single(false)?;
+                }
+                RepeatMode::Single => {
+                    client.repeat(true)?;
+                    client.single(true)?;
+                }
+            }
+            Ok(())
+        })
     }
 
     fn crossfade(&self, secs: u32) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.crossfade(secs as i64)?;
-        Ok(())
+        self.with_client(|client| client.crossfade(secs as i64).context("Failed to set crossfade"))
     }
 
     fn delete_queue(&self, pos: u32) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.delete(pos)?;
-        Ok(())
+        self.with_client(|client| client.delete(pos).context("Failed to delete from queue"))
     }
 
     fn get_shuffle(&self) -> Result<bool> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        Ok(status.random)
+        self.with_client(|client| Ok(client.status()?.random))
     }
 
-    fn get_repeat(&self) -> Result<bool> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        Ok(status.repeat)
+    fn get_repeat(&self) -> Result<RepeatMode> {
+        self.with_client(|client| {
+            let status = client.status()?;
+            if status.single && status.repeat {
+                Ok(RepeatMode::Single)
+            } else if status.repeat {
+                Ok(RepeatMode::Playlist)
+            } else {
+                Ok(RepeatMode::Off)
+            }
+        })
     }
 }
 
@@ -344,16 +297,15 @@ impl PlayerTrait for MpdPlayer {
 impl MpdPlayer {
     /// Set crossfade duration in seconds (0 to disable)
     pub fn set_crossfade(&self, seconds: u32) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.crossfade(seconds as i64)?;
-        Ok(())
+        self.with_client(|client| client.crossfade(seconds as i64).context("Failed to set crossfade"))
     }
 
     /// Get current crossfade setting
     pub fn get_crossfade(&self) -> Result<u32> {
-        let mut conn = self.connect()?;
-        let status = conn.status()?;
-        Ok(status.crossfade.map(|d| d.as_secs() as u32).unwrap_or(0))
+        self.with_client(|client| {
+            let status = client.status()?;
+            Ok(status.crossfade.map(|d| d.as_secs() as u32).unwrap_or(0))
+        })
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -362,125 +314,122 @@ impl MpdPlayer {
 
     /// List all artists from the database
     pub fn list_artists(&self) -> Result<Vec<String>> {
-        let mut conn = self.connect()?;
-        // Use simple search and extract unique artists
-        let songs = conn.listall()?;
-        let mut artists: Vec<String> = songs
-            .iter()
-            .filter_map(|s| {
-                s.tags
-                    .iter()
-                    .find(|(k, _)| k == "Artist")
-                    .map(|(_, v)| v.clone())
-            })
-            .collect();
-        artists.sort();
-        artists.dedup();
-        Ok(artists)
+        self.with_client(|client| {
+            let songs = client.listall()?;
+            let mut artists: Vec<String> = songs
+                .iter()
+                .filter_map(|s| {
+                    s.tags
+                        .iter()
+                        .find(|(k, _)| k == "Artist")
+                        .map(|(_, v)| v.clone())
+                })
+                .collect();
+            artists.sort();
+            artists.dedup();
+            Ok(artists)
+        })
     }
 
     /// List all albums (or albums by artist)
     pub fn list_albums(&self, _artist: Option<&str>) -> Result<Vec<String>> {
-        let mut conn = self.connect()?;
-        let songs = conn.listall()?;
-        let mut albums: Vec<String> = songs
-            .iter()
-            .filter_map(|s| {
-                s.tags
-                    .iter()
-                    .find(|(k, _)| k == "Album")
-                    .map(|(_, v)| v.clone())
-            })
-            .collect();
-        albums.sort();
-        albums.dedup();
-        Ok(albums)
+        self.with_client(|client| {
+            let songs = client.listall()?;
+            let mut albums: Vec<String> = songs
+                .iter()
+                .filter_map(|s| {
+                    s.tags
+                        .iter()
+                        .find(|(k, _)| k == "Album")
+                        .map(|(_, v)| v.clone())
+                })
+                .collect();
+            albums.sort();
+            albums.dedup();
+            Ok(albums)
+        })
     }
 
     /// List genres
     pub fn list_genres(&self) -> Result<Vec<String>> {
-        let mut conn = self.connect()?;
-        let songs = conn.listall()?;
-        let mut genres: Vec<String> = songs
-            .iter()
-            .filter_map(|s| {
-                s.tags
-                    .iter()
-                    .find(|(k, _)| k == "Genre")
-                    .map(|(_, v)| v.clone())
-            })
-            .collect();
-        genres.sort();
-        genres.dedup();
-        Ok(genres)
+        self.with_client(|client| {
+            let songs = client.listall()?;
+            let mut genres: Vec<String> = songs
+                .iter()
+                .filter_map(|s| {
+                    s.tags
+                        .iter()
+                        .find(|(k, _)| k == "Genre")
+                        .map(|(_, v)| v.clone())
+                })
+                .collect();
+            genres.sort();
+            genres.dedup();
+            Ok(genres)
+        })
     }
 
     /// Search library by any field
     pub fn search_library(&self, query: &str) -> Result<Vec<Song>> {
-        let mut conn = self.connect()?;
-        // Get all songs and filter manually
-        let songs = conn.listall()?;
-        let query_lower = query.to_lowercase();
-        let results: Vec<Song> = songs
-            .into_iter()
-            .filter(|s| {
-                s.file.to_lowercase().contains(&query_lower)
-                    || s.title
-                        .as_ref()
-                        .map(|t| t.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
-                    || s.tags
-                        .iter()
-                        .any(|(_, v)| v.to_lowercase().contains(&query_lower))
-            })
-            .take(50) // Limit results
-            .collect();
-        Ok(results)
+        self.with_client(|client| {
+            // Get all songs and filter manually
+            let songs = client.listall()?;
+            let query_lower = query.to_lowercase();
+            let results: Vec<Song> = songs
+                .into_iter()
+                .filter(|s| {
+                    s.file.to_lowercase().contains(&query_lower)
+                        || s.title
+                            .as_ref()
+                            .map(|t| t.to_lowercase().contains(&query_lower))
+                            .unwrap_or(false)
+                        || s.tags
+                            .iter()
+                            .any(|(_, v)| v.to_lowercase().contains(&query_lower))
+                })
+                .take(50) // Limit results
+                .collect();
+            Ok(results)
+        })
     }
 
     /// List saved playlists
     pub fn list_playlists(&self) -> Result<Vec<String>> {
-        let mut conn = self.connect()?;
-        let playlists = conn.playlists()?;
-        Ok(playlists.iter().map(|p| p.name.clone()).collect())
+        self.with_client(|client| {
+            let playlists = client.playlists()?;
+            Ok(playlists.iter().map(|p| p.name.clone()).collect())
+        })
     }
 
     /// Load a playlist
     pub fn load_playlist(&self, name: &str) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.load(name, ..)?;
-        Ok(())
+        self.with_client(|client| client.load(name, ..).context("Failed to load playlist"))
     }
 
     /// Save current queue as playlist
     pub fn save_playlist(&self, name: &str) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.save(name)?;
-        Ok(())
+        self.with_client(|client| client.save(name).context("Failed to save playlist"))
     }
 
     /// Rename a playlist
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.pl_rename(old_name, new_name)?;
-        Ok(())
+        self.with_client(|client| client.pl_rename(old_name, new_name).context("Failed to rename playlist"))
     }
 
     /// Add song to queue by file path
     pub fn add_to_queue(&self, path: &str) -> Result<()> {
-        let mut conn = self.connect()?;
-        let song = Song {
-            file: path.to_string(),
-            ..Default::default()
-        };
-        conn.push(&song)?;
-        Ok(())
+        self.with_client(|client| {
+            let song = Song {
+                file: path.to_string(),
+                ..Default::default()
+            };
+            let _ = client.push(&song); // Discard result (Id)
+            Ok(())
+        })
     }
 
     /// Play song at position in queue
     pub fn play_pos(&self, pos: u32) -> Result<()> {
-        let mut conn = self.connect()?;
-        conn.switch(pos)?;
-        Ok(())
+        self.with_client(|client| client.switch(pos).context("Failed to switch to position"))
     }
 }

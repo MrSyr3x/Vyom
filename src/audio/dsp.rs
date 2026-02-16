@@ -335,12 +335,24 @@ impl DspEqualizer {
     }
 }
 
-/// Smooth limiter using tanh for transparent limiting
-/// Better than hard clipping - preserves dynamics while preventing distortion
+/// Transparent soft-knee limiter
+/// Linear up to threshold (0.85), then exponentially saturates to ceiling (0.98).
+/// Preserves volume and dynamics better than simple tanh.
 fn limiter(x: f32) -> f32 {
-    // tanh provides smooth saturation curve
-    // Multiply by 0.95 to leave headroom
-    x.tanh() * 0.95
+    let threshold = 0.85; // ~ -1.4 dB
+    let ceiling = 0.98;   // ~ -0.2 dB (headroom)
+
+    if x.abs() <= threshold {
+        x
+    } else {
+         // Exponential soft clip
+         // y = ceiling - (ceiling - threshold) * exp(- (abs(x) - threshold) / (ceiling - threshold))
+         let abs_x = x.abs();
+         let diff = ceiling - threshold;
+         let y = ceiling - diff * (-(abs_x - threshold) / diff).exp();
+         
+         if x > 0.0 { y } else { -y }
+    }
 }
 
 /// Soft clipping function (kept for reference)

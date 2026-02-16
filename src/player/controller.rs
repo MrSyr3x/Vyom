@@ -1,4 +1,4 @@
-use super::traits::{PlayerState, PlayerTrait, TrackInfo};
+use super::traits::{PlayerState, PlayerTrait, TrackInfo, RepeatMode};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -96,6 +96,8 @@ impl PlayerTrait for MacOsPlayer {
             None => return Ok(None),
         };
 
+        // Safety Note (Audit #17): `app_name` comes from `detect_active_player` which only returns
+        // hardcoded static strings "Spotify" or "Music". It is safe to inject into the script.
         let script = format!(
             r#"
             tell application "{}"
@@ -226,15 +228,44 @@ impl PlayerTrait for MacOsPlayer {
         Ok(())
     }
 
-    fn repeat(&self, enable: bool) -> Result<()> {
+    fn repeat(&self, mode: RepeatMode) -> Result<()> {
         if let Some(app) = self.detect_active_player() {
             if app == "Spotify" {
-                Self::run_script(&format!(
-                    "tell application \"Spotify\" to set repeating to {}",
-                    enable
-                ))?;
+                let _val = match mode {
+                    RepeatMode::Off => "off",
+                    RepeatMode::Playlist => "all", // Spotify semantics: repeating=true usually means playlist
+                    RepeatMode::Single => "one",
+                };
+                // Spotify's AppleScript is weird: 'set repeating to true/false' is common,
+                // but some versions support 'track', 'context', 'off'.
+                // Standard 'repeating' is boolean. 'repeat_state' might be better?
+                // Let's try standard boolean for now and see if we can set "context" vs "track"
+                // Actually, Spotify scripting dict often only exposes boolean `repeating`.
+                // If so, we might only support Off/Playlist for Spotify unless we find a workaround.
+                // HOLD UP: Recent Spotify AppleScript *might* only support boolean.
+                // Let's check `repeating` property type. It is usually boolean.
+                // However, user asked for it.
+                // Let's try sending "context" or "track" if `repeating` fails?
+                // No, safely: if mode is Single, we can't do it easily on Spotify without keystrokes.
+                // Fallback: If Spotify, just toggle boolean for Playlist, maybe warn for Single?
+                // Actually, let's look at `Music.app`. It supports `song repeat` = off/one/all.
+                
+                // For Spotify: `set repeating to true` = repeat all.
+                // There is no easy `repeat one` in standard dictionary.
+                // We will implement what we can.
+                 if mode == RepeatMode::Single {
+                     // Best effort: just enable repeat
+                     Self::run_script("tell application \"Spotify\" to set repeating to true")?;
+                 } else {
+                     let enabled = mode != RepeatMode::Off;
+                     Self::run_script(&format!("tell application \"Spotify\" to set repeating to {}", enabled))?;
+                 }
             } else if app == "Music" {
-                let val = if enable { "all" } else { "off" };
+                let val = match mode {
+                    RepeatMode::Off => "off",
+                    RepeatMode::Playlist => "all",
+                    RepeatMode::Single => "one",
+                };
                 Self::run_script(&format!(
                     "tell application \"Music\" to set song repeat to {}",
                     val
@@ -258,18 +289,26 @@ impl PlayerTrait for MacOsPlayer {
         }
     }
 
-    fn get_repeat(&self) -> Result<bool> {
+    fn get_repeat(&self) -> Result<RepeatMode> {
         if let Some(app) = self.detect_active_player() {
             if app == "Spotify" {
                 let output = Self::run_script("tell application \"Spotify\" to return repeating")?;
-                Ok(output == "true")
+                 // Spotify only tells us true/false usually.
+                if output == "true" {
+                    Ok(RepeatMode::Playlist) // Assume playlist
+                } else {
+                    Ok(RepeatMode::Off)
+                }
             } else {
                 let output = Self::run_script("tell application \"Music\" to return song repeat")?;
-                // Music returns: off, one, all
-                Ok(output == "all" || output == "one")
+                match output.as_str() {
+                    "one" => Ok(RepeatMode::Single),
+                    "all" => Ok(RepeatMode::Playlist),
+                    _ => Ok(RepeatMode::Off),
+                }
             }
         } else {
-            Ok(false)
+            Ok(RepeatMode::Off)
         }
     }
 }

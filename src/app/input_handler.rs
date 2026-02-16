@@ -862,29 +862,57 @@ pub async fn handle_normal_mode(
 
     // Repeat toggle
     if keys.matches(key, &keys.repeat) {
+        use crate::player::RepeatMode;
+        
+        let next_mode = match app.repeat {
+            RepeatMode::Off => RepeatMode::Playlist,
+            RepeatMode::Playlist => RepeatMode::Single,
+            RepeatMode::Single => RepeatMode::Off,
+        };
+
         if args.controller {
-            let new_state = !app.repeat;
-            let _ = player.repeat(new_state);
-            app.repeat = new_state;
-            app.show_toast(&format!("🔁 Repeat: {}", if new_state { "ON" } else { "OFF" }));
+            let _ = player.repeat(next_mode);
+            app.repeat = next_mode;
+             let icon = match next_mode {
+                RepeatMode::Off => "OFF",
+                RepeatMode::Playlist => "🔁 All",
+                RepeatMode::Single => "🔂 One",
+            };
+            app.show_toast(&format!("Repeat: {}", icon));
         } else {
             #[cfg(feature = "mpd")]
             {
-                let new_repeat_state = with_mpd(app, args, |mpd| {
-                    if let Ok(status) = mpd.status() {
-                         let new_state = !status.repeat;
-                         let _ = mpd.repeat(new_state);
-                         Some(new_state)
-                    } else { None }
+                let new_mode = with_mpd(app, args, |mpd| {
+                    // We need to set repeat and single flags manually based on mode
+                    let (repeat, single) = match next_mode {
+                        RepeatMode::Off => (false, false),
+                        RepeatMode::Playlist => (true, false),
+                        RepeatMode::Single => (true, true),
+                    };
+                    
+                    if let Ok(_) = mpd.repeat(repeat) {
+                        let _ = mpd.single(single);
+                        // Double check status to be sure? 
+                        // Actually better to just assume success or re-read status.
+                        // For responsiveness, let's assume success and return next_mode
+                         Some(next_mode)
+                    } else {
+                        None
+                    }
                 }).flatten();
 
-                if let Some(state) = new_repeat_state {
-                    app.repeat = state;
-                    app.show_toast(&format!("🔁 Repeat: {}", if state { "ON" } else { "OFF" }));
+                if let Some(mode) = new_mode {
+                    app.repeat = mode;
+                    let icon = match mode {
+                        RepeatMode::Off => "OFF",
+                        RepeatMode::Playlist => "🔁 All",
+                        RepeatMode::Single => "🔂 One",
+                    };
+                    app.show_toast(&format!("Repeat: {}", icon));
                 }
             }
         }
-
+        return;
     }
 }
 

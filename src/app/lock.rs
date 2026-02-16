@@ -1,45 +1,31 @@
+use fs2::FileExt;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 
 const LOCK_FILE_PATH: &str = "/tmp/vyom_audio.lock";
 
-/// Try to acquire the audio lock.
-/// Returns Some(File) if we acquired the lock (and thus should play audio).
-/// Returns None if another instance holds the lock (we should be UI-only).
 pub fn try_acquire_audio_lock() -> Option<File> {
-    // 1. Check if lock file exists
-    if let Ok(mut file) = std::fs::OpenOptions::new()
+    // 1. Create/Open lock file
+    let mut file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(LOCK_FILE_PATH)
-    {
-        let mut pid_str = String::new();
-        if file.read_to_string(&mut pid_str).is_ok() {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                // 2. Check if process is alive
-                unsafe {
-                    // kill(pid, 0) checks existence without sending a signal
-                    if libc::kill(pid, 0) == 0 {
-                        // Process is alive! We are secondary.
-                        return None;
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Create/Overwrite lock file
-    if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
-        .write(true)
-        .truncate(true)
         .open(LOCK_FILE_PATH)
-    {
-        let pid = std::process::id();
-        let _ = write!(file, "{}", pid);
+        .ok()?;
+
+    // 2. Try to acquire exclusive lock 🔒
+    // If this fails, another process holds the lock
+    if file.try_lock_exclusive().is_ok() {
+        // We got the lock!
+        // Truncate file and write our PID (informational)
+        if file.set_len(0).is_ok() {
+             let pid = std::process::id();
+             let _ = write!(file, "{}", pid);
+        }
+        
+        // Return the file handle. The lock is released when the file is closed (dropped).
         return Some(file);
     }
-
 
     None
 }

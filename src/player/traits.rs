@@ -32,6 +32,19 @@ pub struct TrackInfo {
     pub volume: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum RepeatMode {
+    Off,
+    Playlist,
+    Single,
+}
+
+impl Default for RepeatMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
 /// The unified interface for any OS Media Player 🎵
 pub trait PlayerTrait: Send + Sync {
     fn get_current_track(&self) -> Result<Option<TrackInfo>>;
@@ -53,7 +66,7 @@ pub trait PlayerTrait: Send + Sync {
     fn shuffle(&self, _enable: bool) -> Result<()> {
         Ok(())
     }
-    fn repeat(&self, _enable: bool) -> Result<()> {
+    fn repeat(&self, _mode: RepeatMode) -> Result<()> {
         Ok(())
     }
     fn crossfade(&self, _secs: u32) -> Result<()> {
@@ -65,8 +78,8 @@ pub trait PlayerTrait: Send + Sync {
     fn get_shuffle(&self) -> Result<bool> {
         Ok(false)
     }
-    fn get_repeat(&self) -> Result<bool> {
-        Ok(false)
+    fn get_repeat(&self) -> Result<RepeatMode> {
+        Ok(RepeatMode::Off)
     }
 }
 

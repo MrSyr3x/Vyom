@@ -1,4 +1,5 @@
 use crate::app::{App, ViewMode};
+use crate::player::RepeatMode;
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
@@ -143,12 +144,17 @@ fn render_audio_info(f: &mut Frame, app: &App) {
             ),
         ]));
 
-        let repeat_str = if app.repeat { "ON" } else { "OFF" };
+        let repeat_str = match app.repeat {
+            RepeatMode::Off => "OFF",
+            RepeatMode::Playlist => "All",
+            RepeatMode::Single => "One",
+        };
+        
         lines.push(Line::from(vec![
             Span::styled("  Repeat: ", Style::default().fg(theme.overlay)),
             Span::styled(
                 repeat_str,
-                Style::default().fg(if app.repeat {
+                Style::default().fg(if app.repeat != RepeatMode::Off {
                     theme.green
                 } else {
                     theme.overlay
@@ -157,18 +163,7 @@ fn render_audio_info(f: &mut Frame, app: &App) {
         ]));
     }
 
-    let gapless_str = if app.gapless_mode { "Active" } else { "OFF" };
-    lines.push(Line::from(vec![
-        Span::styled("  Gapless: ", Style::default().fg(theme.overlay)),
-        Span::styled(
-            gapless_str,
-            Style::default().fg(if app.gapless_mode {
-                theme.blue
-            } else {
-                theme.overlay
-            }),
-        ),
-    ]));
+// Removed Gapless Badge
 
     lines.push(Line::from(""));
 

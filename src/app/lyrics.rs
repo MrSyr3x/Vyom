@@ -41,13 +41,22 @@ impl LyricsFetcher {
     }
 
     fn get_cache_path(artist: &str, title: &str) -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
-        let safe_artist = artist.replace("/", "_");
-        let safe_title = title.replace("/", "_");
-        let filename = format!("{}_{}.json", safe_artist, safe_title);
+        // Use dirs::cache_dir() for correct XDG_CACHE_HOME support
+        let cache_root = dirs::cache_dir().unwrap_or_else(|| {
+             let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+             PathBuf::from(home).join(".cache")
+        });
 
-        let path = Path::new(&home)
-            .join(".cache")
+        // Use SipHash for safe, fixed-length filename (Prevents path traversal)
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        format!("{}{}", artist, title).hash(&mut hasher);
+        let hash = hasher.finish();
+        let filename = format!("{:016x}.json", hash);
+
+        let path = cache_root
             .join("vyom")
             .join("lyrics")
             .join(filename);

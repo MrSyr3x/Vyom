@@ -1,9 +1,8 @@
-// mod config; // using vyom::config
-
 use anyhow::Result;
 use crossterm::{
     event::{Event, EventStream},
     execute,
+    cursor::{Hide, Show},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::StreamExt;
@@ -13,8 +12,6 @@ use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use vyom::app::config::AppConfig;
 
-
-// Modules now in lib.rs
 use vyom::app;
 use vyom::artwork;
 use vyom::audio::pipeline as audio_pipeline;
@@ -24,12 +21,6 @@ use vyom::ui::theme;
 use vyom::ui;
 use vyom::inputs::handle_input;
 
-
-// #[cfg(feature = "mpd")]
-// use vyom::mpd_player;
-
-
-
 use clap::Parser;
 use app::cli::Args;
 use app::events::AppEvent;
@@ -37,13 +28,6 @@ use app::events::AppEvent;
 use app::{ArtworkState, LyricsState};
 use artwork::ArtworkRenderer;
 use vyom::app::lyrics::LyricsFetcher;
-
-
-
-
-
-
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -56,7 +40,8 @@ async fn main() -> Result<()> {
     let want_lyrics = !args.mini;
 
     let current_exe = std::env::current_exe()?;
-    let exe_path = current_exe.to_str().unwrap();
+    let exe_path_cow = current_exe.to_string_lossy();
+    let exe_path = exe_path_cow.as_ref();
 
     // 1. WINDOW TITLE (For Yabai/Amethyst) 🏷️
     print!("\x1b]2;Vyom\x07");
@@ -70,9 +55,18 @@ async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    // Enable Kitty Keyboard Protocol (DisambiguateEscapeCodes | ReportAllKeysAsEscapeCodes)
+    // This often stops terminals from "peeking" at modifiers for local shortcuts
+    use crossterm::event::{PushKeyboardEnhancementFlags, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags};
+    execute!(
+        stdout, 
+        EnterAlternateScreen, 
+        Hide, 
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
 
     // In Tmux, we assume full split/window, so show lyrics by default UNLESS mini mode is requested.
     let app_show_lyrics = want_lyrics; // This is already !args.mini
@@ -130,7 +124,7 @@ async fn main() -> Result<()> {
     // Player Backend Selection 🎛️
     #[cfg(feature = "mpd")]
     let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
-        std::sync::Arc::new(player::MpdPlayer::new(&args.mpd_host, args.mpd_port, user_config.music_directory.clone()))
+        std::sync::Arc::new(player::MpdPlayer::new(args.mpd_host.clone(), args.mpd_port, user_config.music_directory.clone()))
     } else {
         std::sync::Arc::from(player::get_player())
     };
@@ -303,6 +297,12 @@ async fn main() -> Result<()> {
                 // Mouse Interaction Removed as per User Request
                 AppEvent::Input(Event::Mouse(_)) => {},
                 AppEvent::Input(Event::Key(key)) => {
+                    // Filter out modifier-only key events (bare Shift/Ctrl/Alt presses)
+                    // crossterm 0.28 reports these as KeyCode::Modifier(...) which no handler matches,
+                    // causing the terminal to show an I-beam cursor on Shift press.
+                    if matches!(key.code, crossterm::event::KeyCode::Modifier(_)) {
+                        continue;
+                    }
                     handle_input(key, &mut app, &player, &mut audio_pipeline, &args, &tx, &client).await;
                 },
                 AppEvent::Input(_) => {},
@@ -574,7 +574,7 @@ async fn main() -> Result<()> {
     audio_pipeline.stop();
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, Show, PopKeyboardEnhancementFlags)?;
     terminal.show_cursor()?;
 
     // Save state on exit

@@ -1,5 +1,5 @@
 use crate::app::{App, ArtworkState};
-use crate::player::PlayerState;
+use crate::player::{PlayerState, RepeatMode};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -174,8 +174,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // CD Quality: 16bit/44.1kHz lossless
             // Lossy: MP3, AAC, OGG, etc.
 
-            let is_hires = track.bit_depth.map(|b| b >= 24).unwrap_or(false)
-                || track.sample_rate.map(|r| r > 44100).unwrap_or(false);
+            let is_hires = track.bit_depth.map(|b| b > 16).unwrap_or(false)
+                || track.sample_rate.map(|r| r > 48000).unwrap_or(false);
+            
+            let is_studio = track.bit_depth.map(|b| b >= 24).unwrap_or(false) 
+                && track.sample_rate.map(|r| r >= 192000).unwrap_or(false);
 
             let is_lossless = track
                 .codec
@@ -183,71 +186,62 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 .map(|c| {
                     matches!(
                         c.to_uppercase().as_str(),
-                        "FLAC" | "ALAC" | "WAV" | "AIFF" | "APE" | "DSD"
+                        "FLAC" | "ALAC" | "WAV" | "AIFF" | "APE" | "DSD" | "PCM"
                     )
                 })
                 .unwrap_or(false);
 
-            let is_lossy = track
-                .codec
-                .as_ref()
-                .map(|c| {
-                    matches!(
-                        c.to_uppercase().as_str(),
-                        "MP3" | "AAC" | "OGG" | "OPUS" | "M4A" | "WMA"
-                    )
-                })
-                .unwrap_or(false);
-
-            if is_hires {
-                spans.push(Span::styled(
+            // Determine Quality Tier
+            if is_studio {
+                 spans.push(Span::styled(
+                    "\u{00A0}Studio Master\u{00A0}",
+                    Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::raw(" "));
+            } else if is_hires {
+                 spans.push(Span::styled(
                     "\u{00A0}Hi-Res\u{00A0}",
-                    Style::default()
-                        .fg(theme.base)
-                        .bg(theme.green)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD),
                 ));
-                spans.push(Span::raw(" "));
-            } else if is_lossless && track.bit_depth == Some(16) {
-                spans.push(Span::styled(
-                    "\u{00A0}CD\u{00A0}",
-                    Style::default()
-                        .fg(theme.base)
-                        .bg(theme.blue)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                spans.push(Span::raw(" "));
-            } else if is_lossy {
-                spans.push(Span::styled(
-                    "\u{00A0}Lossy\u{00A0}",
-                    Style::default()
-                        .fg(theme.base)
-                        .bg(theme.overlay)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                spans.push(Span::raw(" "));
+                 spans.push(Span::raw(" "));
             } else if is_lossless {
-                spans.push(Span::styled(
-                    "\u{00A0}Lossless\u{00A0}",
-                    Style::default()
-                        .fg(theme.base)
-                        .bg(theme.cyan)
-                        .add_modifier(Modifier::BOLD),
+                 // CD Quality (16/44.1 or similar)
+                 spans.push(Span::styled(
+                    "\u{00A0}CD Quality\u{00A0}",
+                    Style::default().fg(theme.base).bg(theme.cyan).add_modifier(Modifier::BOLD),
                 ));
-                spans.push(Span::raw(" "));
+                 spans.push(Span::raw(" "));
+            } else {
+                // Lossy Logic based on Bitrate
+                let bitrate = track.bitrate.unwrap_or(0);
+                if bitrate > 0 {
+                    if bitrate >= 256 {
+                        spans.push(Span::styled(
+                            "\u{00A0}High Quality\u{00A0}",
+                            Style::default().fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD),
+                        ));
+                    } else if bitrate >= 160 {
+                         spans.push(Span::styled(
+                            "\u{00A0}Standard\u{00A0}",
+                            Style::default().fg(theme.base).bg(theme.yellow).add_modifier(Modifier::BOLD),
+                        ));
+                    } else {
+                         spans.push(Span::styled(
+                            "\u{00A0}Low Quality\u{00A0}",
+                            Style::default().fg(theme.base).bg(theme.red).add_modifier(Modifier::BOLD),
+                        ));
+                    }
+                    spans.push(Span::raw(" "));
+                } else {
+                     // Fallback if no bitrate known but known lossy codec
+                      spans.push(Span::styled(
+                            "\u{00A0}Lossy\u{00A0}",
+                            Style::default().fg(theme.base).bg(theme.overlay).add_modifier(Modifier::BOLD),
+                        ));
+                      spans.push(Span::raw(" "));
+                }
             }
-
-            // Gapless badge (when consecutive tracks from same album)
-            if app.gapless_mode {
-                spans.push(Span::styled(
-                    "\u{00A0}Gapless\u{00A0}",
-                    Style::default()
-                        .fg(theme.base)
-                        .bg(theme.magenta)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                spans.push(Span::raw(" "));
-            }
+            // Removed Gapless Badge (User Request)
 
             // Codec
             if let Some(codec) = &track.codec {
@@ -454,9 +448,18 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             f.render_widget(center_widget, button_layout[1]);
 
             // Right: Repeat (Align Left)
-            if app.repeat {
+            if app.repeat != RepeatMode::Off {
+                let repeat_spans = match app.repeat {
+                    RepeatMode::Single => vec![
+                        Span::styled(" 🔂", Style::default().fg(theme.green)),
+                        Span::styled("1", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
+                    ],
+                    _ => vec![
+                        Span::styled(" 🔁", Style::default().fg(theme.green)),
+                    ],
+                };
                 let repeat_widget =
-                    Paragraph::new(Span::styled(" 🔁", Style::default().fg(theme.blue)))
+                    Paragraph::new(Line::from(repeat_spans))
                         .alignment(Alignment::Left)
                         .block(Block::default());
                 f.render_widget(repeat_widget, button_layout[2]);

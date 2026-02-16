@@ -4,7 +4,7 @@ use super::lyrics::LyricLine;
 use crate::audio::device as audio_device;
 use crate::audio::dsp::EqGains;
 use crate::audio::visualizer::Visualizer;
-use crate::player::TrackInfo;
+use crate::player::{TrackInfo, RepeatMode};
 use crate::ui::theme::Theme;
 use image::DynamicImage;
 use std::collections::HashMap;
@@ -233,7 +233,7 @@ pub struct App {
     pub gapless_mode: bool, // True when current+next song are from same album
     pub last_album: String, // Track album changes
     pub shuffle: bool,      // MPD random mode
-    pub repeat: bool,       // MPD repeat mode
+    pub repeat: RepeatMode, // MPD repeat mode
 
     /// Audio output devices 🔊
     pub output_device: String,
@@ -343,7 +343,7 @@ impl App {
             gapless_mode: false, // No gapless detected initially
             last_album: String::new(),
             shuffle: false, // Will be updated from MPD
-            repeat: false,  // Will be updated from MPD
+            repeat: RepeatMode::Off,  // Will be updated from MPD
             output_device: audio_device::get_output_device_name(),
             audio_devices: {
                 let sys_devices = audio_device::get_devices_from_system();

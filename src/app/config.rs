@@ -115,7 +115,7 @@ struct LegacyConfigMixin {
 
 impl AppConfig {
     pub fn get_config_dir() -> PathBuf {
-        let home = dirs::home_dir().expect("Could not find home directory");
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let xdg_dir = home.join(".config").join("vyom");
         
         // Ensure it exists
