@@ -25,4 +25,8 @@ pub struct Args {
     #[cfg(feature = "mpd")]
     #[arg(long, default_value_t = 6600)]
     pub mpd_port: u16,
+
+    /// Generate default config.toml to stdout
+    #[arg(long)]
+    pub generate_config: bool,
 }

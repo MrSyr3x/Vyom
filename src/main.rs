@@ -32,6 +32,13 @@ use vyom::app::lyrics::LyricsFetcher;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    if args.generate_config {
+        let default_config = app::config::UserConfig::default();
+        println!("{}", toml::to_string_pretty(&default_config).unwrap());
+        return Ok(());
+    }
+
     let is_standalone = args.standalone;
     let is_tmux = std::env::var("TMUX").is_ok();
 
