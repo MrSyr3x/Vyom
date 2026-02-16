@@ -193,70 +193,66 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             // Determine Quality Tier
             if is_studio {
-                 spans.push(Span::styled(
-                    "\u{00A0}Studio Master\u{00A0}",
+                spans.push(Span::styled(
+                    "\u{00A0}Studio\u{00A0}",
                     Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD),
                 ));
-                spans.push(Span::raw(" "));
             } else if is_hires {
                  spans.push(Span::styled(
                     "\u{00A0}Hi-Res\u{00A0}",
                     Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD),
                 ));
-                 spans.push(Span::raw(" "));
             } else if is_lossless {
                  // CD Quality (16/44.1 or similar)
                  spans.push(Span::styled(
-                    "\u{00A0}CD Quality\u{00A0}",
+                    "\u{00A0}Lossless\u{00A0}",
                     Style::default().fg(theme.base).bg(theme.cyan).add_modifier(Modifier::BOLD),
                 ));
-                 spans.push(Span::raw(" "));
             } else {
                 // Lossy Logic based on Bitrate
                 let bitrate = track.bitrate.unwrap_or(0);
                 if bitrate > 0 {
                     if bitrate >= 256 {
                         spans.push(Span::styled(
-                            "\u{00A0}High Quality\u{00A0}",
+                            "\u{00A0}HQ\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD),
                         ));
                     } else if bitrate >= 160 {
                          spans.push(Span::styled(
-                            "\u{00A0}Standard\u{00A0}",
+                            "\u{00A0}SQ\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.yellow).add_modifier(Modifier::BOLD),
                         ));
                     } else {
                          spans.push(Span::styled(
-                            "\u{00A0}Low Quality\u{00A0}",
+                            "\u{00A0}LQ\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.red).add_modifier(Modifier::BOLD),
                         ));
                     }
-                    spans.push(Span::raw(" "));
+
+
                 } else {
                      // Fallback if no bitrate known but known lossy codec
                       spans.push(Span::styled(
                             "\u{00A0}Lossy\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.overlay).add_modifier(Modifier::BOLD),
                         ));
-                      spans.push(Span::raw(" "));
                 }
             }
             // Removed Gapless Badge (User Request)
 
-            // Codec
-            if let Some(codec) = &track.codec {
-                spans.push(Span::styled(codec, Style::default().fg(theme.cyan)));
-                spans.push(Span::raw(" "));
-            }
+            // Removed Codec display per user request (redundant/cleaner UI)
+
 
             // Bit depth + Sample rate (e.g., "24bit/96kHz")
             if let (Some(depth), Some(rate)) = (track.bit_depth, track.sample_rate) {
+                spans.push(Span::styled(" • ", Style::default().fg(theme.overlay)));
                 let khz = rate as f32 / 1000.0;
                 spans.push(Span::styled(
                     format!("{}bit/{}kHz", depth, khz),
                     Style::default().fg(theme.overlay),
                 ));
             } else if let Some(rate) = track.sample_rate {
+                spans.push(Span::styled(" • ", Style::default().fg(theme.overlay)));
                 let khz = rate as f32 / 1000.0;
                 spans.push(Span::styled(
                     format!("{}kHz", khz),
@@ -267,7 +263,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Bitrate (for lossy)
             if let Some(kbps) = track.bitrate {
                 if kbps > 0 {
-                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(" • ", Style::default().fg(theme.overlay)));
                     spans.push(Span::styled(
                         format!("{}kbps", kbps),
                         Style::default().fg(theme.overlay),

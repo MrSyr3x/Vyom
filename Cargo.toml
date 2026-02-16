@@ -1,6 +1,6 @@
 [package]
 name = "vyom"
-version = "1.0.237"
+version = "1.0.238"
 edition = "2021"
 description = "A minimalist, transparent Spotify music player for tmux with Catppuccin theming."
 license = "MIT"
@@ -40,7 +40,7 @@ libc = "0.2"
 
 # FFT for spectrum analyzer
 rustfft = { version = "6.2", optional = true }
-rodio = "0.17.1"
+rodio = { version = "0.17.1", features = ["symphonia-all"] }
 walkdir = "2.5.0"
 spectrum-analyzer = "1.7.0"
 crossbeam-queue = "0.3.12"
