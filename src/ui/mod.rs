@@ -1,8 +1,8 @@
 pub mod components;
-pub mod widgets;
 pub mod layout;
 pub mod theme;
 pub mod utils;
+pub mod widgets;
 
 pub use theme::Theme;
 
@@ -19,12 +19,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let show_lyrics = app.app_show_lyrics;
     let wide_mode = !app.is_tmux && area.width >= 90;
 
-    let content_layout = layout::get_content_layout(
-        main_layout.body_area,
-        show_lyrics,
-        wide_mode,
-        area.height,
-    );
+    let content_layout =
+        layout::get_content_layout(main_layout.body_area, show_lyrics, wide_mode, area.height);
 
     // 3. Render Music Card (Left)
     widgets::player::render(f, content_layout.left, app);

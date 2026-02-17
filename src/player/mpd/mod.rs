@@ -1,8 +1,8 @@
-use super::traits::{PlayerState, PlayerTrait, TrackInfo, QueueItem, RepeatMode};
+use super::traits::{PlayerState, PlayerTrait, QueueItem, RepeatMode, TrackInfo};
 use anyhow::{Context, Result};
-use std::sync::Mutex;
 #[cfg(feature = "mpd")]
 use mpd::{Client, Song, State};
+use std::sync::Mutex;
 
 /// MPD Player implementation
 #[cfg(feature = "mpd")]
@@ -30,15 +30,14 @@ impl MpdPlayer {
         F: FnOnce(&mut mpd::Client) -> Result<T>,
     {
         // 1. Lock the mutex 🔒
-        let mut client_guard = self.client.lock().map_err(|_| anyhow::anyhow!("MPD client mutex poisoned"))?;
-        
+        let mut client_guard = self
+            .client
+            .lock()
+            .map_err(|_| anyhow::anyhow!("MPD client mutex poisoned"))?;
+
         // 2. Check connection status
         let needs_connect = if let Some(client) = client_guard.as_mut() {
-             if client.status().is_err() {
-                 true
-             } else {
-                 false
-             }
+            client.status().is_err()
         } else {
             true
         };
@@ -46,13 +45,17 @@ impl MpdPlayer {
         // 3. Reconnect if needed
         if needs_connect {
             let addr = format!("{}:{}", self.host, self.port);
-             match mpd::Client::connect(&addr) {
+            match mpd::Client::connect(&addr) {
                 Ok(c) => {
                     *client_guard = Some(c);
                 }
                 Err(e) => {
-                    *client_guard = None; 
-                    return Err(anyhow::anyhow!("Failed to connect to MPD at {}: {}", addr, e));
+                    *client_guard = None;
+                    return Err(anyhow::anyhow!(
+                        "Failed to connect to MPD at {}: {}",
+                        addr,
+                        e
+                    ));
                 }
             }
         }
@@ -62,7 +65,7 @@ impl MpdPlayer {
             f(client)
         } else {
             // Should be unreachable if connect logic works
-             Err(anyhow::anyhow!("No MPD connection"))
+            Err(anyhow::anyhow!("No MPD connection"))
         }
     }
 
@@ -74,7 +77,9 @@ impl MpdPlayer {
             Ok(status
                 .audio
                 .map(|audio| (audio.rate, audio.bits as u16, audio.chans as u16)))
-        }).ok().flatten()
+        })
+        .ok()
+        .flatten()
     }
 }
 
@@ -97,8 +102,14 @@ impl PlayerTrait for MpdPlayer {
             let status = client.status()?;
 
             if let Some(song) = current_song {
-                let position_ms = status.elapsed.map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64).unwrap_or(0);
-                let duration_ms = status.duration.map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64).unwrap_or(0);
+                let position_ms = status
+                    .elapsed
+                    .map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64)
+                    .unwrap_or(0);
+                let duration_ms = status
+                    .duration
+                    .map(|t| t.as_secs() * 1000 + t.subsec_millis() as u64)
+                    .unwrap_or(0);
 
                 let file_path = if !song.file.starts_with('/') {
                     format!("{}/{}", self.music_directory, song.file)
@@ -109,7 +120,7 @@ impl PlayerTrait for MpdPlayer {
                 let artwork_url = None; // Placeholder
 
                 let audio_format = status.audio.map(|a| (a.rate, a.bits, a.chans));
-                
+
                 // Helper to find tag
                 let find_tag = |tags: &[(String, String)], key: &str| -> Option<String> {
                     let key_lower = key.to_lowercase();
@@ -137,12 +148,12 @@ impl PlayerTrait for MpdPlayer {
                         .extension()
                         .map(|os| os.to_string_lossy().to_string())
                         .or_else(|| find_tag(&song.tags, "Format"))
-                        .or_else(|| find_tag(&song.tags, "Codec")), 
-                    bitrate: status.bitrate.map(|b| b as u32),
+                        .or_else(|| find_tag(&song.tags, "Codec")),
+                    bitrate: status.bitrate,
                     sample_rate: audio_format.map(|(r, _, _)| r),
-                    bit_depth: audio_format.map(|(_, b, _)| b as u8),
+                    bit_depth: audio_format.map(|(_, b, _)| b),
                     file_path: Some(file_path),
-                    volume: Some(status.volume.abs() as u32),
+                    volume: Some(status.volume.unsigned_abs() as u32),
                 }))
             } else {
                 Ok(None)
@@ -157,7 +168,7 @@ impl PlayerTrait for MpdPlayer {
                 State::Play => client.pause(true)?,
                 State::Pause | State::Stop => client.play()?,
             };
-            Ok(status.state != State::Play) 
+            Ok(status.state != State::Play)
         })
     }
 
@@ -166,44 +177,48 @@ impl PlayerTrait for MpdPlayer {
     }
 
     fn prev(&self) -> Result<()> {
-         self.with_client(|client| client.prev().context("Failed to skip to previous track"))
+        self.with_client(|client| client.prev().context("Failed to skip to previous track"))
     }
 
     fn seek(&self, position_secs: f64) -> Result<()> {
         self.with_client(|client| {
-             let song = client.currentsong()?.context("No song playing")?;
-             let place = song.place.context("No song place")?;
-             client.seek(place.id, position_secs).context("Failed to seek")
+            let song = client.currentsong()?.context("No song playing")?;
+            let place = song.place.context("No song place")?;
+            client
+                .seek(place.id, position_secs)
+                .context("Failed to seek")
         })
     }
 
     fn volume_up(&self) -> Result<()> {
         self.with_client(|client| {
-             let status = client.status()?;
-             let vol = status.volume;
-             if vol >= 0 {
-                 let new_vol = (vol + 5).min(100);
-                 client.volume(new_vol as i8)?;
-             }
-             Ok(())
+            let status = client.status()?;
+            let vol = status.volume;
+            if vol >= 0 {
+                let new_vol = (vol + 5).min(100);
+                client.volume(new_vol)?;
+            }
+            Ok(())
         })
     }
 
     fn volume_down(&self) -> Result<()> {
         self.with_client(|client| {
-             let status = client.status()?;
-             let vol = status.volume;
-             if vol >= 0 {
-                 let new_vol = (vol - 5).max(0);
-                 client.volume(new_vol as i8)?;
-             }
-             Ok(())
+            let status = client.status()?;
+            let vol = status.volume;
+            if vol >= 0 {
+                let new_vol = (vol - 5).max(0);
+                client.volume(new_vol)?;
+            }
+            Ok(())
         })
     }
 
     fn set_volume(&self, volume: u8) -> Result<()> {
         self.with_client(|client| {
-            client.volume(volume.min(100) as i8).context("Failed to set volume")
+            client
+                .volume(volume.min(100) as i8)
+                .context("Failed to set volume")
         })
     }
 
@@ -221,29 +236,32 @@ impl PlayerTrait for MpdPlayer {
                     .map(|(_, v)| v.clone())
             };
 
-            Ok(queue.into_iter().map(|song| {
-                let id = song.place.map(|p| p.id).unwrap_or_default();
-                let title = song.title.clone().unwrap_or_else(|| song.file.clone());
-                let artist = song
-                    .artist
-                    .clone()
-                    .or_else(|| find_tag(&song.tags, "Artist"))
-                    .or_else(|| find_tag(&song.tags, "AlbumArtist"))
-                    .or_else(|| find_tag(&song.tags, "Composer"))
-                    .unwrap_or_else(|| "Unknown Artist".to_string());
-                let duration_ms = song
-                    .duration
-                    .map(|d| d.as_secs() * 1000 + d.subsec_millis() as u64)
-                    .unwrap_or(0);
-                
-                (
-                    title,
-                    artist,
-                    duration_ms,
-                    Some(id.0) == current_id.map(|i| i.0),
-                    song.file.clone()
-                )
-            }).collect())
+            Ok(queue
+                .into_iter()
+                .map(|song| {
+                    let id = song.place.map(|p| p.id).unwrap_or_default();
+                    let title = song.title.clone().unwrap_or_else(|| song.file.clone());
+                    let artist = song
+                        .artist
+                        .clone()
+                        .or_else(|| find_tag(&song.tags, "Artist"))
+                        .or_else(|| find_tag(&song.tags, "AlbumArtist"))
+                        .or_else(|| find_tag(&song.tags, "Composer"))
+                        .unwrap_or_else(|| "Unknown Artist".to_string());
+                    let duration_ms = song
+                        .duration
+                        .map(|d| d.as_secs() * 1000 + d.subsec_millis() as u64)
+                        .unwrap_or(0);
+
+                    (
+                        title,
+                        artist,
+                        duration_ms,
+                        Some(id.0) == current_id.map(|i| i.0),
+                        song.file.clone(),
+                    )
+                })
+                .collect())
         })
     }
 
@@ -272,7 +290,11 @@ impl PlayerTrait for MpdPlayer {
     }
 
     fn crossfade(&self, secs: u32) -> Result<()> {
-        self.with_client(|client| client.crossfade(secs as i64).context("Failed to set crossfade"))
+        self.with_client(|client| {
+            client
+                .crossfade(secs as i64)
+                .context("Failed to set crossfade")
+        })
     }
 
     fn delete_queue(&self, pos: u32) -> Result<()> {
@@ -301,7 +323,11 @@ impl PlayerTrait for MpdPlayer {
 impl MpdPlayer {
     /// Set crossfade duration in seconds (0 to disable)
     pub fn set_crossfade(&self, seconds: u32) -> Result<()> {
-        self.with_client(|client| client.crossfade(seconds as i64).context("Failed to set crossfade"))
+        self.with_client(|client| {
+            client
+                .crossfade(seconds as i64)
+                .context("Failed to set crossfade")
+        })
     }
 
     /// Get current crossfade setting
@@ -417,7 +443,11 @@ impl MpdPlayer {
 
     /// Rename a playlist
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<()> {
-        self.with_client(|client| client.pl_rename(old_name, new_name).context("Failed to rename playlist"))
+        self.with_client(|client| {
+            client
+                .pl_rename(old_name, new_name)
+                .context("Failed to rename playlist")
+        })
     }
 
     /// Add song to queue by file path

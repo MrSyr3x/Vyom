@@ -1,8 +1,8 @@
 pub mod device;
+pub mod dsp;
 pub mod pipeline;
+pub mod sources;
 pub mod types;
 pub mod visualizer;
-pub mod dsp;
-pub mod sources;
 
-pub use dsp::{EqGains, DspEqualizer, EQ_FREQUENCIES};
+pub use dsp::{DspEqualizer, EqGains, EQ_FREQUENCIES};

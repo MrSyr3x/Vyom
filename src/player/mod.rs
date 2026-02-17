@@ -3,7 +3,7 @@ pub mod mpd;
 pub mod traits;
 
 // Re-export common types
-pub use traits::{PlayerState, PlayerTrait, TrackInfo, RepeatMode, QueueItem};
+pub use traits::{PlayerState, PlayerTrait, QueueItem, RepeatMode, TrackInfo};
 
 // Re-export specific players if needed, but mainly we use get_player()
 pub use controller::get_player;

@@ -1,19 +1,19 @@
 use crate::app::App;
 use ratatui::{
+    layout::Alignment,
     layout::{Constraint, Direction, Layout, Rect},
+    style::Color,
+    style::Modifier,
     style::Style,
     text::{Line, Span},
     widgets::{block::Title, Block, BorderType, Borders},
-    style::Modifier,
-    layout::Alignment,
-    style::Color,
     Frame,
 };
 
 pub mod art;
+pub mod controls;
 pub mod info;
 pub mod progress;
-pub mod controls;
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let theme = &app.theme;

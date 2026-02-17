@@ -2,10 +2,10 @@ use crate::app::App;
 use ratatui::Frame;
 
 pub mod audio_info;
-pub mod toast;
+pub mod help;
 pub mod input;
 pub mod tag_editor;
-pub mod help;
+pub mod toast;
 
 pub fn render(f: &mut Frame, app: &mut App) {
     // AUDIO INFO POPUP

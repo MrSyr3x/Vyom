@@ -1,14 +1,10 @@
-use crossterm::event::KeyEvent;
-use crate::app::{self, App};
+use crate::app::cli::Args;
 #[cfg(feature = "mpd")]
 use crate::app::with_mpd;
-use crate::app::cli::Args;
+use crate::app::{self, App};
+use crossterm::event::KeyEvent;
 
-pub fn handle_eq_events(
-    key: KeyEvent,
-    app: &mut App,
-    args: &Args,
-) -> bool {
+pub fn handle_eq_events(key: KeyEvent, app: &mut App, args: &Args) -> bool {
     let keys = &app.keys;
 
     if app.view_mode != app::ViewMode::EQ {
@@ -20,7 +16,7 @@ pub fn handle_eq_events(
         app.input_state = Some(app::InputState::new(
             app::InputMode::EqSave,
             "Save Preset As",
-            ""
+            "",
         ));
         return true;
     }
@@ -40,7 +36,9 @@ pub fn handle_eq_events(
         return true;
     }
     if keys.matches(key, &keys.nav_right) || keys.matches(key, &keys.nav_right_alt) {
-        if app.eq_selected < 9 { app.eq_selected += 1; }
+        if app.eq_selected < 9 {
+            app.eq_selected += 1;
+        }
         return true;
     }
     if keys.matches(key, &keys.gain_up) || keys.matches(key, &keys.nav_up_alt) {
@@ -63,13 +61,16 @@ pub fn handle_eq_events(
     }
     if keys.matches(key, &keys.toggle_eq) {
         app.toggle_eq();
-        app.show_toast(&format!("🎛 EQ: {}", if app.eq_enabled { "ON" } else { "OFF" }));
+        app.show_toast(&format!(
+            "🎛 EQ: {}",
+            if app.eq_enabled { "ON" } else { "OFF" }
+        ));
         return true;
     }
     if keys.matches(key, &keys.reset_eq) {
-            app.reset_eq();
-            app.show_toast("🔄 EQ Reset");
-            return true;
+        app.reset_eq();
+        app.show_toast("🔄 EQ Reset");
+        return true;
     }
     if keys.matches(key, &keys.reset_levels) {
         app.reset_preamp();
@@ -89,20 +90,32 @@ pub fn handle_eq_events(
         app.show_toast(&format!("🎵 Preset: {}", app.get_preset_name()));
         return true;
     }
-    if keys.matches(key, &keys.preamp_up) { app.adjust_preamp(1.0); return true; }
-    if keys.matches(key, &keys.preamp_down) { app.adjust_preamp(-1.0); return true; }
-    if keys.matches(key, &keys.balance_right) { app.adjust_balance(0.1); return true; }
-    if keys.matches(key, &keys.balance_left) { app.adjust_balance(-0.1); return true; }
+    if keys.matches(key, &keys.preamp_up) {
+        app.adjust_preamp(1.0);
+        return true;
+    }
+    if keys.matches(key, &keys.preamp_down) {
+        app.adjust_preamp(-1.0);
+        return true;
+    }
+    if keys.matches(key, &keys.balance_right) {
+        app.adjust_balance(0.1);
+        return true;
+    }
+    if keys.matches(key, &keys.balance_left) {
+        app.adjust_balance(-0.1);
+        return true;
+    }
     if keys.matches(key, &keys.crossfade) {
-            app.toggle_crossfade();
-            #[cfg(feature = "mpd")]
-            if !args.controller {
+        app.toggle_crossfade();
+        #[cfg(feature = "mpd")]
+        if !args.controller {
             let secs = app.crossfade_secs as i64;
             with_mpd(app, args, |mpd| {
                 let _ = mpd.crossfade(secs);
             });
-            }
-            return true;
+        }
+        return true;
     }
     if keys.matches(key, &keys.replay_gain) {
         app.replay_gain_mode = (app.replay_gain_mode + 1) % 4;

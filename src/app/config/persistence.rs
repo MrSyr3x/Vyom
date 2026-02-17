@@ -9,7 +9,7 @@ use super::presets::EqPreset;
 pub struct PersistentState {
     #[serde(default)]
     pub last_preset_name: String,
-    #[serde(default)] 
+    #[serde(default)]
     pub eq_enabled: bool,
     #[serde(default = "default_bands")]
     pub eq_bands: [f32; 10],

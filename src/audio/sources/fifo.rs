@@ -1,15 +1,15 @@
 use super::common::{build_audio_stream, query_mpd_format};
 use crate::audio::dsp::{DspEqualizer, EqGains};
 use crate::audio::types::AudioInputFormat;
-use cpal::traits::{HostTrait};
+use cpal::traits::HostTrait;
 use cpal::StreamConfig;
 use std::collections::VecDeque;
 use std::io::{BufReader, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::os::unix::fs::OpenOptionsExt;
 
 /// FIFO audio loop (Hi-Res 16/24/32-bit)
 #[cfg(feature = "eq")]
@@ -85,34 +85,40 @@ pub fn run_fifo_audio_loop(
         // Dynamic Format Check 🕵️‍♂️ (Poll MPD periodically)
         if last_format_check.elapsed() > format_check_interval {
             if let Some((new_rate, new_bits, new_ch)) = query_mpd_format() {
-                if new_rate != current_sample_rate || new_bits != current_bits_per_sample || new_ch != current_channels {
-                     eprintln!("⟳ Audio Format Changed: {}Hz/{}bit/{}ch", new_rate, new_bits, new_ch);
-                     
-                     // 1. Update State
-                     current_sample_rate = new_rate;
-                     current_bits_per_sample = new_bits;
-                     current_channels = new_ch;
-                     
-                     bytes_per_sample_val = (current_bits_per_sample / 8) as usize;
-                     frame_size = bytes_per_sample_val * current_channels as usize;
-                     
-                     // 2. Re-allocate Read Buffer
-                     read_buffer = vec![0u8; frame_size * buffer_frames];
-                     
-                     // 3. Re-create EQ
-                     equalizer = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
-                     
-                     // 4. Rebuild Stream
-                     // Note: We can't easily change channels on the fly without complex buffer re-mapping if cpal doesn't support it.
-                     // For now, we assume channels (stereo) don't change often.
-                     // Restarting loop is hard here. Let's try to rebuild stream.
-                     
-                     let new_config = StreamConfig {
+                if new_rate != current_sample_rate
+                    || new_bits != current_bits_per_sample
+                    || new_ch != current_channels
+                {
+                    eprintln!(
+                        "⟳ Audio Format Changed: {}Hz/{}bit/{}ch",
+                        new_rate, new_bits, new_ch
+                    );
+
+                    // 1. Update State
+                    current_sample_rate = new_rate;
+                    current_bits_per_sample = new_bits;
+                    current_channels = new_ch;
+
+                    bytes_per_sample_val = (current_bits_per_sample / 8) as usize;
+                    frame_size = bytes_per_sample_val * current_channels as usize;
+
+                    // 2. Re-allocate Read Buffer
+                    read_buffer = vec![0u8; frame_size * buffer_frames];
+
+                    // 3. Re-create EQ
+                    equalizer = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
+
+                    // 4. Rebuild Stream
+                    // Note: We can't easily change channels on the fly without complex buffer re-mapping if cpal doesn't support it.
+                    // For now, we assume channels (stereo) don't change often.
+                    // Restarting loop is hard here. Let's try to rebuild stream.
+
+                    let new_config = StreamConfig {
                         channels: current_channels,
                         sample_rate: cpal::SampleRate(current_sample_rate),
                         buffer_size: cpal::BufferSize::Default,
                     };
-                    
+
                     match build_audio_stream(
                         &device,
                         &new_config,
@@ -124,7 +130,7 @@ pub fn run_fifo_audio_loop(
                     ) {
                         Ok(s) => {
                             _active_stream = s; // Replace old stream
-                        },
+                        }
                         Err(e) => eprintln!("Failed to rebuild stream: {}", e),
                     }
                 }
@@ -150,7 +156,6 @@ pub fn run_fifo_audio_loop(
         let mut float_buffer = Vec::with_capacity(buffer_frames * current_channels as usize);
 
         while running.load(Ordering::SeqCst) {
-             
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
                     thread::sleep(Duration::from_millis(10));
@@ -162,9 +167,9 @@ pub fn run_fifo_audio_loop(
                 }
                 Ok(bytes_read) => {
                     let frames = bytes_read / frame_size;
-                    
+
                     float_buffer.clear();
-                    
+
                     for frame in 0..frames {
                         for ch in 0..current_channels as usize {
                             let offset = frame * frame_size + ch * bytes_per_sample_val;
@@ -172,10 +177,15 @@ pub fn run_fifo_audio_loop(
                             let sample_f32 = match current_bits_per_sample {
                                 16 => {
                                     if offset + 1 < bytes_read {
-                                        let s = i16::from_le_bytes([read_buffer[offset], read_buffer[offset + 1]]);
+                                        let s = i16::from_le_bytes([
+                                            read_buffer[offset],
+                                            read_buffer[offset + 1],
+                                        ]);
                                         s as f32 / 32768.0
-                                    } else { 0.0 }
-                                },
+                                    } else {
+                                        0.0
+                                    }
+                                }
                                 24 => {
                                     if offset + 2 < bytes_read {
                                         let b0 = read_buffer[offset] as i32;
@@ -183,15 +193,24 @@ pub fn run_fifo_audio_loop(
                                         let b2 = read_buffer[offset + 2] as i32;
                                         let s = (b2 << 24) | (b1 << 16) | (b0 << 8);
                                         (s >> 8) as f32 / 8388608.0
-                                    } else { 0.0 }
-                                },
+                                    } else {
+                                        0.0
+                                    }
+                                }
                                 32 => {
-                                     if offset + 3 < bytes_read {
-                                        let s = i32::from_le_bytes([read_buffer[offset], read_buffer[offset+1], read_buffer[offset+2], read_buffer[offset+3]]);
+                                    if offset + 3 < bytes_read {
+                                        let s = i32::from_le_bytes([
+                                            read_buffer[offset],
+                                            read_buffer[offset + 1],
+                                            read_buffer[offset + 2],
+                                            read_buffer[offset + 3],
+                                        ]);
                                         s as f32 / 2147483648.0
-                                    } else { 0.0 }
-                                },
-                                _ => 0.0
+                                    } else {
+                                        0.0
+                                    }
+                                }
+                                _ => 0.0,
                             };
                             float_buffer.push(sample_f32);
                         }
@@ -223,11 +242,11 @@ pub fn run_fifo_audio_loop(
                     }
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                     thread::sleep(Duration::from_millis(5));
-                     if last_format_check.elapsed() > format_check_interval {
+                    thread::sleep(Duration::from_millis(5));
+                    if last_format_check.elapsed() > format_check_interval {
                         break; // Break to check format
-                     }
-                     continue;
+                    }
+                    continue;
                 }
                 Err(_) => {
                     equalizer.reset_filters();

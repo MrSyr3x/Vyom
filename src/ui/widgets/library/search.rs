@@ -29,22 +29,16 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
         format!("  SEARCH RESULTS: \"{}\"  ", app.search_query)
     };
     lines.push(
-        Line::from(Span::styled(
-            search_title,
-            Style::default().fg(green),
-        ))
-        .alignment(Alignment::Center),
+        Line::from(Span::styled(search_title, Style::default().fg(green)))
+            .alignment(Alignment::Center),
     );
     lines.push(Line::from(""));
 
     // ━━━ CONTENT ━━━
     if app.library_items.is_empty() && !app.search_query.is_empty() {
         lines.push(
-            Line::from(Span::styled(
-                "No results found",
-                Style::default().fg(muted),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("No results found", Style::default().fg(muted)))
+                .alignment(Alignment::Center),
         );
         lines.push(
             Line::from(Span::styled(
@@ -79,17 +73,17 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
 
             // Clean up name by removing path components if present
             let clean_name = item.name.split('/').next_back().unwrap_or(&item.name);
-            
+
             // Dynamic Layout Calculation 📐
             // Prefix width: "  ● " (4) + "♪ " (2) = 6 chars
             let prefix_w = 6;
-            
+
             let has_artist = !item.artist.as_deref().unwrap_or("").trim().is_empty();
             let has_time = item.duration_ms.unwrap_or(0) > 0;
 
             let row_time_w = if has_time { 6 } else { 0 };
             let row_artist_w = if has_artist { artist_w } else { 0 };
-            
+
             // Give ALL remaining space to Title
             let row_title_w = width.saturating_sub(row_artist_w + row_time_w + prefix_w);
 
@@ -108,9 +102,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                 (
                     "●",
                     cream,
-                    Style::default()
-                        .fg(theme.text)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
                     Style::default().fg(theme.text),
                     Style::default().fg(green),
                 )
@@ -133,10 +125,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
             };
 
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {} ", marker),
-                    Style::default().fg(m_color),
-                ),
+                Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
                 Span::styled(
                     format!(
                         "{} {:title_w$}",
@@ -150,10 +139,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                     format!("{:artist_w$}", artist_disp, artist_w = row_artist_w),
                     a_style,
                 ),
-                Span::styled(
-                    format!("{:>time_w$}", time, time_w = row_time_w),
-                    tm_style,
-                ),
+                Span::styled(format!("{:>time_w$}", time, time_w = row_time_w), tm_style),
             ]));
         }
     }

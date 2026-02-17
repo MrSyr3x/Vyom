@@ -89,7 +89,10 @@ pub fn render(f: &mut Frame, app: &App) {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(theme.blue))
-                    .title(Span::styled(" Edit Song Tags ", Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)))
+                    .title(Span::styled(
+                        " Edit Song Tags ",
+                        Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
+                    ))
                     .title_alignment(Alignment::Left)
                     .style(Style::default().bg(Color::Reset)),
             );

@@ -10,6 +10,7 @@ pub fn try_acquire_audio_lock() -> Option<File> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(LOCK_FILE_PATH)
         .ok()?;
 
@@ -19,10 +20,10 @@ pub fn try_acquire_audio_lock() -> Option<File> {
         // We got the lock!
         // Truncate file and write our PID (informational)
         if file.set_len(0).is_ok() {
-             let pid = std::process::id();
-             let _ = write!(file, "{}", pid);
+            let pid = std::process::id();
+            let _ = write!(file, "{}", pid);
         }
-        
+
         // Return the file handle. The lock is released when the file is closed (dropped).
         return Some(file);
     }
@@ -33,4 +34,3 @@ pub fn try_acquire_audio_lock() -> Option<File> {
 pub fn release_audio_lock() {
     let _ = std::fs::remove_file(LOCK_FILE_PATH);
 }
-

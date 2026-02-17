@@ -1,11 +1,11 @@
 use crate::app::App;
 use ratatui::{
     layout::Alignment,
+    layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
-    layout::Rect,
 };
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
@@ -15,7 +15,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let vis_block = Block::default()
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .title(Span::styled(" Visualizer ", Style::default().fg(theme.cyan).add_modifier(ratatui::style::Modifier::BOLD)))
+        .title(Span::styled(
+            " Visualizer ",
+            Style::default()
+                .fg(theme.cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        ))
         .title_alignment(Alignment::Left)
         .border_style(Style::default().fg(theme.cyan))
         .style(Style::default().bg(Color::Reset));
@@ -63,14 +68,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         let reflection_height = available_height.saturating_sub(main_height);
 
         // Pre-calculate bar heights for consistent UI
-        let mut ui_bar_heights = Vec::with_capacity(bar_count);
+        let mut ui_bar_heights = vec![0.0; bar_count];
         let source_len = app.visualizer_bars.len();
 
-        for i in 0..bar_count {
+        for (i, bar_height_slot) in ui_bar_heights.iter_mut().enumerate().take(bar_count) {
             // RESAMPLING LOGIC: Map UI Bar (i) to Data Range (start..end)
             let start_idx = (i * source_len) / bar_count;
             let end_idx = ((i + 1) * source_len).div_ceil(bar_count).min(source_len);
-            
+
             // Ensure we have at least one index and bounds are safe
             let start_idx = start_idx.min(source_len.saturating_sub(1));
             let end_idx = end_idx.max(start_idx + 1);
@@ -83,7 +88,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     bar_height = val;
                 }
             }
-            ui_bar_heights.push(bar_height);
+            *bar_height_slot = bar_height;
         }
 
         // === MAIN BARS (grow upward from center) ===
@@ -98,12 +103,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 spans.push(Span::raw(" ".repeat(padding)));
             }
 
-            for i in 0..bar_count {
-                let bar_height = ui_bar_heights[i];
-
+            for (i, &bar_height) in ui_bar_heights.iter().enumerate().take(bar_count) {
                 // Map bar position to gradient color
-                let color_idx =
-                    (i * gradient.len() / bar_count).min(gradient.len() - 1);
+                let color_idx = (i * gradient.len() / bar_count).min(gradient.len() - 1);
                 let bar_color = gradient[color_idx];
 
                 // Draw bar segment with smooth caps
@@ -141,12 +143,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 spans.push(Span::raw(" ".repeat(padding)));
             }
 
-            for i in 0..bar_count {
-                let bar_height = ui_bar_heights[i];
-
+            for (i, &bar_height) in ui_bar_heights.iter().enumerate().take(bar_count) {
                 // Dimmed gradient for reflection
-                let color_idx =
-                    (i * gradient.len() / bar_count).min(gradient.len() - 1);
+                let color_idx = (i * gradient.len() / bar_count).min(gradient.len() - 1);
                 let base = gradient[color_idx];
                 let dimmed = match base {
                     Color::Rgb(r, g, b) => Color::Rgb(r / 3, g / 3, b / 3),
@@ -154,7 +153,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 };
 
                 // Reflection is inverted and fades out
-                let char = if bar_height * 0.65 > threshold { // Increased from 0.5 to 0.65 for visibility
+                let char = if bar_height * 0.65 > threshold {
+                    // Increased from 0.5 to 0.65 for visibility
                     "░░"
                 } else {
                     "  "
@@ -170,8 +170,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             lines.push(Line::from(spans));
         }
 
-        let visualizer = Paragraph::new(lines)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
+        let visualizer =
+            Paragraph::new(lines).block(Block::default().style(Style::default().bg(Color::Reset)));
         f.render_widget(visualizer, inner_area);
     }
 }

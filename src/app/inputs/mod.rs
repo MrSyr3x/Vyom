@@ -1,19 +1,19 @@
-use crossterm::event::KeyEvent;
-use crate::app::{self, App};
-use crate::app::events::AppEvent;
-use crate::player::PlayerTrait;
-use crate::audio::pipeline::AudioPipeline;
 use crate::app::cli::Args;
+use crate::app::events::AppEvent;
+use crate::app::{self, App};
+use crate::audio::pipeline::AudioPipeline;
+use crate::player::PlayerTrait;
+use crossterm::event::KeyEvent;
+use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use reqwest::Client;
 
 pub mod common;
-pub mod player;
-pub mod library;
 pub mod eq;
-pub mod lyrics;
 pub mod input_box;
+pub mod library;
+pub mod lyrics;
+pub mod player;
 
 pub async fn handle_event(
     key: KeyEvent,
@@ -38,18 +38,30 @@ pub async fn handle_event(
     // 3. View Switchers
     // Check global view switch keys before context specific logic
     let keys = app.keys.clone(); // Clone keys to avoid borrowing app
-    if keys.matches(key, &keys.view_lyrics) { app.view_mode = app::ViewMode::Lyrics; return; }
+    if keys.matches(key, &keys.view_lyrics) {
+        app.view_mode = app::ViewMode::Lyrics;
+        return;
+    }
     #[cfg(feature = "mpd")]
-    if keys.matches(key, &keys.view_visualizer) && !args.controller { app.view_mode = app::ViewMode::Visualizer; return; }
+    if keys.matches(key, &keys.view_visualizer) && !args.controller {
+        app.view_mode = app::ViewMode::Visualizer;
+        return;
+    }
     #[cfg(feature = "mpd")]
-    if keys.matches(key, &keys.view_library) && !args.controller { app.view_mode = app::ViewMode::Library; return; }
+    if keys.matches(key, &keys.view_library) && !args.controller {
+        app.view_mode = app::ViewMode::Library;
+        return;
+    }
     #[cfg(feature = "mpd")]
-    if keys.matches(key, &keys.view_eq) && !args.controller { app.view_mode = app::ViewMode::EQ; return; }
+    if keys.matches(key, &keys.view_eq) && !args.controller {
+        app.view_mode = app::ViewMode::EQ;
+        return;
+    }
 
     // 4. Context Specific Handlers
     // We try specific handlers based on view mode. If they return true (consumed), we stop.
     // If not, we fall through to "Global Player Controls".
-    
+
     let consumed = match app.view_mode {
         app::ViewMode::Library => library::handle_library_events(key, app, args),
 
@@ -65,7 +77,5 @@ pub async fn handle_event(
     // 5. Global Player Controls
     // These apply anywhere IF not consumed by specific view logic
     // (e.g. Space to Pause should work in Library, unless Library uses Space for selection)
-    if player::handle_player_events(key, app, player, audio_pipeline, args).await {
-        return;
-    }
+    if player::handle_player_events(key, app, player, audio_pipeline, args).await {}
 }

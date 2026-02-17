@@ -13,7 +13,7 @@ pub struct KeyConfig {
     pub toggle_keyhints: String,
     pub toggle_audio_info: String,
     pub search_global: String,
-    
+
     // View Switching
     pub view_lyrics: String,
     pub view_visualizer: String,
@@ -33,7 +33,7 @@ pub struct KeyConfig {
     pub nav_left_alt: String,
     pub nav_right: String,
     pub nav_right_alt: String,
-    
+
     // Library
     pub enter_dir: String,
     pub back_dir: String,
@@ -71,7 +71,7 @@ pub struct KeyConfig {
     pub replay_gain: String,
     pub device_next: String,
     pub device_prev: String,
-    
+
     // MPD
     pub shuffle: String,
     pub repeat: String,
@@ -89,7 +89,7 @@ impl Default for KeyConfig {
             toggle_keyhints: "?".to_string(),
             toggle_audio_info: "i".to_string(),
             search_global: "/".to_string(),
-            
+
             view_lyrics: "1".to_string(),
             view_visualizer: "2".to_string(),
             view_library: "3".to_string(),
@@ -165,15 +165,16 @@ impl KeyConfig {
                 if let Some(ch) = s.chars().next() {
                     // Check for shift modifier if char is uppercase
                     if ch.is_uppercase() {
-                        event.code == KeyCode::Char(ch) || 
-                        (event.code == KeyCode::Char(ch.to_ascii_lowercase()) && event.modifiers.contains(KeyModifiers::SHIFT))
+                        event.code == KeyCode::Char(ch)
+                            || (event.code == KeyCode::Char(ch.to_ascii_lowercase())
+                                && event.modifiers.contains(KeyModifiers::SHIFT))
                     } else {
                         event.code == KeyCode::Char(ch)
                     }
                 } else {
                     false
                 }
-            },
+            }
             _ => false,
         }
     }
@@ -181,7 +182,7 @@ impl KeyConfig {
     // Helper for UI display
     pub fn display(&self, key_str: &str) -> String {
         match key_str {
-            "Space" => "Space".to_string(), 
+            "Space" => "Space".to_string(),
             "Up" => "↑".to_string(),
             "Down" => "↓".to_string(),
             "Left" => "←".to_string(),

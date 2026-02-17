@@ -32,17 +32,12 @@ pub struct TrackInfo {
     pub volume: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum RepeatMode {
+    #[default]
     Off,
     Playlist,
     Single,
-}
-
-impl Default for RepeatMode {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 /// The unified interface for any OS Media Player 🎵

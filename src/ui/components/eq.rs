@@ -1,11 +1,11 @@
 use crate::app::App;
 use ratatui::{
     layout::Alignment,
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
-    layout::Rect,
 };
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
@@ -15,7 +15,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let eq_block = Block::default()
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .title(Span::styled(" Equalizer ", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Equalizer ",
+            Style::default()
+                .fg(theme.green)
+                .add_modifier(Modifier::BOLD),
+        ))
         .border_style(Style::default().fg(theme.green))
         .style(Style::default().bg(Color::Reset));
 
@@ -58,8 +63,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             slider_w += 1;
         } // Force odd width for perfect center
         let pad = (w.saturating_sub(slider_w + 6)) / 2;
-        let bal_pos =
-            ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32).round() as usize;
+        let bal_pos = ((app.balance + 1.0) / 2.0 * (slider_w - 1) as f32).round() as usize;
         let center_pos = slider_w / 2;
         let show_center_marker = bal_pos != center_pos;
 
@@ -165,8 +169,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 if x2 > x1 {
                     let t = (col - x1) as f32 / (x2 - x1) as f32;
                     let t = t * t * (3.0 - 2.0 * t); // smoothstep
-                    *val = band_y_precise[left_band] * (1.0 - t)
-                        + band_y_precise[right_band] * t;
+                    *val = band_y_precise[left_band] * (1.0 - t) + band_y_precise[right_band] * t;
                 }
             }
         }
@@ -201,13 +204,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 // Fill regions - check if this row is between curve and center
                 let is_boost_fill =
                     cy < center_row as f32 && (row as f32) > cy && row <= center_row;
-                let is_cut_fill =
-                    cy > center_row as f32 && (row as f32) < cy && row >= center_row;
+                let is_cut_fill = cy > center_row as f32 && (row as f32) < cy && row >= center_row;
 
                 // Check if selected band
                 let band_idx = band_x.iter().position(|&x| x == col);
-                let is_selected =
-                    band_idx.map(|i| i == app.eq_selected).unwrap_or(false);
+                let is_selected = band_idx.map(|i| i == app.eq_selected).unwrap_or(false);
 
                 if is_band_point {
                     // Circle marker at band points
@@ -408,8 +409,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             .alignment(Alignment::Center),
         );
 
-        let widget = Paragraph::new(lines)
-            .block(Block::default().style(Style::default().bg(Color::Reset)));
+        let widget =
+            Paragraph::new(lines).block(Block::default().style(Style::default().bg(Color::Reset)));
         f.render_widget(widget, inner_area);
     }
 }

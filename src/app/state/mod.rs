@@ -1,24 +1,24 @@
-use crate::app::config::{EqPreset, PersistentState, UserConfig, get_default_presets};
+use crate::app::config::{get_default_presets, EqPreset, PersistentState, UserConfig};
 use crate::app::keys::KeyConfig;
 use crate::audio::device as audio_device;
 use crate::audio::dsp::EqGains;
 use crate::audio::visualizer::Visualizer;
-use crate::player::{TrackInfo, RepeatMode};
+use crate::player::{RepeatMode, TrackInfo};
 use crate::ui::theme::Theme;
 use std::collections::HashMap;
-use std::time::Instant;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Instant;
 
-pub mod lyrics;
 pub mod artwork;
 pub mod library;
+pub mod lyrics;
 pub mod ui;
 
-pub use lyrics::LyricsState;
 pub use artwork::ArtworkState;
-pub use library::{LibraryMode, LibraryItem, LibraryItemType, QueueItem};
-pub use ui::{ViewMode, InputMode, InputState, TagEditState, Toast};
+pub use library::{LibraryItem, LibraryItemType, LibraryMode, QueueItem};
+pub use lyrics::LyricsState;
+pub use ui::{InputMode, InputState, TagEditState, Toast, ViewMode};
 
 pub struct App {
     pub theme: Theme,
@@ -206,8 +206,8 @@ impl App {
             toast: None,         // No toast notification
             gapless_mode: false, // No gapless detected initially
             last_album: String::new(),
-            shuffle: false, // Will be updated from MPD
-            repeat: RepeatMode::Off,  // Will be updated from MPD
+            shuffle: false,          // Will be updated from MPD
+            repeat: RepeatMode::Off, // Will be updated from MPD
             output_device: audio_device::get_output_device_name(),
             audio_devices: {
                 let sys_devices = audio_device::get_devices_from_system();
@@ -290,10 +290,10 @@ impl App {
             self.eq_preset_name = "Flat".to_string();
         }
         self.eq_gains.reset();
-        
+
         // Ensure "Custom" is stripped from STATE if it was saved?
         // Actually save_state() handles stripping Custom.
-        
+
         // Also save state to ensure the reset persists in state.toml too
         self.save_state();
     }
@@ -429,7 +429,9 @@ impl App {
 
         // Save only user presets that are NOT defaults and NOT "Custom"
         // "Custom" is ephemeral state, handled by last_preset_name logic/restoration
-        let clean_presets: Vec<EqPreset> = self.presets.iter()
+        let clean_presets: Vec<EqPreset> = self
+            .presets
+            .iter()
             .filter(|p| !default_names.contains(&&p.name) && p.name != "Custom")
             .cloned()
             .collect();

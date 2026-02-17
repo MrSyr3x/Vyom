@@ -1,6 +1,6 @@
 use super::common::{is_app_running, run_script};
 use crate::player::controller::traits::PlatformController;
-use crate::player::{PlayerState, TrackInfo, RepeatMode};
+use crate::player::{PlayerState, RepeatMode, TrackInfo};
 use anyhow::Result;
 
 pub struct MusicController;
@@ -63,7 +63,10 @@ impl PlatformController for MusicController {
     }
 
     fn seek(&self, position_secs: f64) -> Result<()> {
-        run_script(&format!("tell application \"Music\" to set player position to {}", position_secs))?;
+        run_script(&format!(
+            "tell application \"Music\" to set player position to {}",
+            position_secs
+        ))?;
         Ok(())
     }
 
@@ -79,12 +82,18 @@ impl PlatformController for MusicController {
 
     fn set_volume(&self, volume: u8) -> Result<()> {
         let vol = volume.min(100);
-        run_script(&format!("tell application \"Music\" to set sound volume to {}", vol))?;
+        run_script(&format!(
+            "tell application \"Music\" to set sound volume to {}",
+            vol
+        ))?;
         Ok(())
     }
 
     fn shuffle(&self, enable: bool) -> Result<()> {
-        run_script(&format!("tell application \"Music\" to set shuffle enabled to {}", enable))?;
+        run_script(&format!(
+            "tell application \"Music\" to set shuffle enabled to {}",
+            enable
+        ))?;
         Ok(())
     }
 
@@ -94,7 +103,10 @@ impl PlatformController for MusicController {
             RepeatMode::Playlist => "all",
             RepeatMode::Single => "one",
         };
-        run_script(&format!("tell application \"Music\" to set song repeat to {}", val))?;
+        run_script(&format!(
+            "tell application \"Music\" to set song repeat to {}",
+            val
+        ))?;
         Ok(())
     }
 

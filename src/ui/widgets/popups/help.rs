@@ -18,41 +18,125 @@ pub fn render(f: &mut Frame, app: &App) {
         ViewMode::EQ => (
             "EQ Controls",
             vec![
-                (format!("{}/{}", app.keys.display(&app.keys.band_prev), app.keys.display(&app.keys.band_next)), "🎚️", "Select band"),
-                (format!("{}/{}", app.keys.display(&app.keys.gain_up), app.keys.display(&app.keys.gain_down)), "📊", "Adjust gain"),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.band_prev),
+                        app.keys.display(&app.keys.band_next)
+                    ),
+                    "🎚️",
+                    "Select band",
+                ),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.gain_up),
+                        app.keys.display(&app.keys.gain_down)
+                    ),
+                    "📊",
+                    "Adjust gain",
+                ),
                 (app.keys.display(&app.keys.next_preset), "🎵", "Next preset"),
                 (app.keys.display(&app.keys.toggle_eq), "⚡", "Toggle EQ"),
                 (app.keys.display(&app.keys.reset_eq), "↺", "Reset EQ"),
-                (app.keys.display(&app.keys.reset_levels), "🎯", "Reset Levels"),
-                (format!("{}/{}", app.keys.display(&app.keys.preamp_up), app.keys.display(&app.keys.preamp_down)), "🔊", "Preamp ±1dB"),
-                (format!("{}/{}", app.keys.display(&app.keys.balance_right), app.keys.display(&app.keys.balance_left)), "⚖️", "Balance ±0.1"),
+                (
+                    app.keys.display(&app.keys.reset_levels),
+                    "🎯",
+                    "Reset Levels",
+                ),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.preamp_up),
+                        app.keys.display(&app.keys.preamp_down)
+                    ),
+                    "🔊",
+                    "Preamp ±1dB",
+                ),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.balance_right),
+                        app.keys.display(&app.keys.balance_left)
+                    ),
+                    "⚖️",
+                    "Balance ±0.1",
+                ),
                 (app.keys.display(&app.keys.crossfade), "🔀", "Crossfade"),
                 (app.keys.display(&app.keys.replay_gain), "📀", "ReplayGain"),
                 (app.keys.display(&app.keys.save_preset), "💾", "Save preset"),
-                (app.keys.display(&app.keys.delete_preset), "🗑️", "Delete preset"),
+                (
+                    app.keys.display(&app.keys.delete_preset),
+                    "🗑️",
+                    "Delete preset",
+                ),
             ],
         ),
         ViewMode::Library => (
             "Library",
             vec![
-                (format!("{}/{}", app.keys.display(&app.keys.nav_down), app.keys.display(&app.keys.nav_up)), "📋", "Navigate"),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.nav_down),
+                        app.keys.display(&app.keys.nav_up)
+                    ),
+                    "📋",
+                    "Navigate",
+                ),
                 (app.keys.display(&app.keys.tab_next), "🔄", "Switch mode"),
                 (app.keys.display(&app.keys.enter_dir), "▶️", "Select/Play"),
                 (app.keys.display(&app.keys.back_dir), "←", "Go back"),
                 (app.keys.display(&app.keys.search_global), "🔍", "Search"),
-                (app.keys.display(&app.keys.add_to_queue), "➕", "Add to Queue"),
-                (app.keys.display(&app.keys.save_playlist), "💾", "Save playlist"),
-                (app.keys.display(&app.keys.rename_playlist), "✏️", "Rename playlist"),
-                (app.keys.display(&app.keys.delete_item), "🗑️", "Delete/Remove"),
+                (
+                    app.keys.display(&app.keys.add_to_queue),
+                    "➕",
+                    "Add to Queue",
+                ),
+                (
+                    app.keys.display(&app.keys.save_playlist),
+                    "💾",
+                    "Save playlist",
+                ),
+                (
+                    app.keys.display(&app.keys.rename_playlist),
+                    "✏️",
+                    "Rename playlist",
+                ),
+                (
+                    app.keys.display(&app.keys.delete_item),
+                    "🗑️",
+                    "Delete/Remove",
+                ),
                 (app.keys.display(&app.keys.edit_tags), "🏷️", "Edit tags"),
-                (format!("{}/{}", app.keys.display(&app.keys.move_down), app.keys.display(&app.keys.move_up)), "🔃", "Reorder"),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.move_down),
+                        app.keys.display(&app.keys.move_up)
+                    ),
+                    "🔃",
+                    "Reorder",
+                ),
             ],
         ),
         ViewMode::Lyrics => (
             "Lyrics",
             vec![
-                (format!("{}/{}", app.keys.display(&app.keys.nav_down), app.keys.display(&app.keys.nav_up)), "📜", "Scroll lyrics"),
-                (app.keys.display(&app.keys.seek_to_line), "🎤", "Jump to line"),
+                (
+                    format!(
+                        "{}/{}",
+                        app.keys.display(&app.keys.nav_down),
+                        app.keys.display(&app.keys.nav_up)
+                    ),
+                    "📜",
+                    "Scroll lyrics",
+                ),
+                (
+                    app.keys.display(&app.keys.seek_to_line),
+                    "🎤",
+                    "Jump to line",
+                ),
             ],
         ),
         ViewMode::Visualizer => ("Visualizer", vec![]),
@@ -64,15 +148,47 @@ pub fn render(f: &mut Frame, app: &App) {
         vec![
             (app.keys.display(&app.keys.play_pause), "▶️", "Play/Pause"),
             (app.keys.display(&app.keys.next_track), "⏭️", "Next track"),
-            (app.keys.display(&app.keys.prev_track), "⏮️", "Previous track"),
+            (
+                app.keys.display(&app.keys.prev_track),
+                "⏮️",
+                "Previous track",
+            ),
             (app.keys.display(&app.keys.shuffle), "🔀", "Shuffle"),
             (app.keys.display(&app.keys.repeat), "🔁", "Repeat"),
             (app.keys.display(&app.keys.search_global), "🔍", "Search"),
-            (format!("{}/{}", app.keys.display(&app.keys.volume_up), app.keys.display(&app.keys.volume_down)), "🔊", "Volume"),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.volume_up),
+                    app.keys.display(&app.keys.volume_down)
+                ),
+                "🔊",
+                "Volume",
+            ),
             (format!("1-{}", "4"), "🖼️", "View modes"),
-            (format!("{}/{}", app.keys.display(&app.keys.seek_backward), app.keys.display(&app.keys.seek_forward)), "⏩", "Seek ±5s"),
-            (format!("{}/{}", app.keys.display(&app.keys.device_next), app.keys.display(&app.keys.device_prev)), "🎧", "Output device"),
-            (app.keys.display(&app.keys.toggle_audio_info), "ℹ️", "Audio info"),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.seek_backward),
+                    app.keys.display(&app.keys.seek_forward)
+                ),
+                "⏩",
+                "Seek ±5s",
+            ),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.device_next),
+                    app.keys.display(&app.keys.device_prev)
+                ),
+                "🎧",
+                "Output device",
+            ),
+            (
+                app.keys.display(&app.keys.toggle_audio_info),
+                "ℹ️",
+                "Audio info",
+            ),
             (app.keys.display(&app.keys.quit), "🚪", "Quit"),
         ]
     } else {
@@ -80,11 +196,43 @@ pub fn render(f: &mut Frame, app: &App) {
         vec![
             (app.keys.display(&app.keys.play_pause), "▶️", "Play/Pause"),
             (app.keys.display(&app.keys.next_track), "⏭️", "Next track"),
-            (app.keys.display(&app.keys.prev_track), "⏮️", "Previous track"),
-            (format!("{}/{}", app.keys.display(&app.keys.volume_up), app.keys.display(&app.keys.volume_down)), "🔊", "Volume"),
-            (format!("{}/{}", app.keys.display(&app.keys.seek_backward), app.keys.display(&app.keys.seek_forward)), "⏩", "Seek ±5s"),
-            (format!("{}/{}", app.keys.display(&app.keys.device_next), app.keys.display(&app.keys.device_prev)), "🎧", "Output device"),
-            (app.keys.display(&app.keys.toggle_audio_info), "ℹ️", "Audio info"),
+            (
+                app.keys.display(&app.keys.prev_track),
+                "⏮️",
+                "Previous track",
+            ),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.volume_up),
+                    app.keys.display(&app.keys.volume_down)
+                ),
+                "🔊",
+                "Volume",
+            ),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.seek_backward),
+                    app.keys.display(&app.keys.seek_forward)
+                ),
+                "⏩",
+                "Seek ±5s",
+            ),
+            (
+                format!(
+                    "{}/{}",
+                    app.keys.display(&app.keys.device_next),
+                    app.keys.display(&app.keys.device_prev)
+                ),
+                "🎧",
+                "Output device",
+            ),
+            (
+                app.keys.display(&app.keys.toggle_audio_info),
+                "ℹ️",
+                "Audio info",
+            ),
             (app.keys.display(&app.keys.quit), "🚪", "Quit"),
         ]
     };
@@ -133,7 +281,9 @@ pub fn render(f: &mut Frame, app: &App) {
     }
 
     // Calculate popup size - fit content exactly 📏
-    let content_width = keys.iter().chain(global_keys.iter())
+    let content_width = keys
+        .iter()
+        .chain(global_keys.iter())
         .map(|(k, _i, d)| {
             // " kkkkkkk    ii ddddddd"
             // padding(1) + key(max 7) + padding(1) + spacer(3) + icon/space(3) + desc

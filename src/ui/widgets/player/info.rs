@@ -23,11 +23,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             let is_hires = track.bit_depth.map(|b| b > 16).unwrap_or(false)
                 || track.sample_rate.map(|r| r > 48000).unwrap_or(false);
-            
-            // DSD is technically 1-bit, but effectively Studio Master quality
-            let is_dsd = track.codec.as_ref().map(|c| c.to_uppercase().contains("DSD")).unwrap_or(false);
 
-            let is_studio = (track.bit_depth.map(|b| b >= 24).unwrap_or(false) 
+            // DSD is technically 1-bit, but effectively Studio Master quality
+            let is_dsd = track
+                .codec
+                .as_ref()
+                .map(|c| c.to_uppercase().contains("DSD"))
+                .unwrap_or(false);
+
+            let is_studio = (track.bit_depth.map(|b| b >= 24).unwrap_or(false)
                 && track.sample_rate.map(|r| r >= 192000).unwrap_or(false))
                 || is_dsd;
 
@@ -46,19 +50,32 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Determine Quality Tier
             if is_studio {
                 spans.push(Span::styled(
-                    if is_dsd { "\u{00A0}DSD\u{00A0}" } else { "\u{00A0}Studio\u{00A0}" },
-                    Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD),
+                    if is_dsd {
+                        "\u{00A0}DSD\u{00A0}"
+                    } else {
+                        "\u{00A0}Studio\u{00A0}"
+                    },
+                    Style::default()
+                        .fg(theme.base)
+                        .bg(theme.magenta)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else if is_hires {
-                 spans.push(Span::styled(
+                spans.push(Span::styled(
                     "\u{00A0}Hi-Res\u{00A0}",
-                    Style::default().fg(theme.base).bg(theme.blue).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.base)
+                        .bg(theme.blue)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else if is_lossless {
-                 // CD Quality (16/44.1 or similar)
-                 spans.push(Span::styled(
+                // CD Quality (16/44.1 or similar)
+                spans.push(Span::styled(
                     "\u{00A0}Lossless\u{00A0}",
-                    Style::default().fg(theme.base).bg(theme.cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.base)
+                        .bg(theme.cyan)
+                        .add_modifier(Modifier::BOLD),
                 ));
             } else {
                 // Lossy Logic based on Bitrate
@@ -67,25 +84,38 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     if bitrate >= 256 {
                         spans.push(Span::styled(
                             "\u{00A0}HQ\u{00A0}",
-                            Style::default().fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.base)
+                                .bg(theme.green)
+                                .add_modifier(Modifier::BOLD),
                         ));
-                    } else if bitrate >= 128 { // Standard Quality (e.g. 128k AAC/Opus)
-                         spans.push(Span::styled(
+                    } else if bitrate >= 128 {
+                        // Standard Quality (e.g. 128k AAC/Opus)
+                        spans.push(Span::styled(
                             "\u{00A0}SQ\u{00A0}",
-                            Style::default().fg(theme.base).bg(theme.yellow).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.base)
+                                .bg(theme.yellow)
+                                .add_modifier(Modifier::BOLD),
                         ));
                     } else {
-                         spans.push(Span::styled(
+                        spans.push(Span::styled(
                             "\u{00A0}LQ\u{00A0}",
-                            Style::default().fg(theme.base).bg(theme.red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.base)
+                                .bg(theme.red)
+                                .add_modifier(Modifier::BOLD),
                         ));
                     }
                 } else {
-                     // Fallback if no bitrate known but known lossy codec
-                      spans.push(Span::styled(
-                            "\u{00A0}Lossy\u{00A0}",
-                            Style::default().fg(theme.base).bg(theme.overlay).add_modifier(Modifier::BOLD),
-                        ));
+                    // Fallback if no bitrate known but known lossy codec
+                    spans.push(Span::styled(
+                        "\u{00A0}Lossy\u{00A0}",
+                        Style::default()
+                            .fg(theme.base)
+                            .bg(theme.overlay)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                 }
             }
 

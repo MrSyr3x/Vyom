@@ -2,8 +2,8 @@ use crate::app::App;
 use crate::player::{PlayerState, RepeatMode};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Style,
     style::Modifier,
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
@@ -71,16 +71,18 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             let repeat_spans = match app.repeat {
                 RepeatMode::Single => vec![
                     Span::styled(" 🔂", Style::default().fg(theme.green)),
-                    Span::styled("1", Style::default().fg(theme.green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "1",
+                        Style::default()
+                            .fg(theme.green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ],
-                _ => vec![
-                    Span::styled(" 🔁", Style::default().fg(theme.green)),
-                ],
+                _ => vec![Span::styled(" 🔁", Style::default().fg(theme.green))],
             };
-            let repeat_widget =
-                Paragraph::new(Line::from(repeat_spans))
-                    .alignment(Alignment::Left)
-                    .block(Block::default());
+            let repeat_widget = Paragraph::new(Line::from(repeat_spans))
+                .alignment(Alignment::Left)
+                .block(Block::default());
             f.render_widget(repeat_widget, button_layout[2]);
         }
 

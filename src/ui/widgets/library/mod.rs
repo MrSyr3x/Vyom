@@ -1,17 +1,17 @@
 use crate::app::{App, LibraryMode};
 use ratatui::{
     layout::Alignment,
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
-    layout::Rect,
 };
 
-pub mod queue;
 pub mod browser;
-pub mod search;
 pub mod playlists;
+pub mod queue;
+pub mod search;
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let theme = &app.theme;
@@ -21,7 +21,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let lib_block = Block::default()
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .title(Span::styled(title_text, Style::default().fg(theme.blue).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            title_text,
+            Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
+        ))
         .title_alignment(Alignment::Left)
         .border_style(Style::default().fg(theme.blue))
         .style(Style::default().bg(Color::Reset));
@@ -81,10 +84,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     lines.push(
         Line::from(vec![
             // Queue
-            Span::styled(
-                format!("{} ", q_dot),
-                Style::default().fg(theme.green),
-            ),
+            Span::styled(format!("{} ", q_dot), Style::default().fg(theme.green)),
             Span::styled(
                 "Queue",
                 if queue_active {
@@ -97,10 +97,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             ),
             Span::styled("      ", Style::default()),
             // Directory
-            Span::styled(
-                format!("{} ", d_dot),
-                Style::default().fg(theme.blue),
-            ),
+            Span::styled(format!("{} ", d_dot), Style::default().fg(theme.blue)),
             Span::styled(
                 "Directory",
                 if dir_active {
@@ -111,10 +108,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             ), // Inactive is dimmed blue
             Span::styled("      ", Style::default()),
             // Playlists
-            Span::styled(
-                format!("{} ", p_dot),
-                Style::default().fg(theme.magenta),
-            ),
+            Span::styled(format!("{} ", p_dot), Style::default().fg(theme.magenta)),
             Span::styled(
                 "Playlists",
                 if pl_active {
@@ -127,7 +121,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             ), // Inactive is dimmed magenta
         ])
         .alignment(Alignment::Center),
-    ); 
+    );
 
     lines.push(Line::from(""));
 
@@ -143,7 +137,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     // Actually, sub-widgets add 3 header lines ("\n TITLE \n").
     // So we need to pass a height that accounts for this too if we want precision.
     // The original code used `content_h = h.saturating_sub(8)`.
-    // Since we consumed 5 lines here, passing `h.saturating_sub(5)` seems right, 
+    // Since we consumed 5 lines here, passing `h.saturating_sub(5)` seems right,
     // but the sub-widgets often start with `lines.push("")`.
     // Let's pass `h.saturating_sub(8)` to be safe/consistent with old logic.
     let content_h = h.saturating_sub(8);
@@ -155,7 +149,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         LibraryMode::Playlists => playlists::render(app, w, content_h, &mut lines),
     }
 
-    let library_widget = Paragraph::new(lines)
-        .block(Block::default().style(Style::default().bg(Color::Reset)));
+    let library_widget =
+        Paragraph::new(lines).block(Block::default().style(Style::default().bg(Color::Reset)));
     f.render_widget(library_widget, inner_area);
 }

@@ -1,4 +1,4 @@
-use crate::player::{TrackInfo, RepeatMode};
+use crate::player::{RepeatMode, TrackInfo};
 use anyhow::Result;
 
 /// Internal trait for platform-specific player implementations (Spotify, Music, etc.)

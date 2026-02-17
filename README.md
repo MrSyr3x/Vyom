@@ -43,6 +43,8 @@ Vyom isn't just a TUI; it's the "Poweramp of the Terminal." It's designed to be 
 | **Catppuccin Themes** | Live-reloading, modern color palettes. |
 | **Pixel Art Album Art** | High-fidelity album art rendered via terminal half-blocks. |
 | **Tmux Aware** | Auto-detects `tmux` and docks itself as a sleek 20% sidebar. |
+| **Async Status Polling** | **Silky Smooth 60fps UI**. Heavy operations (AppleScript/MPD polling) run in background threads. |
+| **Bidirectional Sync** | Volume slider updates instantly when changed externally (ncmpcpp, mobile apps). |
 | **State Persistence** | Remembers your EQ settings, presets, balance, and crossfade across restarts. |
 
 ---

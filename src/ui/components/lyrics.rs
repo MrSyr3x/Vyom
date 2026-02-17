@@ -1,11 +1,11 @@
 use crate::app::{App, LyricsState, ViewMode};
 use ratatui::{
     layout::Alignment,
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{block::Title, Block, BorderType, Borders, Paragraph},
     Frame,
-    layout::Rect,
 };
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
@@ -69,7 +69,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     //
     // I entered this file thinking it's just lyrics.rs.
     // But `ViewMode::Visualizer` was also inside this "Right Panel".
-    // 
+    //
     // I will refactor so `ui/mod.rs` handles the RIGHT PANEL CONTAINER if it's generic,
     // OR each component renders its own container.
     //
@@ -80,9 +80,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     // Let's stick to the plan: `lyrics.rs` renders the lyrics content.
     // I will replicate the container logic in `ui.rs` or `ui/components/wrapper.rs`?
     //
-    // Let's make `rect_container.rs` or similar? No, I'll just put the container logic in `ui/mod.rs` 
+    // Let's make `rect_container.rs` or similar? No, I'll just put the container logic in `ui/mod.rs`
     // and pass the `inner` rect to these specific components.
-    
+
     match &app.lyrics {
         LyricsState::Loaded(lyrics, _) => {
             let height = inner_lyrics_area.height as usize;
@@ -99,8 +99,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             let center_idx = app.lyrics_offset.unwrap_or(current_idx);
 
             for row in 0..height {
-                let dist_from_center: isize =
-                    (row as isize - half_height as isize).abs();
+                let dist_from_center: isize = (row as isize - half_height as isize).abs();
                 let target_idx_isize =
                     (center_idx as isize) - (half_height as isize) + (row as isize);
 
@@ -126,9 +125,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     } else {
                         match dist_from_center {
                             1 => Style::default().fg(theme.text),
-                            2 => Style::default()
-                                .fg(theme.text)
-                                .add_modifier(Modifier::DIM),
+                            2 => Style::default().fg(theme.text).add_modifier(Modifier::DIM),
                             3..=4 => Style::default().fg(theme.overlay),
                             5..=6 => Style::default().fg(theme.surface),
                             _ => Style::default().fg(theme.base),

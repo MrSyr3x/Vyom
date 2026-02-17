@@ -1,8 +1,7 @@
-use crossterm::event::Event;
 use crate::app::{ArtworkState, LyricsState};
 use crate::player::TrackInfo;
 use crate::ui::theme::Theme;
-
+use crossterm::event::Event;
 
 pub enum AppEvent {
     Input(Event),

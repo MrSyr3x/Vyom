@@ -69,7 +69,7 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::styled(source, Style::default().fg(theme.cyan)),
         ]));
     } else if let crate::app::LyricsState::Instrumental = &app.lyrics {
-         lines.push(Line::from(vec![
+        lines.push(Line::from(vec![
             Span::styled("  Lyrics: ", Style::default().fg(theme.overlay)),
             Span::styled("Instrumental", Style::default().fg(theme.yellow)),
         ]));
@@ -103,11 +103,7 @@ pub fn render(f: &mut Frame, app: &App) {
         Span::styled("  Status: ", Style::default().fg(theme.overlay)),
         Span::styled(
             status,
-            Style::default().fg(if is_paused {
-                theme.yellow
-            } else {
-                theme.green
-            }),
+            Style::default().fg(if is_paused { theme.yellow } else { theme.green }),
         ),
     ]));
 
@@ -131,7 +127,7 @@ pub fn render(f: &mut Frame, app: &App) {
             RepeatMode::Playlist => "All",
             RepeatMode::Single => "One",
         };
-        
+
         lines.push(Line::from(vec![
             Span::styled("  Repeat: ", Style::default().fg(theme.overlay)),
             Span::styled(

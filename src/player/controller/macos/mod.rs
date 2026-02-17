@@ -1,17 +1,23 @@
 use crate::player::controller::traits::PlatformController;
-use crate::player::{TrackInfo, RepeatMode, PlayerTrait};
+use crate::player::{PlayerTrait, RepeatMode, TrackInfo};
 use anyhow::Result;
 
 pub mod common;
-pub mod spotify;
 pub mod music;
+pub mod spotify;
 
-use spotify::SpotifyController;
 use music::MusicController;
+use spotify::SpotifyController;
 
 pub struct MacOsPlayer {
     spotify: SpotifyController,
     music: MusicController,
+}
+
+impl Default for MacOsPlayer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MacOsPlayer {
@@ -52,69 +58,69 @@ impl PlayerTrait for MacOsPlayer {
 
     fn next(&self) -> Result<()> {
         if let Some(c) = self.active_controller() {
-             c.next()?;
+            c.next()?;
         }
         Ok(())
     }
 
     fn prev(&self) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.prev()?;
+        if let Some(c) = self.active_controller() {
+            c.prev()?;
         }
         Ok(())
     }
 
     fn seek(&self, position_secs: f64) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.seek(position_secs)?;
+        if let Some(c) = self.active_controller() {
+            c.seek(position_secs)?;
         }
         Ok(())
     }
 
     fn volume_up(&self) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.volume_up()?;
+        if let Some(c) = self.active_controller() {
+            c.volume_up()?;
         }
         Ok(())
     }
 
     fn volume_down(&self) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.volume_down()?;
+        if let Some(c) = self.active_controller() {
+            c.volume_down()?;
         }
         Ok(())
     }
 
     fn set_volume(&self, volume: u8) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.set_volume(volume)?;
+        if let Some(c) = self.active_controller() {
+            c.set_volume(volume)?;
         }
         Ok(())
     }
 
     fn shuffle(&self, enable: bool) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.shuffle(enable)?;
+        if let Some(c) = self.active_controller() {
+            c.shuffle(enable)?;
         }
         Ok(())
     }
 
     fn repeat(&self, mode: RepeatMode) -> Result<()> {
-         if let Some(c) = self.active_controller() {
-             c.repeat(mode)?;
+        if let Some(c) = self.active_controller() {
+            c.repeat(mode)?;
         }
         Ok(())
     }
 
     fn get_shuffle(&self) -> Result<bool> {
-         match self.active_controller() {
+        match self.active_controller() {
             Some(c) => c.get_shuffle(),
             None => Ok(false),
         }
     }
 
     fn get_repeat(&self) -> Result<RepeatMode> {
-         match self.active_controller() {
+        match self.active_controller() {
             Some(c) => c.get_repeat(),
             None => Ok(RepeatMode::Off),
         }

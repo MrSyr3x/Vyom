@@ -1,17 +1,17 @@
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
-pub mod user;
 pub mod persistence;
 pub mod presets;
+pub mod user;
 
 // Fix circular dependency: create a wrapper module or re-export to allow `persistence.rs` to find `AppConfig`.
 // Actually, declaring `pub mod mod_container` logic here.
 
-pub use user::UserConfig;
-pub use persistence::PersistentState;
 use persistence::LegacyConfigMixin;
-pub use presets::{EqPreset, get_default_presets};
+pub use persistence::PersistentState;
+pub use presets::{get_default_presets, EqPreset};
+pub use user::UserConfig;
 
 pub struct AppConfig;
 
@@ -19,12 +19,12 @@ impl AppConfig {
     pub fn get_config_dir() -> PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let xdg_dir = home.join(".config").join("vyom");
-        
+
         // Ensure it exists
         if !xdg_dir.exists() {
-             let _ = std::fs::create_dir_all(&xdg_dir);
+            let _ = std::fs::create_dir_all(&xdg_dir);
         }
-        
+
         xdg_dir
     }
 
@@ -59,7 +59,7 @@ impl AppConfig {
 
         // 2. Load State
         let state = if state_path.exists() {
-             if let Ok(content) = fs::read_to_string(&state_path) {
+            if let Ok(content) = fs::read_to_string(&state_path) {
                 toml::from_str(&content).unwrap_or_else(|_| PersistentState::default())
             } else {
                 PersistentState::default()
@@ -67,7 +67,7 @@ impl AppConfig {
         } else {
             // MIGRATION: If state.toml is missing, try to scrape from config.toml
             if config_path.exists() {
-                 if let Ok(content) = fs::read_to_string(&config_path) {
+                if let Ok(content) = fs::read_to_string(&config_path) {
                     if let Ok(legacy) = toml::from_str::<LegacyConfigMixin>(&content) {
                         // Found legacy state in config! Use it.
                         let s = PersistentState {
@@ -86,9 +86,9 @@ impl AppConfig {
                     } else {
                         PersistentState::default()
                     }
-                 } else {
-                     PersistentState::default()
-                 }
+                } else {
+                    PersistentState::default()
+                }
             } else {
                 PersistentState::default()
             }

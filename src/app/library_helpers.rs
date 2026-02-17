@@ -77,38 +77,42 @@ pub fn fetch_directory_items(
 
 // Recursive Add Helper
 #[cfg(feature = "mpd")]
-pub fn queue_folder_recursive(
-    mpd: &mut mpd::Client,
-    path: &str,
-) -> Result<(), mpd::error::Error> {
+pub fn queue_folder_recursive(mpd: &mut mpd::Client, path: &str) -> Result<(), mpd::error::Error> {
     // Determine path for listfiles
     // Note: listfiles logic in correct MPD (and fetch_directory_items) usually returns components
-    
+
     // We use listfiles to get EVERYTHING (files + dirs) cheaply
     if let Ok(mut entries) = mpd.listfiles(path) {
         // Sort: Directory < File, then Name alpha
         entries.sort_by(|(ka, na), (kb, nb)| {
-             // Directories first
-             if ka == "directory" && kb != "directory" { return std::cmp::Ordering::Less; }
-             if ka != "directory" && kb == "directory" { return std::cmp::Ordering::Greater; }
-             // Alpha sort by name
-             na.to_lowercase().cmp(&nb.to_lowercase())
+            // Directories first
+            if ka == "directory" && kb != "directory" {
+                return std::cmp::Ordering::Less;
+            }
+            if ka != "directory" && kb == "directory" {
+                return std::cmp::Ordering::Greater;
+            }
+            // Alpha sort by name
+            na.to_lowercase().cmp(&nb.to_lowercase())
         });
-        
+
         for (kind, name) in entries {
-             let full_path = if path.is_empty() {
-                 name.clone()
-             } else {
-                 format!("{}/{}", path, name)
-             };
-             
-             if kind == "directory" {
-                 // Recurse (ignore errors to keep processing siblings)
-                 let _ = queue_folder_recursive(mpd, &full_path);
-             } else if kind == "file" {
-                 // Add song (ignore errors)
-                 let _ = mpd.push(mpd::Song { file: full_path, ..Default::default() });
-             }
+            let full_path = if path.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", path, name)
+            };
+
+            if kind == "directory" {
+                // Recurse (ignore errors to keep processing siblings)
+                let _ = queue_folder_recursive(mpd, &full_path);
+            } else if kind == "file" {
+                // Add song (ignore errors)
+                let _ = mpd.push(mpd::Song {
+                    file: full_path,
+                    ..Default::default()
+                });
+            }
         }
     }
     Ok(())

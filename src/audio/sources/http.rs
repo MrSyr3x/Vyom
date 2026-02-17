@@ -1,7 +1,7 @@
 use super::common::build_audio_stream;
 use crate::audio::dsp::{DspEqualizer, EqGains};
 use crate::audio::types::AudioInputFormat;
-use cpal::traits::{HostTrait};
+use cpal::traits::HostTrait;
 use cpal::StreamConfig;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -75,9 +75,9 @@ pub fn run_http_audio_loop(
     let ring_buffer = Arc::new(std::sync::Mutex::new(
         std::collections::VecDeque::<f32>::with_capacity(32768),
     ));
-    
+
     let fade_level = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    
+
     // VISUALIZER: Clone buffer ref
     let vis_buffer_orig = vis_buffer.clone();
 
@@ -104,7 +104,7 @@ pub fn run_http_audio_loop(
     _current_stream = Some(build_stream(current_sample_rate, current_channels)?);
 
     let mut read_buffer = vec![0u8; 8192];
-    
+
     // EQ instance for processing loop (needs to match sample rate too!)
     // We'll recreate it if rate changes.
     let mut processing_eq = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
@@ -126,44 +126,51 @@ pub fn run_http_audio_loop(
             thread::sleep(Duration::from_millis(100));
             continue;
         }
-        
+
         // 2. Parse Format
         let mut new_rate = current_sample_rate;
         let mut new_channels = current_channels;
-        
+
         // Check for RIFF/WAVE signature
         if &header[0..4] == b"RIFF" && &header[8..12] == b"WAVE" && &header[12..16] == b"fmt " {
-             // channels at offset 22 (u16)
-             new_channels = u16::from_le_bytes([header[22], header[23]]);
-             // sample rate at offset 24 (u32)
-             new_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-             
-             // Sanity checks
-             if new_channels == 0 || new_channels > 8 { new_channels = 2; }
-             if !(8000..=192000).contains(&new_rate) { new_rate = 44100; }
+            // channels at offset 22 (u16)
+            new_channels = u16::from_le_bytes([header[22], header[23]]);
+            // sample rate at offset 24 (u32)
+            new_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
+
+            // Sanity checks
+            if new_channels == 0 || new_channels > 8 {
+                new_channels = 2;
+            }
+            if !(8000..=192000).contains(&new_rate) {
+                new_rate = 44100;
+            }
         }
 
         // 3. Reconfigure Stream if changed
         if new_rate != current_sample_rate || new_channels != current_channels {
-             eprintln!("⟳ Audio Format Changed: {}Hz / {}ch", new_rate, new_channels);
-             current_sample_rate = new_rate;
-             current_channels = new_channels;
-             
-             // Update EQ for processing loop
-             processing_eq = DspEqualizer::new(new_rate as f32, eq_gains.clone());
-             
-             // Rebuild cpal stream
-             // Dropping old stream (by overwriting Option) stops it
-             _current_stream = match build_stream(new_rate, new_channels) {
-                 Ok(s) => Some(s),
-                 Err(e) => {
-                     eprintln!("Failed to rebuild stream: {}", e);
-                     // Try to keep old one? Or fallback?
-                     // If rebuild fails, we are kind of stuck. Wait and retry?
-                     thread::sleep(Duration::from_secs(1));
-                     continue;
-                 }
-             };
+            eprintln!(
+                "⟳ Audio Format Changed: {}Hz / {}ch",
+                new_rate, new_channels
+            );
+            current_sample_rate = new_rate;
+            current_channels = new_channels;
+
+            // Update EQ for processing loop
+            processing_eq = DspEqualizer::new(new_rate as f32, eq_gains.clone());
+
+            // Rebuild cpal stream
+            // Dropping old stream (by overwriting Option) stops it
+            _current_stream = match build_stream(new_rate, new_channels) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    eprintln!("Failed to rebuild stream: {}", e);
+                    // Try to keep old one? Or fallback?
+                    // If rebuild fails, we are kind of stuck. Wait and retry?
+                    thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
+            };
         }
 
         if let Ok(mut buffer) = ring_buffer.lock() {
@@ -202,8 +209,8 @@ pub fn run_http_audio_loop(
                         }
                         thread::sleep(Duration::from_millis(5));
                         if !running.load(Ordering::SeqCst) {
-                             processing_eq.reset_filters(); // Ensure cleanup
-                             return Ok(()); 
+                            processing_eq.reset_filters(); // Ensure cleanup
+                            return Ok(());
                         }
                     }
 

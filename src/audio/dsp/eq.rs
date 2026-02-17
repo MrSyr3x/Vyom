@@ -3,8 +3,8 @@
 #[cfg(feature = "eq")]
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz, Type, Q_BUTTERWORTH_F32};
 
-use std::sync::{Arc, RwLock};
 use super::limiter::limiter;
+use std::sync::{Arc, RwLock};
 
 /// 10-band EQ center frequencies in Hz
 pub const EQ_FREQUENCIES: [f32; 10] = [
@@ -325,8 +325,7 @@ impl DspEqualizer {
     pub fn reset_filters(&mut self) {
         for (i, &freq) in EQ_FREQUENCIES.iter().enumerate() {
             // Recreate filters with current coefficients to reset internal state
-            let coeffs =
-                Self::make_peaking_coeffs(self.sample_rate, freq, self.last_gains[i]);
+            let coeffs = Self::make_peaking_coeffs(self.sample_rate, freq, self.last_gains[i]);
             self.filters_left[i] = biquad::DirectForm1::<f32>::new(coeffs);
             self.filters_right[i] = biquad::DirectForm1::<f32>::new(coeffs);
         }

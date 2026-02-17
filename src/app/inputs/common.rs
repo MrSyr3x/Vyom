@@ -1,11 +1,7 @@
-use crossterm::event::{KeyCode, KeyEvent};
 use crate::app::App;
+use crossterm::event::{KeyCode, KeyEvent};
 
-pub fn handle_common_events(
-    key: KeyEvent,
-    app: &mut App,
-    args: &crate::app::cli::Args,
-) -> bool {
+pub fn handle_common_events(key: KeyEvent, app: &mut App, args: &crate::app::cli::Args) -> bool {
     let keys = &app.keys;
 
     // Quit ('q')
@@ -25,16 +21,22 @@ pub fn handle_common_events(
         app.show_keyhints = !app.show_keyhints;
         return true;
     }
-    
+
     if keys.matches(key, &keys.toggle_audio_info) {
         app.show_audio_info = !app.show_audio_info;
         return true;
     }
-    
+
     // Global Popup Close (Esc)
-    if (keys.matches(key, &keys.back_dir_alt) || key.code == KeyCode::Esc) && (app.show_keyhints || app.show_audio_info) {
-        if app.show_keyhints { app.show_keyhints = false; }
-        if app.show_audio_info { app.show_audio_info = false; }
+    if (keys.matches(key, &keys.back_dir_alt) || key.code == KeyCode::Esc)
+        && (app.show_keyhints || app.show_audio_info)
+    {
+        if app.show_keyhints {
+            app.show_keyhints = false;
+        }
+        if app.show_audio_info {
+            app.show_audio_info = false;
+        }
         return true;
     }
 

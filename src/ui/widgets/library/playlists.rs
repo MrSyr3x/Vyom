@@ -9,7 +9,7 @@ use ratatui::{
 pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>) {
     let theme = &app.theme;
     let content_h = height;
-    
+
     let magenta = theme.magenta;
     let green = theme.green;
     let cream = theme.yellow;
@@ -19,20 +19,20 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
     // ━━━ CENTERED TITLE ━━━
     lines.push(Line::from(""));
     let playlist_count = app.playlists.len();
-    lines.push(Line::from(Span::styled(
-        format!("  PLAYLISTS  ·  {} saved  ", playlist_count),
-        Style::default().fg(magenta)
-    )).alignment(Alignment::Center));
+    lines.push(
+        Line::from(Span::styled(
+            format!("  PLAYLISTS  ·  {} saved  ", playlist_count),
+            Style::default().fg(magenta),
+        ))
+        .alignment(Alignment::Center),
+    );
     lines.push(Line::from(""));
 
     // ━━━ CONTENT ━━━
     if app.playlists.is_empty() {
         lines.push(
-            Line::from(Span::styled(
-                "No playlists",
-                Style::default().fg(muted),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("No playlists", Style::default().fg(muted)))
+                .alignment(Alignment::Center),
         );
         lines.push(
             Line::from(Span::styled(
@@ -73,18 +73,12 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
             let icon = "📜"; // Standard playlist icon
 
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {} ", marker),
-                    Style::default().fg(m_color),
-                ),
+                Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
                 Span::styled(
                     format!("{:>2}  ", num),
                     Style::default().fg(if is_sel { green } else { muted }),
                 ),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(magenta),
-                ),
+                Span::styled(format!("{} ", icon), Style::default().fg(magenta)),
                 Span::styled(name, n_style),
             ]));
         }

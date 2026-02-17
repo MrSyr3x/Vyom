@@ -1,20 +1,20 @@
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::app::{self, App};
 use crate::app::events::AppEvent;
 #[cfg(feature = "mpd")]
 use crate::app::library_helpers::fetch_directory_items;
 #[cfg(feature = "mpd")]
 use crate::app::with_mpd;
+use crate::app::{self, App};
+use crossterm::event::{KeyCode, KeyEvent};
 
+#[allow(unused_imports)]
+use crate::app::cli::Args;
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 #[cfg(feature = "mpd")]
 use lofty::file::TaggedFileExt;
 #[cfg(feature = "mpd")]
 use lofty::tag::Accessor;
-use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use tokio::sync::mpsc;
 use reqwest::Client;
-#[allow(unused_imports)]
-use crate::app::cli::Args;
+use tokio::sync::mpsc;
 
 pub async fn handle_input_box(
     key: KeyEvent,
@@ -29,7 +29,7 @@ pub async fn handle_input_box(
         match key.code {
             KeyCode::Esc => {
                 app.input_state = None;
-            },
+            }
             KeyCode::Enter => {
                 // Consume input state (Take ownership, releasing app borrow)
                 if let Some(input) = app.input_state.take() {
@@ -48,20 +48,20 @@ pub async fn handle_input_box(
                                             Ok(_) => {
                                                 app.show_toast(&format!("💾 Saved: {}", val));
                                                 app.playlists.push(val);
-                                            },
+                                            }
                                             Err(e) => app.show_toast(&format!("❌ Error: {}", e)),
                                         }
                                     }
                                 }
                             }
-                        },
+                        }
 
                         app::InputMode::EqSave => {
                             if !input.value.is_empty() {
                                 app.save_preset(input.value.clone());
                                 app.show_toast(&format!("💾 Preset Saved: {}", input.value));
                             }
-                        },
+                        }
 
                         app::InputMode::PlaylistRename(old_name) => {
                             if !input.value.is_empty() {
@@ -69,46 +69,59 @@ pub async fn handle_input_box(
                                 {
                                     let new_name = input.value.clone();
                                     let old = old_name.clone();
-                                    
+
                                     let result = with_mpd(app, args, |mpd| {
                                         match mpd.pl_rename(&old, &new_name) {
                                             Ok(_) => mpd.playlists().map_err(|e| e.to_string()),
-                                            Err(e) => Err(e.to_string())
+                                            Err(e) => Err(e.to_string()),
                                         }
                                     });
 
                                     if let Some(res) = result {
                                         match res {
                                             Ok(playlists) => {
-                                                app.show_toast(&format!("✏️ Renamed: {} -> {}", old, new_name));
-                                                app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                                                app.show_toast(&format!(
+                                                    "✏️ Renamed: {} -> {}",
+                                                    old, new_name
+                                                ));
+                                                app.playlists = playlists
+                                                    .iter()
+                                                    .map(|p| p.name.clone())
+                                                    .collect();
                                                 if app.library_mode == app::LibraryMode::Playlists {
-                                                     app.library_items = app.playlists.iter().map(|p| app::LibraryItem {
-                                                         name: p.clone(),
-                                                         item_type: app::LibraryItemType::Playlist,
-                                                         artist: None, duration_ms: None, path: None
-                                                     }).collect();
+                                                    app.library_items = app
+                                                        .playlists
+                                                        .iter()
+                                                        .map(|p| app::LibraryItem {
+                                                            name: p.clone(),
+                                                            item_type:
+                                                                app::LibraryItemType::Playlist,
+                                                            artist: None,
+                                                            duration_ms: None,
+                                                            path: None,
+                                                        })
+                                                        .collect();
                                                 }
-                                            },
+                                            }
                                             Err(e) => app.show_toast(&format!("❌ Error: {}", e)),
                                         }
                                     }
                                 }
                             }
-                        },
+                        }
                     }
                 }
-            },
+            }
             KeyCode::Backspace => {
                 if let Some(input) = app.input_state.as_mut() {
                     input.value.pop();
                 }
-            },
+            }
             KeyCode::Char(c) => {
                 if let Some(input) = app.input_state.as_mut() {
                     input.value.push(c);
                 }
-            },
+            }
             _ => {}
         }
         return true;
@@ -118,23 +131,23 @@ pub async fn handle_input_box(
     if app.tag_edit.is_some() {
         match key.code {
             KeyCode::Esc => {
-                app.tag_edit = None;  // Cancel
-            },
+                app.tag_edit = None; // Cancel
+            }
             KeyCode::Tab => {
                 if let Some(ref mut tag) = app.tag_edit {
                     tag.next_field();
                 }
-            },
+            }
             KeyCode::BackTab => {
                 if let Some(ref mut tag) = app.tag_edit {
                     tag.prev_field();
                 }
-            },
+            }
             KeyCode::Backspace => {
                 if let Some(ref mut tag) = app.tag_edit {
                     tag.active_value().pop();
                 }
-            },
+            }
             KeyCode::Enter => {
                 // Save tags using lofty
                 if let Some(ref tag_state) = app.tag_edit {
@@ -168,21 +181,24 @@ pub async fn handle_input_box(
 
                             // Save to file
                             if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .read(true).write(true).open(&full_path)
+                                .read(true)
+                                .write(true)
+                                .open(&full_path)
                             {
                                 use lofty::file::AudioFile;
-                                let _ = tagged_file.save_to(&mut file, lofty::config::WriteOptions::default());
+                                let _ = tagged_file
+                                    .save_to(&mut file, lofty::config::WriteOptions::default());
                             }
                         }
                     }
                 }
                 app.tag_edit = None;
-            },
+            }
             KeyCode::Char(c) => {
                 if let Some(ref mut tag) = app.tag_edit {
                     tag.active_value().push(c);
                 }
-            },
+            }
             _ => {}
         }
         return true;
@@ -194,7 +210,10 @@ pub async fn handle_input_box(
             KeyCode::Esc => {
                 app.search_active = false;
                 // Restore previous mode or default to Directory
-                let target_mode = app.previous_library_mode.take().unwrap_or(app::LibraryMode::Directory);
+                let target_mode = app
+                    .previous_library_mode
+                    .take()
+                    .unwrap_or(app::LibraryMode::Directory);
                 app.library_mode = target_mode;
                 app.search_query.clear();
 
@@ -206,38 +225,49 @@ pub async fn handle_input_box(
                     let target = target_mode;
                     let current_path = app.browse_path.join("/");
 
-                    if let Some(items) = with_mpd(app, args, |mpd| {
-                        match target {
-                            app::LibraryMode::Directory => {
-                                fetch_directory_items(mpd, &current_path).ok().map(|i| (None, i))
-                            },
-                            app::LibraryMode::Playlists => {
-                                if let Ok(playlists) = mpd.playlists() {
-                                    let items = playlists.iter().map(|p| app::LibraryItem {
+                    if let Some(items) = with_mpd(app, args, |mpd| match target {
+                        app::LibraryMode::Directory => fetch_directory_items(mpd, &current_path)
+                            .ok()
+                            .map(|i| (None, i)),
+                        app::LibraryMode::Playlists => {
+                            if let Ok(playlists) = mpd.playlists() {
+                                let items = playlists
+                                    .iter()
+                                    .map(|p| app::LibraryItem {
                                         name: p.name.clone(),
                                         item_type: app::LibraryItemType::Playlist,
-                                        artist: None, duration_ms: None, path: None
-                                    }).collect();
-                                    Some((Some(playlists), items))
-                                } else { None }
-                            },
-                            _ => Some((None, Vec::new()))
+                                        artist: None,
+                                        duration_ms: None,
+                                        path: None,
+                                    })
+                                    .collect();
+                                Some((Some(playlists), items))
+                            } else {
+                                None
+                            }
                         }
-                    }).flatten() {
+                        _ => Some((None, Vec::new())),
+                    })
+                    .flatten()
+                    {
                         let (playlists_opt, items) = items;
                         if let Some(playlists) = playlists_opt {
-                             app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
+                            app.playlists = playlists.iter().map(|p| p.name.clone()).collect();
                         }
-                        
-                        if target == app::LibraryMode::Directory || target == app::LibraryMode::Playlists {
-                             app.library_items = items;
+
+                        if target == app::LibraryMode::Directory
+                            || target == app::LibraryMode::Playlists
+                        {
+                            app.library_items = items;
                         } else if target == app::LibraryMode::Queue {
-                             app.library_items.clear();
+                            app.library_items.clear();
                         }
                     }
                 }
-            },
-            KeyCode::Backspace => { app.search_query.pop(); },
+            }
+            KeyCode::Backspace => {
+                app.search_query.pop();
+            }
             KeyCode::Enter => {
                 app.search_active = false;
                 // Perform MPD search
@@ -246,26 +276,36 @@ pub async fn handle_input_box(
                     if let Some(songs) = with_mpd(app, args, |mpd| mpd.listall().ok()).flatten() {
                         let matcher = SkimMatcherV2::default();
                         // Fuzzy Match 🔍
-                        let mut matched_items: Vec<(i64, mpd::Song)> = songs.into_iter()
+                        let mut matched_items: Vec<(i64, mpd::Song)> = songs
+                            .into_iter()
                             .filter_map(|s| {
-                                let search_text = format!("{} {} {}",
+                                let search_text = format!(
+                                    "{} {} {}",
                                     s.title.as_deref().unwrap_or(""),
                                     s.artist.as_deref().unwrap_or(""),
                                     s.file
                                 );
-                                matcher.fuzzy_match(&search_text, &app.search_query).map(|score| (score, s))
+                                matcher
+                                    .fuzzy_match(&search_text, &app.search_query)
+                                    .map(|score| (score, s))
                             })
                             .collect();
 
                         // Sort by score (descending)
                         matched_items.sort_by(|a, b| b.0.cmp(&a.0));
 
-                        app.library_items = matched_items.into_iter()
+                        app.library_items = matched_items
+                            .into_iter()
                             .take(50)
                             .map(|(_, s)| app::LibraryItem {
                                 name: s.title.clone().unwrap_or_else(|| s.file.clone()),
                                 item_type: app::LibraryItemType::Song,
-                                artist: s.artist.clone().or_else(|| s.tags.iter().find(|(k,_)| k == "Artist").map(|(_,v)| v.clone())),
+                                artist: s.artist.clone().or_else(|| {
+                                    s.tags
+                                        .iter()
+                                        .find(|(k, _)| k == "Artist")
+                                        .map(|(_, v)| v.clone())
+                                }),
                                 duration_ms: s.duration.map(|d| d.as_millis() as u64),
                                 path: Some(s.file),
                             })
@@ -273,21 +313,21 @@ pub async fn handle_input_box(
                         app.library_selected = 0;
                     }
                 }
-            },
+            }
             KeyCode::Up => {
                 app.library_selected = app.library_selected.saturating_sub(1);
-            },
+            }
             KeyCode::Down => {
                 let max = app.library_items.len().max(1);
                 if app.library_selected < max - 1 {
                     app.library_selected += 1;
                 }
-            },
+            }
             KeyCode::Char(c) => app.search_query.push(c),
             _ => {}
         }
         return true;
     }
-    
+
     false
 }

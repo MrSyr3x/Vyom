@@ -42,11 +42,8 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
     // ━━━ CONTENT ━━━
     if app.library_items.is_empty() {
         lines.push(
-            Line::from(Span::styled(
-                "Empty folder",
-                Style::default().fg(muted),
-            ))
-            .alignment(Alignment::Center),
+            Line::from(Span::styled("Empty folder", Style::default().fg(muted)))
+                .alignment(Alignment::Center),
         );
     } else {
         let start_idx = app
@@ -63,8 +60,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
         {
             let actual_idx = start_idx + display_idx;
             let is_sel = actual_idx == app.library_selected;
-            let is_folder =
-                matches!(item.item_type, crate::app::LibraryItemType::Folder);
+            let is_folder = matches!(item.item_type, crate::app::LibraryItemType::Folder);
 
             let raw_name = if item.name.trim().is_empty() {
                 item.path.clone().unwrap_or_else(|| "[Unnamed]".to_string())
@@ -88,14 +84,8 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                 let icon = "📁";
 
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  {} ", marker),
-                        Style::default().fg(m_color),
-                    ),
-                    Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(blue),
-                    ),
+                    Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                    Span::styled(format!("{} ", icon), Style::default().fg(blue)),
                     Span::styled(name, n_style),
                 ]));
             } else {
@@ -114,9 +104,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                     (
                         "●",
                         cream,
-                        Style::default()
-                            .fg(theme.text)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
                         Style::default().fg(theme.text),
                         Style::default().fg(green),
                     )
@@ -132,26 +120,14 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                 let icon = "♪";
 
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  {} ", marker),
-                        Style::default().fg(m_color),
-                    ),
-                    Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(green),
-                    ),
-                    Span::styled(
-                        format!("{:title_w$}", name, title_w = title_w),
-                        t_style,
-                    ),
+                    Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
+                    Span::styled(format!("{} ", icon), Style::default().fg(green)),
+                    Span::styled(format!("{:title_w$}", name, title_w = title_w), t_style),
                     Span::styled(
                         format!("{:artist_w$}", artist_disp, artist_w = artist_w),
                         a_style,
                     ),
-                    Span::styled(
-                        format!("{:>time_w$}", time, time_w = time_w),
-                        tm_style,
-                    ),
+                    Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
                 ]));
             }
         }

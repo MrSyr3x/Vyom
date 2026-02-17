@@ -11,7 +11,9 @@ pub struct UserConfig {
 }
 
 fn default_music_dir() -> String {
-    let home = dirs::home_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| ".".to_string());
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
     format!("{}/Music", home)
 }
 

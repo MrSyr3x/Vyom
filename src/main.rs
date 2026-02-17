@@ -1,8 +1,8 @@
 use anyhow::Result;
 use crossterm::{
+    cursor::{Hide, Show},
     event::{Event, EventStream},
     execute,
-    cursor::{Hide, Show},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::StreamExt;
@@ -17,12 +17,12 @@ use vyom::artwork;
 use vyom::audio::pipeline as audio_pipeline;
 
 use vyom::player;
-use vyom::ui::theme;
 use vyom::ui;
+use vyom::ui::theme;
 
-use clap::Parser;
 use app::cli::Args;
 use app::events::AppEvent;
+use clap::Parser;
 
 use app::{ArtworkState, LyricsState};
 use artwork::ArtworkRenderer;
@@ -63,11 +63,13 @@ async fn main() -> Result<()> {
     let mut stdout = io::stdout();
     // Enable Kitty Keyboard Protocol (DisambiguateEscapeCodes | ReportAllKeysAsEscapeCodes)
     // This often stops terminals from "peeking" at modifiers for local shortcuts
-    use crossterm::event::{PushKeyboardEnhancementFlags, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags};
+    use crossterm::event::{
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    };
     execute!(
-        stdout, 
-        EnterAlternateScreen, 
-        Hide, 
+        stdout,
+        EnterAlternateScreen,
+        Hide,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
     let backend = CrosstermBackend::new(stdout);
@@ -100,12 +102,19 @@ async fn main() -> Result<()> {
 
     // Load persisted state (Split into UserConfig and PersistentState)
     let (user_config, persistent_state) = AppConfig::load();
-    
+
     if persistent_state.eq_enabled && !is_audio_master {
         // Maybe log that EQ is visual only?
     }
 
-    let mut app = app::App::new(app_show_lyrics, is_tmux, is_mpd_mode, source_app, user_config.clone(), persistent_state);
+    let mut app = app::App::new(
+        app_show_lyrics,
+        is_tmux,
+        is_mpd_mode,
+        source_app,
+        user_config.clone(),
+        persistent_state,
+    );
 
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
 
@@ -130,7 +139,11 @@ async fn main() -> Result<()> {
     // Player Backend Selection 🎛️
     #[cfg(feature = "mpd")]
     let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
-        std::sync::Arc::new(player::MpdPlayer::new(args.mpd_host.clone(), args.mpd_port, user_config.music_directory.clone()))
+        std::sync::Arc::new(player::MpdPlayer::new(
+            args.mpd_host.clone(),
+            args.mpd_port,
+            user_config.music_directory.clone(),
+        ))
     } else {
         std::sync::Arc::from(player::get_player())
     };
@@ -164,11 +177,11 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         // Track last status poll time to run it less frequently (e.g., 1s)
         let mut last_status_poll = std::time::Instant::now();
-        
+
         loop {
             // Use shared player reference
             let player_ref = player_poll.clone();
-            
+
             // Poll track & queue frequently (250ms)
             // Poll status (shuffle/repeat) less frequently (1s) to save AppleScript calls
             let should_poll_status = last_status_poll.elapsed() >= Duration::from_secs(1);
@@ -181,9 +194,9 @@ async fn main() -> Result<()> {
                 let queue = player_ref.get_queue();
 
                 let (shuffle, repeat) = if should_poll_status {
-                     (player_ref.get_shuffle().ok(), player_ref.get_repeat().ok())
+                    (player_ref.get_shuffle().ok(), player_ref.get_repeat().ok())
                 } else {
-                     (None, None)
+                    (None, None)
                 };
 
                 (track, queue, shuffle, repeat)
@@ -212,12 +225,14 @@ async fn main() -> Result<()> {
         // Use file modification time for efficient hot reloading 🌶️
         let theme_path = theme::get_theme_path();
         let path_clone = theme_path.clone();
-        
+
         let mut last_modified = tokio::task::spawn_blocking(move || {
             std::fs::metadata(&path_clone)
                 .and_then(|m| m.modified())
                 .ok()
-        }).await.unwrap_or(None);
+        })
+        .await
+        .unwrap_or(None);
 
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -226,7 +241,8 @@ async fn main() -> Result<()> {
             let check_path = theme_path.clone(); // Clone for closure
             let metadata_result = tokio::task::spawn_blocking(move || {
                 std::fs::metadata(&check_path).and_then(|m| m.modified())
-            }).await;
+            })
+            .await;
 
             if let Ok(Ok(modified)) = metadata_result {
                 // If file modified or we never saw it before (and it exists)
@@ -252,12 +268,14 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         let config_path = AppConfig::get_config_path();
         let path_clone = config_path.clone();
-        
+
         let mut last_modified = tokio::task::spawn_blocking(move || {
             std::fs::metadata(&path_clone)
                 .and_then(|m| m.modified())
                 .ok()
-        }).await.unwrap_or(None);
+        })
+        .await
+        .unwrap_or(None);
 
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -265,15 +283,16 @@ async fn main() -> Result<()> {
             let check_path = config_path.clone();
             let metadata_result = tokio::task::spawn_blocking(move || {
                 std::fs::metadata(&check_path).and_then(|m| m.modified())
-            }).await;
+            })
+            .await;
 
             if let Ok(Ok(modified)) = metadata_result {
                 if last_modified.is_none_or(|last| modified > last) {
                     last_modified = Some(modified);
-                    
+
                     // Reload config to get new keys
                     // Hot Reload: Reload config, verify keys changed
-                    let (new_user_config, _) = AppConfig::load(); 
+                    let (new_user_config, _) = AppConfig::load();
                     if tx_config
                         .send(AppEvent::KeyConfigUpdate(Box::new(new_user_config.keys)))
                         .await
@@ -345,16 +364,18 @@ async fn main() -> Result<()> {
                     if let Some(track) = info {
                         // Sync Volume from Player 🔊
                         // GRACE PERIOD: Ignore player updates for 1s after user action
-                        // EXCEPTION: MPD volume sync disabled because it often reports 0 (disabled mixer) causing UI reset loop
+                        // SMART GUARD: Ignore MPD volume if it reports 0 while we are > 0 (prevents mute bug)
+                        let mpd_volume_bug = track.source == "MPD" && track.volume.unwrap_or(0) == 0 && app.app_volume > 0;
+
                         let ignore_sync = app.last_volume_action
                             .map(|t| t.elapsed() < std::time::Duration::from_millis(1000))
                             .unwrap_or(false)
-                            || track.source == "MPD";
+                            || mpd_volume_bug;
 
                         if !ignore_sync {
                             if let Some(vol) = track.volume {
                                 let new_vol = (vol as u8).min(100);
-                                // TOLERANCE: Allow +/- 1 variance to prevent Spotify jitter (55 vs 54) 🤏
+                                // TOLERANCE: Allow +/- 1 variance to prevent jitter
                                 if (app.app_volume as i16 - new_vol as i16).abs() > 1 {
                                     app.app_volume = new_vol;
                                     audio_pipeline.set_volume(new_vol);
@@ -376,7 +397,7 @@ async fn main() -> Result<()> {
                             last_track_id = id.clone();
                             // Critical: Set Loading state immediately
                             app.lyrics = LyricsState::Loading;
-                            
+
                             // Audio Engine: Check for sample rate change 🎵 (REMOVED: Caused sped up audio)
                             // if let Some(rate) = track.sample_rate {
                             //    if rate > 0 && rate != audio_pipeline.get_sample_rate() {
@@ -514,7 +535,7 @@ async fn main() -> Result<()> {
                         app::QueueItem { title, artist, duration_ms, is_current, file_path }
                     }).collect();
                 },
-                
+
                 AppEvent::StatusUpdate(shuffle, repeat) => {
                     app.shuffle = shuffle;
                     app.repeat = repeat;
@@ -568,7 +589,7 @@ async fn main() -> Result<()> {
                                     // If no selection, we don't need to animate it (or set it to target? no leave it)
                                     done_selected = true;
                                 }
-                                
+
                                 // Clean up if both reached target
                                 if done_offset && done_selected {
                                     app.lyrics_offset = None;
@@ -594,7 +615,12 @@ async fn main() -> Result<()> {
     audio_pipeline.stop();
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, Show, PopKeyboardEnhancementFlags)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        Show,
+        PopKeyboardEnhancementFlags
+    )?;
     terminal.show_cursor()?;
 
     // Save state on exit

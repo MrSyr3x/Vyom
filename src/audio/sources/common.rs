@@ -112,14 +112,16 @@ pub fn build_audio_stream(
 
                 // Visualize (Post-fill)
                 if let Some(vis) = &vb_clone {
-                     Visualizer::push_samples(vis, data, channels);
+                    Visualizer::push_samples(vis, data, channels);
                 }
             },
             |err| eprintln!("Audio stream error: {}", err),
             None,
         )
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
-        
-    stream.play().map_err(|e| format!("Failed to play stream: {}", e))?;
+
+    stream
+        .play()
+        .map_err(|e| format!("Failed to play stream: {}", e))?;
     Ok(stream)
 }

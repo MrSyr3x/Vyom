@@ -44,23 +44,20 @@ impl LyricsFetcher {
     fn get_cache_path(artist: &str, title: &str) -> Option<PathBuf> {
         // Use dirs::cache_dir() for correct XDG_CACHE_HOME support
         let cache_root = dirs::cache_dir().unwrap_or_else(|| {
-             let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-             PathBuf::from(home).join(".cache")
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".cache")
         });
 
         // Use SipHash for safe, fixed-length filename (Prevents path traversal)
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         format!("{}{}", artist, title).hash(&mut hasher);
         let hash = hasher.finish();
         let filename = format!("{:016x}.json", hash);
 
-        let path = cache_root
-            .join("vyom")
-            .join("lyrics")
-            .join(filename);
+        let path = cache_root.join("vyom").join("lyrics").join(filename);
         Some(path)
     }
 
@@ -147,10 +144,8 @@ impl LyricsFetcher {
         // 0. Check Local File (Embedded or LRC) 📂 - BLOCKING WRAPPER
         if let Some(path_str) = file_path {
             let p = path_str.clone();
-            let local_res = tokio::task::spawn_blocking(move || {
-                Self::fetch_impl_local(&p)
-            }).await?;
-            
+            let local_res = tokio::task::spawn_blocking(move || Self::fetch_impl_local(&p)).await?;
+
             if let Some(res) = local_res {
                 // local_res is already LyricsFetchResult, so it has the source inside
                 return Ok(res);
@@ -160,7 +155,7 @@ impl LyricsFetcher {
         // 1. Check Disk Cache 💾 - BLOCKING WRAPPER
         let artist_owned = artist.to_string();
         let title_owned = title.to_string();
-        
+
         let (cache_path, cached_lyrics) = tokio::task::spawn_blocking(move || {
             let path = Self::get_cache_path(&artist_owned, &title_owned);
             let lyrics = if let Some(p) = &path {
@@ -169,10 +164,11 @@ impl LyricsFetcher {
                 None
             };
             (path, lyrics)
-        }).await?;
+        })
+        .await?;
 
         if let Some(lyrics) = cached_lyrics {
-             return Ok(LyricsFetchResult::Found(lyrics, "Disk Cache".to_string()));
+            return Ok(LyricsFetchResult::Found(lyrics, "Disk Cache".to_string()));
         }
 
         let url = "https://lrclib.net/api/get";
@@ -235,7 +231,7 @@ impl LyricsFetcher {
             if let Some(path) = &cache_path {
                 let path_clone = path.clone();
                 let lines_clone = lines.clone();
-                 tokio::task::spawn_blocking(move || {
+                tokio::task::spawn_blocking(move || {
                     Self::save_to_cache(&path_clone, &lines_clone);
                 });
             }
@@ -277,7 +273,10 @@ impl LyricsFetcher {
                 if is_synced {
                     let lines = Self::parse_lrc_content(&content);
                     if !lines.is_empty() {
-                        return Some(LyricsFetchResult::Found(lines, "Local .lrc file".to_string()));
+                        return Some(LyricsFetchResult::Found(
+                            lines,
+                            "Local .lrc file".to_string(),
+                        ));
                     }
                 }
             }
@@ -298,7 +297,10 @@ impl LyricsFetcher {
                         if is_synced {
                             let lines = Self::parse_lrc_content(&lyrics);
                             if !lines.is_empty() {
-                                return Some(LyricsFetchResult::Found(lines, "Embedded Tags".to_string()));
+                                return Some(LyricsFetchResult::Found(
+                                    lines,
+                                    "Embedded Tags".to_string(),
+                                ));
                             }
                         }
                     }

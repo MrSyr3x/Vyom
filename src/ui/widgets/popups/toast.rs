@@ -57,11 +57,9 @@ pub fn render(f: &mut Frame, app: &App) {
 
                 let style = Style::default().fg(theme.blue).add_modifier(Modifier::BOLD);
 
-                let text = Paragraph::new(Line::from(vec![
-                    Span::styled(message.as_str(), style),
-                ]))
-                .alignment(Alignment::Center)
-                .block(block);
+                let text = Paragraph::new(Line::from(vec![Span::styled(message.as_str(), style)]))
+                    .alignment(Alignment::Center)
+                    .block(block);
 
                 f.render_widget(text, visible_area);
             }

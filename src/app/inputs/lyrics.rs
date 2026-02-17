@@ -1,6 +1,6 @@
-use crossterm::event::KeyEvent;
 use crate::app::{self, App, LyricsState};
 use crate::player::PlayerTrait;
+use crossterm::event::KeyEvent;
 use std::sync::Arc;
 
 pub async fn handle_lyrics_events(
@@ -17,9 +17,10 @@ pub async fn handle_lyrics_events(
     if keys.matches(key, &keys.nav_down) || keys.matches(key, &keys.nav_down_alt) {
         if let LyricsState::Loaded(ref lines, _) = &app.lyrics {
             let max = lines.len().saturating_sub(1);
-                let current_playing = {
+            let current_playing = {
                 let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
-                lines.iter()
+                lines
+                    .iter()
                     .position(|l| l.timestamp_ms > track_ms)
                     .map(|i| if i > 0 { i - 1 } else { 0 })
                     .unwrap_or(max)
@@ -36,9 +37,10 @@ pub async fn handle_lyrics_events(
     if keys.matches(key, &keys.nav_up) || keys.matches(key, &keys.nav_up_alt) {
         if let LyricsState::Loaded(ref lines, _) = &app.lyrics {
             let max = lines.len().saturating_sub(1);
-                let current_playing = {
+            let current_playing = {
                 let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
-                lines.iter()
+                lines
+                    .iter()
                     .position(|l| l.timestamp_ms > track_ms)
                     .map(|i| if i > 0 { i - 1 } else { 0 })
                     .unwrap_or(max)

@@ -1,10 +1,10 @@
-use crossterm::event::KeyEvent;
-use crate::app::{self, App};
+use crate::app::cli::Args;
 #[cfg(feature = "mpd")]
 use crate::app::with_mpd;
-use crate::player::PlayerTrait;
+use crate::app::{self, App};
 use crate::audio::pipeline::AudioPipeline;
-use crate::app::cli::Args;
+use crate::player::PlayerTrait;
+use crossterm::event::KeyEvent;
 use std::sync::Arc;
 
 pub async fn handle_player_events(
@@ -45,7 +45,7 @@ pub async fn handle_player_events(
         app.last_volume_action = Some(std::time::Instant::now());
         audio_pipeline.set_volume(new_vol);
         if let Err(e) = player.set_volume(new_vol) {
-             app.show_toast(&format!("Error: {}", e));
+            app.show_toast(&format!("Error: {}", e));
         }
         app.show_toast(&format!("🔊 Volume: {}%", new_vol));
         return true;
@@ -58,18 +58,22 @@ pub async fn handle_player_events(
         app.last_volume_action = Some(std::time::Instant::now());
         audio_pipeline.set_volume(new_vol);
         if let Err(e) = player.set_volume(new_vol) {
-             app.show_toast(&format!("Error: {}", e));
+            app.show_toast(&format!("Error: {}", e));
         }
         app.show_toast(&format!("🔉 Volume: {}%", new_vol));
         return true;
     }
 
     // Seek Backward ('h' or 'Left') - blocked in EQ
-    if (keys.matches(key, &keys.seek_backward) || keys.matches(key, &keys.nav_left_alt)) && app.view_mode != app::ViewMode::EQ {
+    if (keys.matches(key, &keys.seek_backward) || keys.matches(key, &keys.nav_left_alt))
+        && app.view_mode != app::ViewMode::EQ
+    {
         let now = std::time::Instant::now();
         let is_new_sequence = if let Some(last) = app.last_seek_time {
             now.duration_since(last).as_millis() >= 500
-        } else { true };
+        } else {
+            true
+        };
 
         if is_new_sequence {
             if let Some(_track) = &app.track {
@@ -93,12 +97,16 @@ pub async fn handle_player_events(
             }
 
             // Increment Seek ID (Generation Counter) ⏩
-            app.seek_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            app.seek_id
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
             let global_seek_id = app.seek_id.clone();
 
             let player_bg = player.clone();
-            let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
+            let original_track_key = app
+                .track
+                .as_ref()
+                .map(|t| (t.name.clone(), t.artist.clone()));
             tokio::task::spawn_blocking(move || {
                 // Check if a newer seek request has come in
                 if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
@@ -118,11 +126,15 @@ pub async fn handle_player_events(
     }
 
     // Seek Forward ('l' or 'Right') - blocked in EQ
-    if (keys.matches(key, &keys.seek_forward) || keys.matches(key, &keys.nav_right_alt)) && app.view_mode != app::ViewMode::EQ {
+    if (keys.matches(key, &keys.seek_forward) || keys.matches(key, &keys.nav_right_alt))
+        && app.view_mode != app::ViewMode::EQ
+    {
         let now = std::time::Instant::now();
         let is_new_sequence = if let Some(last) = app.last_seek_time {
             now.duration_since(last).as_millis() >= 500
-        } else { true };
+        } else {
+            true
+        };
 
         if is_new_sequence {
             if let Some(_track) = &app.track {
@@ -146,14 +158,18 @@ pub async fn handle_player_events(
             }
 
             // Increment Seek ID (Generation Counter) ⏩
-            app.seek_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            app.seek_id
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
             let global_seek_id = app.seek_id.clone();
 
             let player_bg = player.clone();
-            let original_track_key = app.track.as_ref().map(|t| (t.name.clone(), t.artist.clone()));
+            let original_track_key = app
+                .track
+                .as_ref()
+                .map(|t| (t.name.clone(), t.artist.clone()));
             tokio::task::spawn_blocking(move || {
-                 // Check if a newer seek request has come in
+                // Check if a newer seek request has come in
                 if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
                     return; // Stale request, discard 🗑️
                 }
@@ -176,32 +192,37 @@ pub async fn handle_player_events(
             let new_state = !app.shuffle;
             let _ = player.shuffle(new_state);
             app.shuffle = new_state;
-            app.show_toast(&format!("🔀 Shuffle: {}", if new_state { "ON" } else { "OFF" }));
+            app.show_toast(&format!(
+                "🔀 Shuffle: {}",
+                if new_state { "ON" } else { "OFF" }
+            ));
         } else {
             #[cfg(feature = "mpd")]
             {
                 let new_shuffle_state = with_mpd(app, args, |mpd| {
                     if let Ok(status) = mpd.status() {
-                         let new_state = !status.random;
-                         let _ = mpd.random(new_state);
-                         Some(new_state)
-                    } else { None }
-                }).flatten();
+                        let new_state = !status.random;
+                        let _ = mpd.random(new_state);
+                        Some(new_state)
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
 
                 if let Some(state) = new_shuffle_state {
                     app.shuffle = state;
                     app.show_toast(&format!("🔀 Shuffle: {}", if state { "ON" } else { "OFF" }));
                 }
             }
-
         }
-         return true;
+        return true;
     }
 
     // Repeat toggle
     if keys.matches(key, &keys.repeat) {
         use crate::player::RepeatMode;
-        
+
         let next_mode = match app.repeat {
             RepeatMode::Off => RepeatMode::Playlist,
             RepeatMode::Playlist => RepeatMode::Single,
@@ -211,7 +232,7 @@ pub async fn handle_player_events(
         if args.controller {
             let _ = player.repeat(next_mode);
             app.repeat = next_mode;
-             let icon = match next_mode {
+            let icon = match next_mode {
                 RepeatMode::Off => "OFF",
                 RepeatMode::Playlist => "🔁 All",
                 RepeatMode::Single => "🔂 One",
@@ -227,14 +248,15 @@ pub async fn handle_player_events(
                         RepeatMode::Playlist => (true, false),
                         RepeatMode::Single => (true, true),
                     };
-                    
-                    if let Ok(_) = mpd.repeat(repeat) {
+
+                    if mpd.repeat(repeat).is_ok() {
                         let _ = mpd.single(single);
-                         Some(next_mode)
+                        Some(next_mode)
                     } else {
                         None
                     }
-                }).flatten();
+                })
+                .flatten();
 
                 if let Some(mode) = new_mode {
                     app.repeat = mode;
@@ -251,9 +273,18 @@ pub async fn handle_player_events(
     }
 
     // Audio Device Switching
-    if app.view_mode == app::ViewMode::Lyrics || app.view_mode == app::ViewMode::Visualizer || app.view_mode == app::ViewMode::EQ {
-        if keys.matches(key, &keys.device_next) { app.next_device(); return true; }
-        if keys.matches(key, &keys.device_prev) { app.prev_device(); return true; }
+    if app.view_mode == app::ViewMode::Lyrics
+        || app.view_mode == app::ViewMode::Visualizer
+        || app.view_mode == app::ViewMode::EQ
+    {
+        if keys.matches(key, &keys.device_next) {
+            app.next_device();
+            return true;
+        }
+        if keys.matches(key, &keys.device_prev) {
+            app.prev_device();
+            return true;
+        }
     }
 
     false

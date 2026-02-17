@@ -8,12 +8,12 @@ use ratatui::{
 
 pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>) {
     let theme = &app.theme;
-    
+
     // Unified aesthetic: spacious, centered, clean
     let time_w = 6;
     let artist_w = width / 4;
     let title_w = width.saturating_sub(artist_w + time_w + 10);
-    // content_h is passed as height. 
+    // content_h is passed as height.
     // In original code, it subtracted 8 from inner height, but here we might pass the remaining height?
     // Let's assume height IS the content height available.
     let content_h = height;
@@ -79,9 +79,7 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
                 (
                     "●",
                     cream,
-                    Style::default()
-                        .fg(theme.text)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
                     Style::default().fg(theme.text),
                     Style::default().fg(green),
                 )
@@ -104,38 +102,24 @@ pub fn render(app: &mut App, width: usize, height: usize, lines: &mut Vec<Line>)
             };
 
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {} ", marker),
-                    Style::default().fg(m_color),
-                ),
+                Span::styled(format!("  {} ", marker), Style::default().fg(m_color)),
                 Span::styled(
                     format!("{:>2}  ", num),
                     Style::default().fg(if is_sel { green } else { muted }),
                 ),
                 Span::styled(
                     "♪ ",
-                    Style::default().fg(if item.is_current {
-                        pink
-                    } else {
-                        green
-                    }),
+                    Style::default().fg(if item.is_current { pink } else { green }),
                 ),
                 Span::styled(
-                    format!(
-                        "{:title_w$}",
-                        title,
-                        title_w = title_w.saturating_sub(2)
-                    ),
+                    format!("{:title_w$}", title, title_w = title_w.saturating_sub(2)),
                     t_style,
                 ),
                 Span::styled(
                     format!("{:artist_w$}", artist, artist_w = artist_w),
                     a_style,
                 ),
-                Span::styled(
-                    format!("{:>time_w$}", time, time_w = time_w),
-                    tm_style,
-                ),
+                Span::styled(format!("{:>time_w$}", time, time_w = time_w), tm_style),
             ]));
         }
     }
