@@ -162,19 +162,45 @@ async fn main() -> Result<()> {
     let tx_spotify = tx.clone();
     let player_poll = player.clone();
     tokio::spawn(async move {
+        // Track last status poll time to run it less frequently (e.g., 1s)
+        let mut last_status_poll = std::time::Instant::now();
+        
         loop {
             // Use shared player reference
             let player_ref = player_poll.clone();
-            let track_result = tokio::task::spawn_blocking(move || {
+            
+            // Poll track & queue frequently (250ms)
+            // Poll status (shuffle/repeat) less frequently (1s) to save AppleScript calls
+            let should_poll_status = last_status_poll.elapsed() >= Duration::from_secs(1);
+            if should_poll_status {
+                last_status_poll = std::time::Instant::now();
+            }
+
+            let result = tokio::task::spawn_blocking(move || {
                 let track = player_ref.get_current_track();
                 let queue = player_ref.get_queue();
-                (track, queue)
+
+                let (shuffle, repeat) = if should_poll_status {
+                     (player_ref.get_shuffle().ok(), player_ref.get_repeat().ok())
+                } else {
+                     (None, None)
+                };
+
+                (track, queue, shuffle, repeat)
             })
             .await;
 
-            if let Ok((Ok(info), Ok(queue))) = track_result {
-                let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
-                let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
+            if let Ok((track_res, queue_res, shuffle_opt, repeat_opt)) = result {
+                if let Ok(info) = track_res {
+                    let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
+                }
+                if let Ok(queue) = queue_res {
+                    let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
+                }
+                // Send status update if we polled it successfully
+                if let (Some(s), Some(r)) = (shuffle_opt, repeat_opt) {
+                    let _ = tx_spotify.send(AppEvent::StatusUpdate(s, r)).await;
+                }
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
@@ -488,26 +514,14 @@ async fn main() -> Result<()> {
                         app::QueueItem { title, artist, duration_ms, is_current, file_path }
                     }).collect();
                 },
+                
+                AppEvent::StatusUpdate(shuffle, repeat) => {
+                    app.shuffle = shuffle;
+                    app.repeat = repeat;
+                },
 
                 AppEvent::Tick => {
                     app.on_tick();
-
-                    // Poll Shuffle/Repeat status every ~2 seconds (120 ticks at 16ms/tick, roughly)
-                    // Actually tick rate is 100ms? View main loop setup.
-                    // Assuming ~10Hz or similar.
-                    // Poll Shuffle/Repeat status every ~1 second
-                    // This is now enabled for BOTH Controller AND MPD modes
-                    use std::time::{SystemTime, UNIX_EPOCH};
-                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-                    
-                    static mut LAST_SYNC: u64 = 0;
-                    unsafe {
-                        if now > LAST_SYNC {
-                            LAST_SYNC = now;
-                            if let Ok(s) = player.get_shuffle() { app.shuffle = s; }
-                            if let Ok(r) = player.get_repeat() { app.repeat = r; }
-                        }
-                    }
 
                     if app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some()) {
                         if let (LyricsState::Loaded(lyrics, _), Some(_track)) = (&app.lyrics, &app.track) {
