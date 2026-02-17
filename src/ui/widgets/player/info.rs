@@ -36,7 +36,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                         "FLAC" | "ALAC" | "WAV" | "AIFF" | "APE" | "DSD" | "PCM"
                     )
                 })
-                .unwrap_or(false);
+                .unwrap_or(false)
+                || track.bitrate.map(|b| b > 600).unwrap_or(false);
 
             // Determine Quality Tier
             if is_studio {

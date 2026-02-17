@@ -133,7 +133,11 @@ impl PlayerTrait for MpdPlayer {
                     },
                     artwork_url,
                     source: "MPD".to_string(),
-                    codec: None, 
+                    codec: std::path::Path::new(&song.file)
+                        .extension()
+                        .map(|os| os.to_string_lossy().to_string())
+                        .or_else(|| find_tag(&song.tags, "Format"))
+                        .or_else(|| find_tag(&song.tags, "Codec")), 
                     bitrate: status.bitrate.map(|b| b as u32),
                     sample_rate: audio_format.map(|(r, _, _)| r),
                     bit_depth: audio_format.map(|(_, b, _)| b as u8),
