@@ -62,6 +62,30 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         let main_height = (available_height * 65 / 100).max(2);
         let reflection_height = available_height.saturating_sub(main_height);
 
+        // Pre-calculate bar heights for consistent UI
+        let mut ui_bar_heights = Vec::with_capacity(bar_count);
+        let source_len = app.visualizer_bars.len();
+
+        for i in 0..bar_count {
+            // RESAMPLING LOGIC: Map UI Bar (i) to Data Range (start..end)
+            let start_idx = (i * source_len) / bar_count;
+            let end_idx = ((i + 1) * source_len).div_ceil(bar_count).min(source_len);
+            
+            // Ensure we have at least one index and bounds are safe
+            let start_idx = start_idx.min(source_len.saturating_sub(1));
+            let end_idx = end_idx.max(start_idx + 1);
+
+            // Aggregation: Use MAX to preserve peaks
+            let mut bar_height = 0.0f32;
+            for j in start_idx..end_idx {
+                let val = app.visualizer_bars.get(j).copied().unwrap_or(0.0);
+                if val > bar_height {
+                    bar_height = val;
+                }
+            }
+            ui_bar_heights.push(bar_height);
+        }
+
         // === MAIN BARS (grow upward from center) ===
         for row in 0..main_height {
             let mut spans = Vec::new();
@@ -75,25 +99,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             for i in 0..bar_count {
-                // RESAMPLING LOGIC: Map UI Bar (i) to Data Range (start..end)
-                // This ensures we show the FULL spectrum regardless of screen width.
-                // "No Cutoffs" guarantee.
-                let source_len = app.visualizer_bars.len();
-                let start_idx = (i * source_len) / bar_count;
-                let end_idx =
-                    ((i + 1) * source_len).div_ceil(bar_count).min(source_len);
-                // Ensure we have at least one index
-                let start_idx = start_idx.min(source_len.saturating_sub(1));
-                let end_idx = end_idx.max(start_idx + 1);
-
-                // Aggregation: Use MAX to preserve peaks (don't lose the beat)
-                let mut bar_height = 0.0f32;
-                for j in start_idx..end_idx {
-                    let val = app.visualizer_bars.get(j).copied().unwrap_or(0.0);
-                    if val > bar_height {
-                        bar_height = val;
-                    }
-                }
+                let bar_height = ui_bar_heights[i];
 
                 // Map bar position to gradient color
                 let color_idx =
@@ -136,9 +142,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             for i in 0..bar_count {
-                let bar_idx = i % app.visualizer_bars.len().max(1);
-                let bar_height =
-                    app.visualizer_bars.get(bar_idx).copied().unwrap_or(0.3);
+                let bar_height = ui_bar_heights[i];
 
                 // Dimmed gradient for reflection
                 let color_idx =
@@ -150,7 +154,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 };
 
                 // Reflection is inverted and fades out
-                let char = if bar_height * 0.5 > threshold {
+                let char = if bar_height * 0.65 > threshold { // Increased from 0.5 to 0.65 for visibility
                     "░░"
                 } else {
                     "  "

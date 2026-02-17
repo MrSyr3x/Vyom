@@ -204,21 +204,32 @@ pub fn handle_library_events(
                 app.playlists.get(selected).cloned()
             } else { None };
 
-            let new_playlists = with_mpd(app, args, |mpd| {
+            let (new_playlists, success) = with_mpd(app, args, |mpd| {
                 match mode {
-                    LibraryMode::Queue => { let _ = mpd.delete(selected as u32); None },
+                    LibraryMode::Queue => { 
+                        let ok = mpd.delete(selected as u32).is_ok();
+                        (None, ok) 
+                    },
                     LibraryMode::Playlists => {
                             if let Some(name) = pl_name {
-                            let _ = mpd.pl_remove(&name);
-                            mpd.playlists().ok() // Return new playlists
-                        } else { None }
+                            let ok = mpd.pl_remove(&name).is_ok();
+                            (mpd.playlists().ok(), ok) // Return new playlists and success status
+                        } else { (None, false) }
                     },
-                    _ => None
+                    _ => (None, false)
                 }
-            });
+            }).unwrap_or((None, false)); // Default to failure if MPD connection fails
 
-            if let Some(Some(pls)) = new_playlists {
+            if let Some(pls) = new_playlists {
                 app.playlists = pls.iter().map(|p| p.name.clone()).collect();
+            }
+
+            if success {
+                match mode {
+                    LibraryMode::Queue => app.show_toast("🗑️ Removed from Queue"),
+                    LibraryMode::Playlists => app.show_toast("🗑️ Playlist Deleted"),
+                    _ => {}
+                }
             }
             
             if mode == LibraryMode::Playlists && app.library_selected > 0 && app.library_selected >= app.playlists.len() {
