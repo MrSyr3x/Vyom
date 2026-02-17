@@ -84,7 +84,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     // and pass the `inner` rect to these specific components.
     
     match &app.lyrics {
-        LyricsState::Loaded(lyrics) => {
+        LyricsState::Loaded(lyrics, _) => {
             let height = inner_lyrics_area.height as usize;
             let track_ms = app.track.as_ref().map(|t| t.position_ms).unwrap_or(0);
 

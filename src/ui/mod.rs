@@ -1,4 +1,5 @@
 pub mod components;
+pub mod widgets;
 pub mod layout;
 pub mod theme;
 pub mod utils;
@@ -26,14 +27,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     );
 
     // 3. Render Music Card (Left)
-    components::player_card::render(f, content_layout.left, app);
+    widgets::player::render(f, content_layout.left, app);
 
     // 4. Render Right Panel (Lyrics / Visualizer / Library / EQ)
     if let Some(right_area) = content_layout.right {
         match app.view_mode {
             ViewMode::Lyrics => components::lyrics::render(f, right_area, app),
             ViewMode::Visualizer => components::visualizer::render(f, right_area, app),
-            ViewMode::Library => components::library::render(f, right_area, app),
+            ViewMode::Library => widgets::library::render(f, right_area, app),
             ViewMode::EQ => components::eq::render(f, right_area, app),
         }
     }
@@ -60,6 +61,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
     // 6. Render Popups (Overlays)
-    // Note: popups::render handles active states internally
-    components::popups::render(f, app);
+    // Note: widgets::popups::render handles active states internally
+    widgets::popups::render(f, app);
 }

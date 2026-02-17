@@ -6,7 +6,7 @@ pub mod cli;
 pub mod library_helpers;
 pub mod events;
 pub mod keys;
-pub mod input_handler;
+pub mod inputs;
 pub mod tmux;
 pub mod lock;
 pub use state::*;

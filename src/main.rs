@@ -19,7 +19,6 @@ use vyom::audio::pipeline as audio_pipeline;
 use vyom::player;
 use vyom::ui::theme;
 use vyom::ui;
-use vyom::inputs::handle_input;
 
 use clap::Parser;
 use app::cli::Args;
@@ -310,7 +309,7 @@ async fn main() -> Result<()> {
                     if matches!(key.code, crossterm::event::KeyCode::Modifier(_)) {
                         continue;
                     }
-                    handle_input(key, &mut app, &player, &mut audio_pipeline, &args, &tx, &client).await;
+                    app::inputs::handle_event(key, &mut app, &player, &mut audio_pipeline, &args, &tx, &client).await;
                 },
                 AppEvent::Input(_) => {},
 
@@ -371,7 +370,7 @@ async fn main() -> Result<()> {
 
                             // 1. Check Cache
                             if let Some(cached) = app.lyrics_cache.get(&id) {
-                                app.lyrics = LyricsState::Loaded(cached.clone());
+                                app.lyrics = LyricsState::Loaded(cached.clone(), "Memory Cache".to_string());
                             } else {
                                 // 2. If not in cache, fetch
                                 let tx_lyrics = tx.clone();
@@ -384,8 +383,8 @@ async fn main() -> Result<()> {
                                     let fetcher = LyricsFetcher::new(client);
                                     use vyom::app::lyrics::LyricsFetchResult;
                                     match fetcher.fetch(&artist, &name, dur, file_path.as_ref()).await {
-                                        Ok(LyricsFetchResult::Found(lyrics)) => {
-                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics))).await;
+                                        Ok(LyricsFetchResult::Found(lyrics, source)) => {
+                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics, source))).await;
                                         },
                                         Ok(LyricsFetchResult::Instrumental) => {
                                              let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Instrumental)).await;
@@ -466,7 +465,7 @@ async fn main() -> Result<()> {
                 },
                 AppEvent::LyricsUpdate(id, state) => {
                     // Update cache if loaded
-                    if let LyricsState::Loaded(ref l) = state {
+                    if let LyricsState::Loaded(ref l, _) = state {
                          if app.lyrics_cache.len() > 50 {
                              app.lyrics_cache.clear();
                          }
@@ -511,7 +510,7 @@ async fn main() -> Result<()> {
                     }
 
                     if app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some()) {
-                        if let (LyricsState::Loaded(lyrics), Some(_track)) = (&app.lyrics, &app.track) {
+                        if let (LyricsState::Loaded(lyrics, _), Some(_track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
                             // Find target line based on interpolated time
                             let target_idx = lyrics.iter()

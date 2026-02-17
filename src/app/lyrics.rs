@@ -19,8 +19,9 @@ pub struct LrclibResponse {
 }
 
 #[derive(Debug)]
+
 pub enum LyricsFetchResult {
-    Found(Vec<LyricLine>),
+    Found(Vec<LyricLine>, String),
     Instrumental,
     None,
 }
@@ -151,6 +152,7 @@ impl LyricsFetcher {
             }).await?;
             
             if let Some(res) = local_res {
+                // local_res is already LyricsFetchResult, so it has the source inside
                 return Ok(res);
             }
         }
@@ -170,7 +172,7 @@ impl LyricsFetcher {
         }).await?;
 
         if let Some(lyrics) = cached_lyrics {
-             return Ok(LyricsFetchResult::Found(lyrics));
+             return Ok(LyricsFetchResult::Found(lyrics, "Disk Cache".to_string()));
         }
 
         let url = "https://lrclib.net/api/get";
@@ -198,7 +200,7 @@ impl LyricsFetcher {
                         // If JSON parse fails, it's a data issue, don't retry network
                         if let Ok(data) = resp.json::<LrclibResponse>().await {
                             let result = self.parse(data);
-                            if let LyricsFetchResult::Found(ref lines) = result {
+                            if let LyricsFetchResult::Found(ref lines, _) = result {
                                 if let Some(path) = &cache_path {
                                     let path_clone = path.clone();
                                     let lines_clone = lines.clone();
@@ -229,7 +231,7 @@ impl LyricsFetcher {
 
         // 3. Try Search (/search) with CLEAN title and ORIGINAL artist
         let search_res = self.search(artist, &safe_title, duration_ms).await?;
-        if let LyricsFetchResult::Found(ref lines) = search_res {
+        if let LyricsFetchResult::Found(ref lines, _) = search_res {
             if let Some(path) = &cache_path {
                 let path_clone = path.clone();
                 let lines_clone = lines.clone();
@@ -247,7 +249,7 @@ impl LyricsFetcher {
         let safe_artist = Self::clean_artist(artist);
         if safe_artist != artist.to_lowercase() {
             let primary_res = self.search(&safe_artist, &safe_title, duration_ms).await?;
-            if let LyricsFetchResult::Found(ref lines) = primary_res {
+            if let LyricsFetchResult::Found(ref lines, _) = primary_res {
                 if let Some(path) = &cache_path {
                     let path_clone = path.clone();
                     let lines_clone = lines.clone();
@@ -275,7 +277,7 @@ impl LyricsFetcher {
                 if is_synced {
                     let lines = Self::parse_lrc_content(&content);
                     if !lines.is_empty() {
-                        return Some(LyricsFetchResult::Found(lines));
+                        return Some(LyricsFetchResult::Found(lines, "Local .lrc file".to_string()));
                     }
                 }
             }
@@ -296,7 +298,7 @@ impl LyricsFetcher {
                         if is_synced {
                             let lines = Self::parse_lrc_content(&lyrics);
                             if !lines.is_empty() {
-                                return Some(LyricsFetchResult::Found(lines));
+                                return Some(LyricsFetchResult::Found(lines, "Embedded Tags".to_string()));
                             }
                         }
                     }
@@ -393,7 +395,7 @@ impl LyricsFetcher {
             if lines.is_empty() {
                 LyricsFetchResult::None
             } else {
-                LyricsFetchResult::Found(lines)
+                LyricsFetchResult::Found(lines, "LRCLIB API".to_string())
             }
         } else {
             LyricsFetchResult::None
@@ -411,7 +413,7 @@ impl LyricsFetcher {
             if lines.is_empty() {
                 LyricsFetchResult::None
             } else {
-                LyricsFetchResult::Found(lines)
+                LyricsFetchResult::Found(lines, "LRCLIB API".to_string())
             }
         } else {
             LyricsFetchResult::None

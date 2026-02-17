@@ -1,160 +1,24 @@
-use super::config::{AppConfig, EqPreset, PersistentState, UserConfig};
-use super::keys::KeyConfig;
-use super::lyrics::LyricLine;
+use crate::app::config::{EqPreset, PersistentState, UserConfig, get_default_presets};
+use crate::app::keys::KeyConfig;
 use crate::audio::device as audio_device;
 use crate::audio::dsp::EqGains;
 use crate::audio::visualizer::Visualizer;
 use crate::player::{TrackInfo, RepeatMode};
 use crate::ui::theme::Theme;
-use image::DynamicImage;
 use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum LyricsState {
-    Idle,
-    Loading,
-    Loaded(Vec<LyricLine>),
-    Instrumental,
-    Failed(String),
-    NotFound,
-}
+pub mod lyrics;
+pub mod artwork;
+pub mod library;
+pub mod ui;
 
-pub enum ArtworkState {
-    Idle,
-    Loading,
-    Loaded(DynamicImage),
-    Failed,
-}
-
-/// View mode for the right panel 🎛️
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum ViewMode {
-    #[default]
-    Lyrics,
-    Visualizer,
-    Library, // Renamed from Queue → Library
-    EQ,
-}
-
-/// Library panel sub-mode 📚
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum LibraryMode {
-    #[default]
-    Queue, // Current queue
-    Directory, // Neo-tree style music folder browser
-    Search,    // Search library
-    Playlists, // Saved playlists
-}
-
-/// Tag editing state 🏷️
-#[derive(Debug, Clone)]
-pub struct TagEditState {
-    pub file_path: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub active_field: usize, // 0=title, 1=artist, 2=album
-}
-
-/// Generic Input Popup Mode 📝
-#[derive(Debug, Clone, PartialEq)]
-pub enum InputMode {
-    PlaylistSave,
-
-    EqSave,
-    PlaylistRename(String), // Carries old name
-}
-
-/// Generic Input Popup State 📝
-#[derive(Debug, Clone)]
-pub struct InputState {
-    pub mode: InputMode,
-    pub title: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Toast {
-    pub message: String,
-    pub start_time: Instant,
-    pub deadline: Instant,
-}
-
-impl InputState {
-    pub fn new(mode: InputMode, title: &str, initial_value: &str) -> Self {
-        Self {
-            mode,
-            title: title.to_string(),
-            value: initial_value.to_string(),
-        }
-    }
-}
-
-impl TagEditState {
-    pub fn new(path: &str, title: &str, artist: &str, album: &str) -> Self {
-        Self {
-            file_path: path.to_string(),
-            title: title.to_string(),
-            artist: artist.to_string(),
-            album: album.to_string(),
-            active_field: 0,
-        }
-    }
-
-    pub fn active_value(&mut self) -> &mut String {
-        match self.active_field {
-            0 => &mut self.title,
-            1 => &mut self.artist,
-            _ => &mut self.album,
-        }
-    }
-
-    pub fn next_field(&mut self) {
-        self.active_field = (self.active_field + 1) % 3;
-    }
-
-    pub fn prev_field(&mut self) {
-        self.active_field = if self.active_field == 0 {
-            2
-        } else {
-            self.active_field - 1
-        };
-    }
-}
-
-/// Library browser item type
-#[derive(Debug, Clone, PartialEq)]
-pub enum LibraryItemType {
-    Artist,
-    Album,
-    Song,
-
-    Folder,
-    Playlist,
-}
-
-/// Library browser item
-#[derive(Debug, Clone)]
-pub struct LibraryItem {
-    pub name: String,
-    pub item_type: LibraryItemType,
-    pub artist: Option<String>,   // For songs/albums
-    pub duration_ms: Option<u64>, // For songs
-    pub path: Option<String>,     // MPD file path
-}
-
-/// Queue item for MPD playlist display 📋
-#[derive(Debug, Clone)]
-pub struct QueueItem {
-    pub title: String,
-    pub artist: String,
-    pub duration_ms: u64,
-    pub is_current: bool,
-    pub file_path: String, // For tag editing
-}
+pub use lyrics::LyricsState;
+pub use artwork::ArtworkState;
+pub use library::{LibraryMode, LibraryItem, LibraryItemType, QueueItem};
+pub use ui::{ViewMode, InputMode, InputState, TagEditState, Toast};
 
 pub struct App {
     pub theme: Theme,
@@ -167,7 +31,7 @@ pub struct App {
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
     pub lyrics_selected: Option<usize>, // Manual selection for j/k navigation
-    pub lyrics_cache: HashMap<String, Vec<LyricLine>>,
+    pub lyrics_cache: HashMap<String, Vec<crate::app::lyrics::LyricLine>>,
     pub last_scroll_time: Option<Instant>,
 
     // Seek Accumulation State ⏩
@@ -267,7 +131,7 @@ impl App {
     ) -> Self {
         // Merge defaults with user saved presets (from state)
         // If state.presets is empty, it means we don't have custom ones yet, but we should always have defaults available.
-        let mut presets = AppConfig::get_default_presets();
+        let mut presets = get_default_presets();
         presets.extend(state.presets.clone());
 
         // RESTORE 'Custom' PRESET FROM STATE IF NEEDED 🧠
@@ -542,7 +406,7 @@ impl App {
             let name = self.presets[self.eq_preset].name.as_str();
 
             // Prevent deleting defaults
-            let defaults = AppConfig::get_default_presets();
+            let defaults = get_default_presets();
             if defaults.iter().any(|d| d.name == name) {
                 return Err("Cannot delete built-in preset".to_string());
             }
@@ -560,7 +424,7 @@ impl App {
     }
 
     pub fn save_state(&self) {
-        let defaults = AppConfig::get_default_presets();
+        let defaults = get_default_presets();
         let default_names: Vec<&String> = defaults.iter().map(|p| &p.name).collect();
 
         // Save only user presets that are NOT defaults and NOT "Custom"

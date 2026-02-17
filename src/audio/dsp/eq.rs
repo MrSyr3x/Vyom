@@ -1,12 +1,10 @@
 //! Built-in DSP 10-Band Parametric Equalizer
-//!
-//! Uses biquad peaking EQ filters for each frequency band.
-//! Provides real-time adjustable gain for each band.
 
 #[cfg(feature = "eq")]
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz, Type, Q_BUTTERWORTH_F32};
 
 use std::sync::{Arc, RwLock};
+use super::limiter::limiter;
 
 /// 10-band EQ center frequencies in Hz
 pub const EQ_FREQUENCIES: [f32; 10] = [
@@ -332,38 +330,6 @@ impl DspEqualizer {
             self.filters_left[i] = biquad::DirectForm1::<f32>::new(coeffs);
             self.filters_right[i] = biquad::DirectForm1::<f32>::new(coeffs);
         }
-    }
-}
-
-/// Transparent soft-knee limiter
-/// Linear up to threshold (0.85), then exponentially saturates to ceiling (0.98).
-/// Preserves volume and dynamics better than simple tanh.
-fn limiter(x: f32) -> f32 {
-    let threshold = 0.85; // ~ -1.4 dB
-    let ceiling = 0.98;   // ~ -0.2 dB (headroom)
-
-    if x.abs() <= threshold {
-        x
-    } else {
-         // Exponential soft clip
-         // y = ceiling - (ceiling - threshold) * exp(- (abs(x) - threshold) / (ceiling - threshold))
-         let abs_x = x.abs();
-         let diff = ceiling - threshold;
-         let y = ceiling - diff * (-(abs_x - threshold) / diff).exp();
-         
-         if x > 0.0 { y } else { -y }
-    }
-}
-
-/// Soft clipping function (kept for reference)
-#[allow(dead_code)]
-fn soft_clip(x: f32) -> f32 {
-    if x > 1.0 {
-        1.0 - (-x + 1.0).exp() * 0.5
-    } else if x < -1.0 {
-        -1.0 + (x + 1.0).exp() * 0.5
-    } else {
-        x
     }
 }
 
