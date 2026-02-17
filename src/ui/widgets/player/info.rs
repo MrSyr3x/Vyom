@@ -24,8 +24,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             let is_hires = track.bit_depth.map(|b| b > 16).unwrap_or(false)
                 || track.sample_rate.map(|r| r > 48000).unwrap_or(false);
             
-            let is_studio = track.bit_depth.map(|b| b >= 24).unwrap_or(false) 
-                && track.sample_rate.map(|r| r >= 192000).unwrap_or(false);
+            // DSD is technically 1-bit, but effectively Studio Master quality
+            let is_dsd = track.codec.as_ref().map(|c| c.to_uppercase().contains("DSD")).unwrap_or(false);
+
+            let is_studio = (track.bit_depth.map(|b| b >= 24).unwrap_or(false) 
+                && track.sample_rate.map(|r| r >= 192000).unwrap_or(false))
+                || is_dsd;
 
             let is_lossless = track
                 .codec
@@ -33,7 +37,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 .map(|c| {
                     matches!(
                         c.to_uppercase().as_str(),
-                        "FLAC" | "ALAC" | "WAV" | "AIFF" | "APE" | "DSD" | "PCM"
+                        "FLAC" | "ALAC" | "WAV" | "AIFF" | "APE" | "PCM"
                     )
                 })
                 .unwrap_or(false)
@@ -42,7 +46,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Determine Quality Tier
             if is_studio {
                 spans.push(Span::styled(
-                    "\u{00A0}Studio\u{00A0}",
+                    if is_dsd { "\u{00A0}DSD\u{00A0}" } else { "\u{00A0}Studio\u{00A0}" },
                     Style::default().fg(theme.base).bg(theme.magenta).add_modifier(Modifier::BOLD),
                 ));
             } else if is_hires {
@@ -65,7 +69,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                             "\u{00A0}HQ\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.green).add_modifier(Modifier::BOLD),
                         ));
-                    } else if bitrate >= 160 {
+                    } else if bitrate >= 128 { // Standard Quality (e.g. 128k AAC/Opus)
                          spans.push(Span::styled(
                             "\u{00A0}SQ\u{00A0}",
                             Style::default().fg(theme.base).bg(theme.yellow).add_modifier(Modifier::BOLD),
