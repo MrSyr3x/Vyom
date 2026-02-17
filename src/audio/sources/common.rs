@@ -80,37 +80,40 @@ pub fn build_audio_stream(
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let mut buffer = if let Ok(buf) = rb_clone.lock() {
-                    buf
+                // Audio Thread: Must run fast! ⚡
+                if let Ok(mut buffer) = rb_clone.lock() {
+                    let mut fade = f32::from_bits(fl_clone.load(Ordering::Relaxed));
+                    let vol = gv_clone.load(Ordering::Relaxed);
+                    let gain = (vol as f32 / 100.0).powf(3.0); // Cubic volume curve
+
+                    for sample in data.iter_mut() {
+                        if let Some(s) = buffer.pop_front() {
+                            if fade < 1.0 {
+                                fade = (fade + fade_speed).min(1.0);
+                            }
+                            *sample = s * fade * gain;
+                        } else {
+                            // Buffer underrun protection (fade out?)
+                            if fade > 0.0 {
+                                fade = (fade - fade_speed).max(0.0);
+                            }
+                            *sample = 0.0;
+                        }
+                    }
+                    // Save fade state
+                    fl_clone.store(fade.to_bits(), Ordering::Relaxed);
                 } else {
-                    return;
-                };
-                let mut fade = f32::from_bits(fl_clone.load(Ordering::Relaxed));
-
-                // Calculate Gain 🎚️
-                let vol = gv_clone.load(Ordering::Relaxed);
-                let gain = (vol as f32 / 100.0).powf(3.0);
-
-                for sample in data.iter_mut() {
-                    if let Some(s) = buffer.pop_front() {
-                        if fade < 1.0 {
-                            fade = (fade + fade_speed).min(1.0);
-                        }
-                        *sample = s * fade * gain;
-                    } else {
-                        if fade > 0.0 {
-                            fade = (fade - fade_speed).max(0.0);
-                        }
+                    // CRITICAL FIX: If lock fails, output silence instead of garbage/repeat
+                    // This prevents the "buzzing" sound from uninitialized buffers
+                    for sample in data.iter_mut() {
                         *sample = 0.0;
                     }
                 }
 
-                // Visualize
+                // Visualize (Post-fill)
                 if let Some(vis) = &vb_clone {
                      Visualizer::push_samples(vis, data, channels);
                 }
-
-                fl_clone.store(fade.to_bits(), Ordering::Relaxed);
             },
             |err| eprintln!("Audio stream error: {}", err),
             None,
