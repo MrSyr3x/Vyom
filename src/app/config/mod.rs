@@ -80,6 +80,7 @@ impl AppConfig {
                             replay_gain_mode: legacy.replay_gain_mode,
                             volume: legacy.volume,
                             presets: legacy.presets, // Migrate presets too
+                            art_style: crate::app::state::artwork::ArtStyle::default(),
                         };
                         s.save(); // Save to new state.toml immediately
                         s

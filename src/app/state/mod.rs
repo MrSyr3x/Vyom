@@ -18,7 +18,9 @@ pub mod ui;
 pub use artwork::ArtworkState;
 pub use library::{LibraryItem, LibraryItemType, LibraryMode, QueueItem};
 pub use lyrics::LyricsState;
+
 pub use ui::{InputMode, InputState, TagEditState, Toast, ViewMode};
+pub use artwork::ArtStyle;
 
 pub struct App {
     pub theme: Theme,
@@ -28,6 +30,8 @@ pub struct App {
     pub track: Option<TrackInfo>,
     pub lyrics: LyricsState, // changed from Option<Vec<LyricLine>>
     pub artwork: ArtworkState,
+    pub art_style: ArtStyle,
+    // Manual Scroll State (None = Auto-sync)
     // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
     pub lyrics_selected: Option<usize>, // Manual selection for j/k navigation
@@ -159,6 +163,7 @@ impl App {
             track: None,
             lyrics: LyricsState::Idle,
             artwork: ArtworkState::Idle,
+            art_style: state.art_style,
             lyrics_offset: None,
             lyrics_selected: None,
             lyrics_cache: HashMap::new(),
@@ -304,6 +309,18 @@ impl App {
         self.eq_gains.set_enabled(self.eq_enabled);
     }
 
+    /// Cycle through artwork styles (Block -> Ascii -> Braille -> Off) 🎨
+    pub fn cycle_art_style(&mut self) {
+        self.art_style = match self.art_style {
+            ArtStyle::Block => ArtStyle::Ascii,
+            ArtStyle::Ascii => ArtStyle::Braille,
+            ArtStyle::Braille => ArtStyle::Off,
+            ArtStyle::Off => ArtStyle::Block,
+        };
+        self.save_state();
+        self.show_toast(&format!("🎨 Art Style: {:?}", self.art_style));
+    }
+
     pub fn show_toast(&mut self, message: &str) {
         let now = Instant::now();
         let duration = std::time::Duration::from_millis(2000); // 2s display time
@@ -446,6 +463,7 @@ impl App {
             replay_gain_mode: self.replay_gain_mode,
             volume: self.app_volume,
             presets: clean_presets,
+            art_style: self.art_style,
         };
         state.save();
     }

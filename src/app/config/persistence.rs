@@ -26,6 +26,9 @@ pub struct PersistentState {
     // Moved from UserConfig:
     #[serde(default)]
     pub presets: Vec<EqPreset>,
+    
+    #[serde(default)]
+    pub art_style: crate::app::state::artwork::ArtStyle,
 }
 
 fn default_bands() -> [f32; 10] {
@@ -48,6 +51,7 @@ impl Default for PersistentState {
             replay_gain_mode: 0,
             volume: 50,
             presets: Vec::new(),
+            art_style: crate::app::state::artwork::ArtStyle::default(),
         }
     }
 }

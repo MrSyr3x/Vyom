@@ -19,6 +19,9 @@ pub struct KeyConfig {
     pub view_visualizer: String,
     pub view_library: String,
     pub view_eq: String,
+    
+    // Artwork
+    pub cycle_art: String,
 
     // Seek
     pub seek_forward: String,
@@ -94,6 +97,8 @@ impl Default for KeyConfig {
             view_visualizer: "2".to_string(),
             view_library: "3".to_string(),
             view_eq: "4".to_string(),
+            
+            cycle_art: "A".to_string(),
 
             seek_forward: "l".to_string(),
             seek_backward: "h".to_string(),

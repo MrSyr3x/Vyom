@@ -286,6 +286,12 @@ pub async fn handle_player_events(
             return true;
         }
     }
+    
+    // Cycle Art Style ('A')
+    if keys.matches(key, &keys.cycle_art) {
+        app.cycle_art_style();
+        return true;
+    }
 
     false
 }
