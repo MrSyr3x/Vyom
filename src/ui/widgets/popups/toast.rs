@@ -47,6 +47,26 @@ pub fn render(f: &mut Frame, app: &App) {
             let visible_area = full_area.intersection(f.area());
 
             if !visible_area.is_empty() {
+                // SEAMLESS Z-INDEX FIX:
+                // Ratatui-image sets `skip = true` for all cells underneath a Kitty image.
+                // This forces Ratatui to ignore them on render, making popups draw *under* Kitty!
+                // By manually un-skipping the cells within our popup's bounding box AND clearing them,
+                // we carve a perfect hole out of the Kitty graphic layer, ensuring our popup draws on top!
+                let buf = f.buffer_mut();
+                for y in visible_area.top()..visible_area.bottom() {
+                    for x in visible_area.left()..visible_area.right() {
+                        if let Some(cell) = buf.cell_mut((x, y)) {
+                            // Un-skip the cell so Ratatui's renderer acknowledges it
+                            cell.set_skip(false);
+                            // Wipe it clean
+                            cell.set_char(' ');
+                            cell.set_bg(ratatui::style::Color::Reset);
+                            cell.set_fg(ratatui::style::Color::Reset);
+                        }
+                    }
+                }
+
+                // Render Background Clear (Redundant physically but good for semantic layout if needed)
                 f.render_widget(Clear, visible_area);
 
                 let block = Block::default()

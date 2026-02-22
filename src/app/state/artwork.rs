@@ -7,6 +7,7 @@ pub enum ArtStyle {
     Block,   // Half-block truecolor
     Ascii,   // Character based on luminance
     Braille, // 2x4 dot pattern
+    Image,   // ratatui-image (Sixel/Kitty)
     Off,     // Hidden
 }
 

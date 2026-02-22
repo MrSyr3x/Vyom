@@ -252,6 +252,19 @@ pub fn render(f: &mut Frame, app: &App) {
     let y = (f.area().height.saturating_sub(height)) / 2;
     let area = Rect::new(x, y, width, height);
 
+    // SEAMLESS Z-INDEX FIX: Un-skip cells so Ratatui overwrites Kitty images
+    let buf = f.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_skip(false);
+                cell.set_char(' ');
+                cell.set_bg(ratatui::style::Color::Reset);
+                cell.set_fg(ratatui::style::Color::Reset);
+            }
+        }
+    }
+
     // 3. Clear and Render
     f.render_widget(Clear, area);
 

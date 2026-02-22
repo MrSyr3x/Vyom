@@ -6,7 +6,7 @@ use ratatui::{
     style::Modifier,
     style::Style,
     text::{Line, Span},
-    widgets::{block::Title, Block, BorderType, Borders},
+    widgets::{Block, BorderType, Borders},
     Frame,
 };
 
@@ -19,10 +19,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let theme = &app.theme;
 
     // --- MUSIC CARD ---
-    let music_title = Title::from(Line::from(vec![Span::styled(
+    let music_title = Line::from(vec![Span::styled(
         " Now Playing ",
         Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
-    )]));
+    )]);
 
     let music_block = Block::default()
         .borders(Borders::ALL)

@@ -21,6 +21,8 @@ pub use lyrics::LyricsState;
 
 pub use ui::{InputMode, InputState, TagEditState, Toast, ViewMode};
 pub use artwork::ArtStyle;
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::StatefulProtocol;
 
 pub struct App {
     pub theme: Theme,
@@ -122,6 +124,14 @@ pub struct App {
     /// Persistent MPD Connection 🔌
     #[cfg(feature = "mpd")]
     pub mpd_client: Option<mpd::Client>,
+
+    /// Image Artwork Rendering 🎨
+    pub image_picker: Picker,
+    pub image_protocol: Option<StatefulProtocol>,
+
+    /// Internal standard to track if a popup was just closed
+    /// so we can force re-transmit the kitty graphic.
+    pub had_popup_last_frame: bool,
 }
 
 impl App {
@@ -240,6 +250,13 @@ impl App {
 
             #[cfg(feature = "mpd")]
             mpd_client: None,
+
+            // Find best image protocol based on terminal capabilities
+            // Use query if possible, fallback to a sensible halfblocks picker if terminal is dumb
+            image_picker: ratatui_image::picker::Picker::from_query_stdio()
+                    .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks()),
+            image_protocol: None,
+            had_popup_last_frame: false,
         };
 
         // CRITICAL FIX: Sync loaded EQ state to DSP engine immediately! 🔊
@@ -314,7 +331,8 @@ impl App {
         self.art_style = match self.art_style {
             ArtStyle::Block => ArtStyle::Ascii,
             ArtStyle::Ascii => ArtStyle::Braille,
-            ArtStyle::Braille => ArtStyle::Off,
+            ArtStyle::Braille => ArtStyle::Image,
+            ArtStyle::Image => ArtStyle::Off,
             ArtStyle::Off => ArtStyle::Block,
         };
         self.save_state();

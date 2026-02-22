@@ -336,6 +336,23 @@ async fn main() -> Result<()> {
             app.visualizer_bars = app.visualizer.get_bars(64);
         }
 
+        // --- SEAMLESS POPUP OVERLAY FIX ---
+        // Ratatui's image renderer uses `skip=true` for cells covered by the Kitty image.
+        // Ratatui's buffer differ completely ignores skipped cells.
+        // When a popup closes, the text characters belonging to the popup get stranded underneath the image.
+        // By forcing a `terminal.clear()` exactly when the popup closes, we wipe the ghost text 
+        // from the screen and force Ratatui to redraw the image placeholders smoothly.
+        let has_popup = app.show_keyhints
+            || app.show_audio_info
+            || app.input_state.is_some()
+            || app.tag_edit.is_some()
+            || app.toast.is_some();
+
+        if !has_popup && app.had_popup_last_frame {
+            terminal.clear()?;
+        }
+        app.had_popup_last_frame = has_popup;
+
         terminal.draw(|f| ui::ui(f, &mut app))?;
 
         tokio::select! {
@@ -453,16 +470,17 @@ async fn main() -> Result<()> {
                                 let tx_art = tx.clone();
                                 let (artist, album) = (track.artist.clone(), track.album.clone());
                                 let client = client.clone();
+                                let fetch_id = id.clone();
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new(client);
                                     match renderer.fetch_itunes_artwork(&artist, &album).await {
                                         Ok(url) => {
                                              match renderer.fetch_image(&url).await {
-                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
-                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
+                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id.clone(), ArtworkState::Failed)).await; }
                                              }
                                         },
-                                        Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                        Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
                                     }
                                 });
                             }
@@ -474,14 +492,15 @@ async fn main() -> Result<()> {
                                     app.artwork = ArtworkState::Loading;
                                     let tx_art = tx.clone();
                                     let fp = file_path.clone();
+                                    let fetch_id = id.clone();
                                     tokio::spawn(async move {
                                         let result = tokio::task::spawn_blocking(move || {
                                             ArtworkRenderer::extract_embedded_art(&fp)
                                         }).await;
 
                                         match result {
-                                            Ok(Ok(img)) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
-                                            _ => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                            Ok(Ok(img)) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
+                                            _ => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
                                         }
                                     });
                                 }
@@ -495,11 +514,12 @@ async fn main() -> Result<()> {
                                 app.artwork = ArtworkState::Loading;
                                 let tx_art = tx.clone();
                                 let client = client.clone();
+                                let fetch_id = id.clone();
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new(client);
                                     match renderer.fetch_image(&url).await {
-                                         Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Loaded(img))).await; },
-                                         Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(ArtworkState::Failed)).await; }
+                                         Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
+                                         Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
                                     }
                                 });
                             }
@@ -524,7 +544,12 @@ async fn main() -> Result<()> {
                          app.lyrics = state;
                     }
                 },
-                AppEvent::ArtworkUpdate(data) => app.artwork = data,
+                AppEvent::ArtworkUpdate(id, data) => {
+                    if id == last_track_id {
+                        app.artwork = data;
+                        app.image_protocol = None;
+                    }
+                },
                 AppEvent::ThemeUpdate(new_theme) => app.theme = new_theme,
                 AppEvent::KeyConfigUpdate(new_keys) => {
                     app.keys = *new_keys;

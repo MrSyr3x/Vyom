@@ -4,14 +4,13 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{block::Title, Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let theme = &app.theme;
 
-    // Dynamic title based on view mode 🎛️
     let mode_title = match app.view_mode {
         ViewMode::Lyrics => " Lyrics ".to_string(),
         ViewMode::Visualizer => " Visualizer ".to_string(),
@@ -19,12 +18,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         ViewMode::EQ => " Sound ".to_string(),
     };
 
-    let lyrics_title = Title::from(Line::from(vec![Span::styled(
+    let lyrics_title = Line::from(vec![Span::styled(
         mode_title,
         Style::default()
             .fg(theme.magenta)
             .add_modifier(Modifier::BOLD),
-    )]));
+    )]);
 
     let credits_title = Line::from(vec![Span::styled(
         " ~ by syr3x </3 ",

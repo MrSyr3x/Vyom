@@ -303,6 +303,19 @@ pub fn render(f: &mut Frame, app: &App) {
     let popup_y = f.area().height.saturating_sub(popup_height + 2);
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
+    // SEAMLESS Z-INDEX FIX: Un-skip cells so Ratatui overwrites Kitty images
+    let buf = f.buffer_mut();
+    for y in popup_area.top()..popup_area.bottom() {
+        for x in popup_area.left()..popup_area.right() {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_skip(false);
+                cell.set_char(' ');
+                cell.set_bg(ratatui::style::Color::Reset);
+                cell.set_fg(ratatui::style::Color::Reset);
+            }
+        }
+    }
+
     // Clear background
     f.render_widget(Clear, popup_area);
 
