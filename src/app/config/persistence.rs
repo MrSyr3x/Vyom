@@ -83,7 +83,9 @@ impl PersistentState {
     pub fn save(&self) {
         let path = super::AppConfig::get_state_path();
         if let Ok(content) = toml::to_string_pretty(self) {
-            let _ = fs::write(path, content);
+            if let Err(e) = fs::write(path, content) {
+                tracing::warn!("Failed to save persistent state: {}", e);
+            }
         }
     }
 }

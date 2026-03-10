@@ -334,7 +334,9 @@ pub fn handle_library_events(key: KeyEvent, app: &mut App, args: &Args) -> bool 
             let result_items = with_mpd(app, args, |mpd| match mode {
                 app::LibraryMode::Queue => {
                     if let Some(idx) = queue_idx {
-                        let _ = mpd.switch(idx);
+                        if let Err(e) = mpd.switch(idx) {
+                            tracing::warn!("Failed to switch MPD track: {}", e);
+                        }
                     }
                     None
                 }
@@ -352,7 +354,9 @@ pub fn handle_library_events(key: KeyEvent, app: &mut App, args: &Args) -> bool 
                                         file: path.clone(),
                                         ..Default::default()
                                     }) {
-                                        let _ = mpd.switch(id);
+                                        if let Err(e) = mpd.switch(id) {
+                                            tracing::warn!("Failed to switch MPD track via search: {}", e);
+                                        }
                                     }
                                 }
                             }
@@ -369,7 +373,9 @@ pub fn handle_library_events(key: KeyEvent, app: &mut App, args: &Args) -> bool 
                                 ..Default::default()
                             };
                             if let Ok(id) = mpd.push(&song) {
-                                let _ = mpd.switch(id);
+                                if let Err(e) = mpd.switch(id) {
+                                    tracing::warn!("Failed to switch MPD track in queue: {}", e);
+                                }
                             }
                         }
                     }
@@ -377,7 +383,9 @@ pub fn handle_library_events(key: KeyEvent, app: &mut App, args: &Args) -> bool 
                 }
                 app::LibraryMode::Playlists => {
                     if let Some(pl) = pl_name {
-                        let _ = mpd.load(&pl, ..);
+                        if let Err(e) = mpd.load(&pl, ..) {
+                            tracing::warn!("Failed to load MPD playlist: {}", e);
+                        }
                     }
                     None
                 }

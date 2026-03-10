@@ -151,7 +151,7 @@ pub fn run_http_audio_loop(
 
         // 3. Reconfigure Stream if changed
         if new_rate != current_sample_rate || new_channels != current_channels {
-            eprintln!(
+            tracing::info!(
                 "⟳ Audio Format Changed: {}Hz / {}ch",
                 new_rate, new_channels
             );
@@ -166,7 +166,7 @@ pub fn run_http_audio_loop(
             _current_stream = match build_stream(new_rate, new_channels) {
                 Ok(s) => Some(s),
                 Err(e) => {
-                    eprintln!("Failed to rebuild stream: {}", e);
+                    tracing::error!("Failed to rebuild stream: {}", e);
                     // Try to keep old one? Or fallback?
                     // If rebuild fails, we are kind of stuck. Wait and retry?
                     thread::sleep(Duration::from_secs(1));

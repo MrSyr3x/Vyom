@@ -105,13 +105,17 @@ pub fn queue_folder_recursive(mpd: &mut mpd::Client, path: &str) -> Result<(), m
 
             if kind == "directory" {
                 // Recurse (ignore errors to keep processing siblings)
-                let _ = queue_folder_recursive(mpd, &full_path);
+                if let Err(e) = queue_folder_recursive(mpd, &full_path) {
+                    tracing::warn!("Failed to queue folder {}: {}", full_path, e);
+                }
             } else if kind == "file" {
                 // Add song (ignore errors)
-                let _ = mpd.push(mpd::Song {
-                    file: full_path,
+                if let Err(e) = mpd.push(mpd::Song {
+                    file: full_path.clone(),
                     ..Default::default()
-                });
+                }) {
+                    tracing::warn!("Failed to push song {}: {}", full_path, e);
+                }
             }
         }
     }

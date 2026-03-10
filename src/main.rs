@@ -30,6 +30,9 @@ use vyom::app::lyrics::LyricsFetcher;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // 0. Set up beautiful panic handler to intercept unrecoverable crashes 🚨
+    human_panic::setup_panic!();
+
     let args = Args::parse();
 
     if args.generate_config {
@@ -52,7 +55,22 @@ async fn main() -> Result<()> {
     // 1. WINDOW TITLE (For Yabai/Amethyst) 🏷️
     print!("\x1b]2;Vyom\x07");
 
-    // 2. TMUX LOGIC
+    // 3. LOGGER INITIALIZATION 📝
+    let log_dir = dirs::cache_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("vyom");
+    let _ = std::fs::create_dir_all(&log_dir);
+    // Use a daily rolling log file to prevent infinite growth
+    let file_appender = tracing_appender::rolling::daily(log_dir, "vyom.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    
+    // We only set this up if we are not generating config
+    tracing_subscriber::fmt()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .init();
+
+    // 4. TMUX LOGIC
     if app::tmux::handle_tmux_split(&args, exe_path, is_tmux, is_standalone, want_lyrics)? {
         return Ok(());
     }
@@ -101,7 +119,7 @@ async fn main() -> Result<()> {
     let is_audio_master = audio_lock.is_some();
 
     // Load persisted state (Split into UserConfig and PersistentState)
-    let (user_config, persistent_state) = AppConfig::load();
+    let (user_config, persistent_state, config_err) = AppConfig::load();
 
     if persistent_state.eq_enabled && !is_audio_master {
         // Maybe log that EQ is visual only?
@@ -116,6 +134,10 @@ async fn main() -> Result<()> {
         persistent_state,
     );
 
+    if let Some(msg) = config_err {
+        app.show_toast(&msg);
+    }
+
     let mut audio_pipeline = audio_pipeline::AudioPipeline::new(app.eq_gains.clone());
 
     // Attach Visualizer 📊
@@ -124,7 +146,7 @@ async fn main() -> Result<()> {
     if is_audio_master {
         if let Err(e) = audio_pipeline.start() {
             let msg = format!("Audio Error: {} (Visuals Only)", e);
-            eprintln!("{}", msg); // Keep log for stderr
+            tracing::error!("{}", msg);
             app.show_toast(&msg);
         }
         // CRITICAL: Apply persisted volume immediately 🔊
@@ -178,6 +200,7 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         // Track last status poll time to run it less frequently (e.g., 1s)
         let mut last_status_poll = std::time::Instant::now();
+        let mut last_queue_version: Option<u64> = None;
 
         loop {
             // Use shared player reference
@@ -190,9 +213,17 @@ async fn main() -> Result<()> {
                 last_status_poll = std::time::Instant::now();
             }
 
+            let last_q_vers_clone = last_queue_version;
+
             let result = tokio::task::spawn_blocking(move || {
                 let track = player_ref.get_current_track();
-                let queue = player_ref.get_queue();
+                let q_vers = player_ref.get_queue_version();
+
+                let queue = if q_vers.is_some() && q_vers == last_q_vers_clone {
+                    None // Queue hasn't changed, skip heavy allocation
+                } else {
+                    Some(player_ref.get_queue())
+                };
 
                 let (shuffle, repeat) = if should_poll_status {
                     (player_ref.get_shuffle().ok(), player_ref.get_repeat().ok())
@@ -200,15 +231,19 @@ async fn main() -> Result<()> {
                     (None, None)
                 };
 
-                (track, queue, shuffle, repeat)
+                (track, queue, q_vers, shuffle, repeat)
             })
             .await;
 
-            if let Ok((track_res, queue_res, shuffle_opt, repeat_opt)) = result {
+            if let Ok((track_res, queue_opt, new_q_vers, shuffle_opt, repeat_opt)) = result {
+                if new_q_vers != last_queue_version {
+                    last_queue_version = new_q_vers;
+                }
+
                 if let Ok(info) = track_res {
                     let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
                 }
-                if let Ok(queue) = queue_res {
+                if let Some(Ok(queue)) = queue_opt {
                     let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
                 }
                 // Send status update if we polled it successfully
@@ -293,8 +328,10 @@ async fn main() -> Result<()> {
 
                     // Reload config to get new keys
                     // Hot Reload: Reload config, verify keys changed
-                    let (new_user_config, _) = AppConfig::load();
-                    if tx_config
+                    let (new_user_config, _, reload_err) = AppConfig::load();
+                    if let Some(err_msg) = reload_err {
+                        let _ = tx_config.send(AppEvent::ToastUpdate(err_msg)).await;
+                    } else if tx_config
                         .send(AppEvent::KeyConfigUpdate(Box::new(new_user_config.keys)))
                         .await
                         .is_err()
@@ -306,11 +343,12 @@ async fn main() -> Result<()> {
         }
     });
 
-    // 5. Animation Tick Task ⚡
+    // 5. Animation / Status Tick Task ⚡
     let tx_tick = tx.clone();
     tokio::spawn(async move {
-        // 60 FPS Update Rate (approx 16ms) - Back to smooth fluidity
-        let mut interval = tokio::time::interval(Duration::from_millis(16));
+        // Reduced from 16ms (60FPS) to 500ms (2FPS) for battery optimization.
+        // Fast animations (like Seeking) are now correctly event-driven.
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
         loop {
             interval.tick().await;
             if tx_tick.send(AppEvent::Tick).await.is_err() {
@@ -353,7 +391,11 @@ async fn main() -> Result<()> {
         }
         app.had_popup_last_frame = has_popup;
 
-        terminal.draw(|f| ui::ui(f, &mut app))?;
+        // Reactive Rendering: Only draw if state was actually mutated
+        if app.needs_redraw {
+            terminal.draw(|f| ui::ui(f, &mut app))?;
+            app.needs_redraw = false; // Reset flag after a successful draw
+        }
 
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -372,6 +414,7 @@ async fn main() -> Result<()> {
                         continue;
                     }
                     app::inputs::handle_event(key, &mut app, &player, &mut audio_pipeline, &args, &tx, &client).await;
+                    app.needs_redraw = true;
                 },
                 AppEvent::Input(_) => {},
 
@@ -422,6 +465,7 @@ async fn main() -> Result<()> {
                             app.seek_accumulator = 0.0;
                             app.seek_initial_pos = None;
                             app.last_seek_time = None;
+                            app.needs_redraw = true;
 
                             // 1. Check Cache
                             if let Some(cached) = app.lyrics_cache.get(&id) {
@@ -454,6 +498,8 @@ async fn main() -> Result<()> {
                                     }
                                 });
                             }
+
+                            app.needs_redraw = true;
 
                             // 2. Artwork Logic (Once per song checks - Apple Music Fallback)
                             if track.source == "Music" && track.artwork_url.is_none() {
@@ -520,6 +566,7 @@ async fn main() -> Result<()> {
                         last_artwork_url = None;
                         app.artwork = ArtworkState::Idle;
                     }
+                    app.needs_redraw = true;
                 },
                 AppEvent::LyricsUpdate(id, state) => {
                     // Update cache if loaded
@@ -536,15 +583,20 @@ async fn main() -> Result<()> {
                     // Only update UI if we are still on the same song
                     if id == last_track_id {
                          app.lyrics = state;
+                         app.needs_redraw = true;
                     }
                 },
                 AppEvent::ArtworkUpdate(id, data) => {
                     if id == last_track_id {
                         app.artwork = data;
                         app.image_protocol = None;
+                        app.needs_redraw = true;
                     }
                 },
-                AppEvent::ThemeUpdate(new_theme) => app.theme = new_theme,
+                AppEvent::ThemeUpdate(new_theme) => {
+                    app.theme = new_theme;
+                    app.needs_redraw = true;
+                },
                 AppEvent::KeyConfigUpdate(new_keys) => {
                     app.keys = *new_keys;
                     app.show_toast("🔧 Config Reloaded");
@@ -553,15 +605,34 @@ async fn main() -> Result<()> {
                     app.queue = queue_data.into_iter().map(|(title, artist, duration_ms, is_current, file_path)| {
                         app::QueueItem { title, artist, duration_ms, is_current, file_path }
                     }).collect();
+                    app.needs_redraw = true;
                 },
 
                 AppEvent::StatusUpdate(shuffle, repeat) => {
                     app.shuffle = shuffle;
                     app.repeat = repeat;
+                    app.needs_redraw = true;
+                },
+
+                AppEvent::ToastUpdate(msg) => {
+                    app.show_toast(&msg);
+                    app.needs_redraw = true;
                 },
 
                 AppEvent::Tick => {
                     app.on_tick();
+
+                    let mut is_playing = false;
+                    // Simplest fallback for now: redraw if we have an active track
+                    // and we are not explicitly paused. (Actually we don't store pause state in App yet easily).
+                    // We will just redraw if visualizer is open, OR if we have a track.
+                    if app.track.is_some() {
+                        is_playing = true;
+                    }
+
+                    if app.view_mode == app::ViewMode::Visualizer || is_playing {
+                        app.needs_redraw = true;
+                    }
 
                     if app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some()) {
                         if let (LyricsState::Loaded(lyrics, _), Some(_track)) = (&app.lyrics, &app.track) {

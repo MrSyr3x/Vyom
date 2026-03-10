@@ -57,6 +57,13 @@ pub trait PlayerTrait: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Returns a version hash of the current queue state.
+    /// If this returns `Some(version)` and the version hasn't changed,
+    /// callers can safely skip fetching the full queue.
+    fn get_queue_version(&self) -> Option<u64> {
+        None
+    }
+
     // Extended methods for MPD features (defaults for non-MPD players)
     fn shuffle(&self, _enable: bool) -> Result<()> {
         Ok(())

@@ -265,6 +265,17 @@ impl PlayerTrait for MpdPlayer {
         })
     }
 
+    fn get_queue_version(&self) -> Option<u64> {
+        self.with_client(|client| {
+            let status = client.status()?;
+            let pl = status.queue_version;
+            let song = status.song.map(|s| s.id.0).unwrap_or(0);
+            Ok(Some(((pl as u64) << 32) | (song as u64)))
+        })
+        .ok()
+        .flatten()
+    }
+
     fn shuffle(&self, enable: bool) -> Result<()> {
         self.with_client(|client| client.random(enable).context("Failed to toggle shuffle"))
     }
@@ -457,7 +468,9 @@ impl MpdPlayer {
                 file: path.to_string(),
                 ..Default::default()
             };
-            let _ = client.push(&song); // Discard result (Id)
+            if let Err(e) = client.push(&song) {
+                tracing::warn!("Failed to push song to MPD: {}", e);
+            }
             Ok(())
         })
     }

@@ -131,6 +131,9 @@ pub struct App {
     /// Internal standard to track if a popup was just closed
     /// so we can force re-transmit the kitty graphic.
     pub had_popup_last_frame: bool,
+
+    /// Reactive Render Flag: Only invoke ratatui terminal.draw() when true.
+    pub needs_redraw: bool,
 }
 
 impl App {
@@ -169,6 +172,7 @@ impl App {
             theme: crate::ui::theme::load_current_theme(),
             keys: user_config.keys.clone(), // Clone keys from user config
             is_running: true,
+            needs_redraw: true,
             track: None,
             lyrics: LyricsState::Idle,
             artwork: ArtworkState::Idle,

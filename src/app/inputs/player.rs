@@ -28,7 +28,9 @@ pub async fn handle_player_events(
     // Next Track ('n')
     if keys.matches(key, &keys.next_track) {
         audio_pipeline.flush();
-        let _ = player.next();
+        if let Err(e) = player.next() {
+            tracing::warn!("Failed to skip to next track: {}", e);
+        }
         app.show_toast("⏭ Next Track");
         return true;
     }
@@ -36,7 +38,9 @@ pub async fn handle_player_events(
     // Prev Track ('p')
     if keys.matches(key, &keys.prev_track) {
         audio_pipeline.flush();
-        let _ = player.prev();
+        if let Err(e) = player.prev() {
+            tracing::warn!("Failed to skip to previous track: {}", e);
+        }
         app.show_toast("⏮ Previous Track");
         return true;
     }
@@ -120,7 +124,9 @@ pub async fn handle_player_events(
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
                     let current_key = (current_track.name.clone(), current_track.artist.clone());
                     if original_track_key.as_ref() == Some(&current_key) {
-                        let _ = player_bg.seek(target);
+                        if let Err(e) = player_bg.seek(target) {
+                            tracing::warn!("Failed to seek: {}", e);
+                        }
                     }
                 }
             });
@@ -182,7 +188,9 @@ pub async fn handle_player_events(
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
                     let current_key = (current_track.name.clone(), current_track.artist.clone());
                     if original_track_key.as_ref() == Some(&current_key) {
-                        let _ = player_bg.seek(target);
+                        if let Err(e) = player_bg.seek(target) {
+                            tracing::warn!("Failed to seek: {}", e);
+                        }
                     }
                 }
             });
@@ -195,7 +203,9 @@ pub async fn handle_player_events(
     if keys.matches(key, &keys.shuffle) {
         if args.controller {
             let new_state = !app.shuffle;
-            let _ = player.shuffle(new_state);
+            if let Err(e) = player.shuffle(new_state) {
+                tracing::warn!("Failed to toggle shuffle: {}", e);
+            }
             app.shuffle = new_state;
             app.show_toast(&format!(
                 "🔀 Shuffle: {}",
@@ -207,7 +217,9 @@ pub async fn handle_player_events(
                 let new_shuffle_state = with_mpd(app, args, |mpd| {
                     if let Ok(status) = mpd.status() {
                         let new_state = !status.random;
-                        let _ = mpd.random(new_state);
+                        if let Err(e) = mpd.random(new_state) {
+                            tracing::warn!("Failed to toggle MPD random state: {}", e);
+                        }
                         Some(new_state)
                     } else {
                         None
@@ -235,7 +247,9 @@ pub async fn handle_player_events(
         };
 
         if args.controller {
-            let _ = player.repeat(next_mode);
+            if let Err(e) = player.repeat(next_mode) {
+                tracing::warn!("Failed to set repeat mode: {}", e);
+            }
             app.repeat = next_mode;
             let icon = match next_mode {
                 RepeatMode::Off => "OFF",
@@ -255,7 +269,9 @@ pub async fn handle_player_events(
                     };
 
                     if mpd.repeat(repeat).is_ok() {
-                        let _ = mpd.single(single);
+                        if let Err(e) = mpd.single(single) {
+                            tracing::warn!("Failed to set MPD single mode: {}", e);
+                        }
                         Some(next_mode)
                     } else {
                         None

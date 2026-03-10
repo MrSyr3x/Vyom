@@ -37,7 +37,7 @@ pub fn handle_tmux_split(
         match status {
             Ok(_) => return Ok(true), // Split successful, parent should exit
             Err(e) => {
-                eprintln!("Failed to create tmux split: {}", e);
+                tracing::error!("Failed to create tmux split: {}", e);
                 // Continue as single pane if split fails
             }
         }

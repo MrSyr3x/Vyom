@@ -33,7 +33,7 @@ pub fn run_fifo_audio_loop(
     let (initial_sample_rate, initial_bits, initial_channels) =
         query_mpd_format().unwrap_or((format.sample_rate, format.bits_per_sample, format.channels));
 
-    eprintln!(
+    tracing::info!(
         "🎵 Hi-Res Audio: {}Hz/{}bit/{}ch (bit-perfect)",
         initial_sample_rate, initial_bits, initial_channels
     );
@@ -91,7 +91,7 @@ pub fn run_fifo_audio_loop(
                     || new_bits != current_bits_per_sample
                     || new_ch != current_channels
                 {
-                    eprintln!(
+                    tracing::info!(
                         "⟳ Audio Format Changed: {}Hz/{}bit/{}ch",
                         new_rate, new_bits, new_ch
                     );
@@ -133,7 +133,7 @@ pub fn run_fifo_audio_loop(
                         Ok(s) => {
                             _active_stream = s; // Replace old stream
                         }
-                        Err(e) => eprintln!("Failed to rebuild stream: {}", e),
+                        Err(e) => tracing::error!("Failed to rebuild stream: {}", e),
                     }
                 }
             }

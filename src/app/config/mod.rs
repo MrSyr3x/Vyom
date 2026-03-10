@@ -22,7 +22,9 @@ impl AppConfig {
 
         // Ensure it exists
         if !xdg_dir.exists() {
-            let _ = std::fs::create_dir_all(&xdg_dir);
+            if let Err(e) = std::fs::create_dir_all(&xdg_dir) {
+                tracing::warn!("Failed to create config dir: {}", e);
+            }
         }
 
         xdg_dir
@@ -37,14 +39,21 @@ impl AppConfig {
     }
 
     /// Load both (with migration)
-    pub fn load() -> (UserConfig, PersistentState) {
+    pub fn load() -> (UserConfig, PersistentState, Option<String>) {
         let config_path = Self::get_config_path();
         let state_path = Self::get_state_path();
+        let mut parse_error = None;
 
         // 1. Load User Config
         let user_config = if config_path.exists() {
             if let Ok(content) = fs::read_to_string(&config_path) {
-                toml::from_str(&content).unwrap_or_else(|_| UserConfig::default())
+                match toml::from_str(&content) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        parse_error = Some(format!("Syntax error in config.toml: {}", e));
+                        UserConfig::default()
+                    }
+                }
             } else {
                 UserConfig::default()
             }
@@ -52,7 +61,9 @@ impl AppConfig {
             // Create default config.toml if missing
             let c = UserConfig::default();
             if let Ok(content) = toml::to_string_pretty(&c) {
-                let _ = fs::write(&config_path, content);
+                if let Err(e) = fs::write(&config_path, content) {
+                    tracing::warn!("Failed to write default UserConfig: {}", e);
+                }
             }
             c
         };
@@ -95,6 +106,6 @@ impl AppConfig {
             }
         };
 
-        (user_config, state)
+        (user_config, state, parse_error)
     }
 }

@@ -108,7 +108,7 @@ impl AudioPipeline {
             };
 
             if let Err(e) = result {
-                eprintln!("Audio pipeline error: {}", e);
+                tracing::error!("Audio pipeline error: {}", e);
             }
             running.store(false, Ordering::SeqCst);
         });

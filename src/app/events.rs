@@ -12,5 +12,6 @@ pub enum AppEvent {
     KeyConfigUpdate(Box<crate::app::keys::KeyConfig>),
     QueueUpdate(Vec<(String, String, u64, bool, String)>),
     StatusUpdate(bool, crate::player::RepeatMode),
+    ToastUpdate(String),
     Tick,
 }

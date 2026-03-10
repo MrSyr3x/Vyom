@@ -186,8 +186,14 @@ pub async fn handle_input_box(
                                 .open(&full_path)
                             {
                                 use lofty::file::AudioFile;
-                                let _ = tagged_file
-                                    .save_to(&mut file, lofty::config::WriteOptions::default());
+                                if let Err(e) = tagged_file
+                                    .save_to(&mut file, lofty::config::WriteOptions::default())
+                                {
+                                    tracing::warn!("Failed to save modified tags: {}", e);
+                                    app.show_toast(&format!("❌ Tag Save Error: {}", e));
+                                } else {
+                                    app.show_toast("💾 Tags Saved");
+                                }
                             }
                         }
                     }

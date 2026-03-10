@@ -115,7 +115,7 @@ pub fn build_audio_stream(
                     Visualizer::push_samples(vis, data, channels);
                 }
             },
-            |err| eprintln!("Audio stream error: {}", err),
+            |err| tracing::error!("Audio stream error: {}", err),
             None,
         )
         .map_err(|e| format!("Failed to build output stream: {}", e))?;

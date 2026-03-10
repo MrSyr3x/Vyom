@@ -1,0 +1,112 @@
+name: Vyom CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test_and_lint:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies (Linux)
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Check Formatting
+      run: cargo fmt -- --check
+
+    - name: Run Clippy (Strict)
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Run Tests
+      run: cargo test --verbose
+
+  build:
+    name: Build & Release
+    needs: test_and_lint
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: vyom-mac-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: vyom-mac-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: vyom-linux-x86_64
+            
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Import Apple Code Signing Certificates
+      if: runner.os == 'macOS'
+      uses: apple-actions/import-codesign-certs@v1
+      with:
+        p12-file-base64: ${{ secrets.APPLE_CERTS_P12 }}
+        p12-password: ${{ secrets.APPLE_CERTS_PASSWORD }}
+
+    - name: Build Release Binary
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Sign macOS Binary
+      if: runner.os == 'macOS'
+      run: |
+        codesign --force --options runtime --sign "Developer ID Application: Your Name (TEAMID)" target/${{ matrix.target }}/release/vyom
+
+    - name: Package Release
+      shell: bash
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar -czf ../../../${{ matrix.artifact_name }}.tar.gz vyom
+
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ matrix.artifact_name }}.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

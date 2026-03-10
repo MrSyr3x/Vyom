@@ -62,7 +62,9 @@ pub async fn handle_lyrics_events(
                     let target_secs = target_ms as f64 / 1000.0;
                     let player_bg = player.clone();
                     tokio::task::spawn_blocking(move || {
-                        let _ = player_bg.seek(target_secs);
+                        if let Err(e) = player_bg.seek(target_secs) {
+                            tracing::warn!("Failed to seek to lyrics timestamp: {}", e);
+                        }
                     });
                     let mins = target_ms / 60000;
                     let secs = (target_ms % 60000) / 1000;

@@ -112,7 +112,9 @@ pub fn handle_eq_events(key: KeyEvent, app: &mut App, args: &Args) -> bool {
         if !args.controller {
             let secs = app.crossfade_secs as i64;
             with_mpd(app, args, |mpd| {
-                let _ = mpd.crossfade(secs);
+                if let Err(e) = mpd.crossfade(secs) {
+                    tracing::warn!("Failed to set MPD crossfade: {}", e);
+                }
             });
         }
         return true;
@@ -129,7 +131,9 @@ pub fn handle_eq_events(key: KeyEvent, app: &mut App, args: &Args) -> bool {
                 _ => mpd::status::ReplayGain::Off,
             };
             with_mpd(app, args, |mpd| {
-                let _ = mpd.replaygain(mode);
+                if let Err(e) = mpd.replaygain(mode) {
+                    tracing::warn!("Failed to set MPD replaygain: {}", e);
+                }
             });
         }
         return true;

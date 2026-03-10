@@ -67,12 +67,16 @@ pub fn load_current_theme() -> Theme {
 
         // Ensure directory exists
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(e) = fs::create_dir_all(parent) {
+                tracing::warn!("Failed to create theme cache dir: {}", e);
+            }
         }
 
         // Write to file
         if let Ok(toml_str) = toml::to_string_pretty(&wrapper) {
-            let _ = fs::write(&path, toml_str);
+            if let Err(e) = fs::write(&path, toml_str) {
+                tracing::warn!("Failed to write default theme: {}", e);
+            }
         }
 
         return default_theme;
