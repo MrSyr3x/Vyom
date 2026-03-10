@@ -84,6 +84,7 @@ pub fn run_http_audio_loop(
     let vis_buffer_orig = vis_buffer.clone();
 
     // Helper to build stream with correct params for HTTP loop
+    let flush_sig_orig = flush_signal.clone();
     let build_stream = |sample_rate: u32, channels: u16| -> Result<cpal::Stream, String> {
         let stream_config = StreamConfig {
             channels,
@@ -99,6 +100,7 @@ pub fn run_http_audio_loop(
             global_volume.clone(),
             vis_buffer_orig.clone(),
             0.005, // FADE_SPEED for HTTP
+            flush_sig_orig.clone(),
         )
     };
 

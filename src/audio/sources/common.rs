@@ -69,18 +69,57 @@ pub fn build_audio_stream(
     global_volume: Arc<std::sync::atomic::AtomicU8>,
     vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
     fade_speed: f32,
+    flush_signal: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<cpal::Stream, String> {
     let rb_clone = ring_buffer.clone();
     let fl_clone = fade_level.clone();
     let gv_clone = global_volume.clone();
     let vb_clone = vis_buffer.clone();
     let channels = config.channels as usize;
+    let sample_rate = config.sample_rate.0;
+
+    // Post-flush mute: number of samples remaining to output as silence.
+    // When flush fires, this is set to ~100ms worth of samples.
+    // The callback drains any ring buffer data as silence until this reaches 0.
+    let mute_remaining = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let mute_clone = mute_remaining.clone();
+    let flush_clone = flush_signal.clone();
 
     let stream = device
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 // Audio Thread: Must run fast! ⚡
+
+                // Check if a flush just happened — if so, activate mute window
+                if flush_clone.load(Ordering::Relaxed) {
+                    // Don't clear the flag here (reader thread does that),
+                    // just set the mute window
+                    let mute_samples = sample_rate / 10; // ~100ms of silence
+                    mute_clone.store(mute_samples, Ordering::Relaxed);
+                }
+
+                let mute_left = mute_clone.load(Ordering::Relaxed);
+
+                if mute_left > 0 {
+                    // POST-FLUSH MUTE: Output pure silence and drain ring buffer
+                    // This eliminates buzz from stale data that was already in the
+                    // ring buffer when flush fired
+                    if let Ok(mut buffer) = rb_clone.lock() {
+                        // Drain stale samples so they don't play after mute ends
+                        let drain_count = data.len().min(buffer.len());
+                        buffer.drain(..drain_count);
+                    }
+                    for sample in data.iter_mut() {
+                        *sample = 0.0;
+                    }
+                    // Reset fade to 0 during mute so we get a clean fade-in after
+                    fl_clone.store(0f32.to_bits(), Ordering::Relaxed);
+                    let consumed = (data.len() as u32).min(mute_left);
+                    mute_clone.store(mute_left - consumed, Ordering::Relaxed);
+                    return;
+                }
+
                 if let Ok(mut buffer) = rb_clone.lock() {
                     let mut fade = f32::from_bits(fl_clone.load(Ordering::Relaxed));
                     let vol = gv_clone.load(Ordering::Relaxed);
@@ -104,7 +143,6 @@ pub fn build_audio_stream(
                     fl_clone.store(fade.to_bits(), Ordering::Relaxed);
                 } else {
                     // CRITICAL FIX: If lock fails, output silence instead of garbage/repeat
-                    // This prevents the "buzzing" sound from uninitialized buffers
                     for sample in data.iter_mut() {
                         *sample = 0.0;
                     }

@@ -69,6 +69,7 @@ pub fn run_fifo_audio_loop(
         global_volume.clone(),
         vis_buffer.clone(),
         0.003, // FADE_SPEED for FIFO
+        flush_signal.clone(),
     )?;
 
     // Calculate bytes per sample based on detected bit depth
@@ -129,6 +130,7 @@ pub fn run_fifo_audio_loop(
                         global_volume.clone(),
                         vis_buffer.clone(),
                         0.003, // FADE_SPEED for FIFO
+                        flush_signal.clone(),
                     ) {
                         Ok(s) => {
                             _active_stream = s; // Replace old stream
