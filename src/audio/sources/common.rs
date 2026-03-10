@@ -79,6 +79,26 @@ pub fn build_audio_stream(
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate.0;
 
+    // ═══════════════════════════════════════════════════════════════════
+    // PRE-FILL: Seed the ring buffer with silence BEFORE the stream
+    // starts. This prevents the POP/buzz that occurs when the cpal
+    // callback fires with an empty buffer and then data suddenly arrives
+    // (step discontinuity from 0 → signal).
+    //
+    // We fill with ~50ms of silence (2205 samples at 44100Hz stereo).
+    // This gives the reader thread time to start pushing real audio
+    // data, so the transition is smooth: silence → fade-in → audio.
+    // ═══════════════════════════════════════════════════════════════════
+    let prefill_samples = (sample_rate as usize * channels) / 20; // ~50ms
+    if let Ok(mut buffer) = ring_buffer.lock() {
+        for _ in 0..prefill_samples {
+            buffer.push_back(0.0);
+        }
+    }
+
+    // Ensure fade starts at zero for a clean ramp-up
+    fade_level.store(0f32.to_bits(), std::sync::atomic::Ordering::SeqCst);
+
     // Post-flush mute: number of samples remaining to output as silence.
     // When flush fires, this is set to ~100ms worth of samples.
     // The callback drains any ring buffer data as silence until this reaches 0.
@@ -133,7 +153,7 @@ pub fn build_audio_stream(
                             }
                             *sample = s * fade * gain;
                         } else {
-                            // Buffer underrun protection (fade out?)
+                            // Buffer underrun: output silence, fade down
                             if fade > 0.0 {
                                 fade = (fade - fade_speed).max(0.0);
                             }
