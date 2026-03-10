@@ -17,9 +17,8 @@ pub enum AudioSource {
 
 impl Default for AudioSource {
     fn default() -> Self {
-        AudioSource::Http {
-            host: DEFAULT_HOST.to_string(),
-            port: DEFAULT_PORT,
+        AudioSource::Fifo {
+            path: DEFAULT_FIFO_PATH.to_string(), // "/tmp/vyom_hires.fifo"
         }
     }
 }
