@@ -1,4 +1,4 @@
-use super::common::{build_audio_stream, query_mpd_format};
+use super::common::build_audio_stream;
 use crate::audio::dsp::{DspEqualizer, EqGains};
 use crate::audio::types::AudioInputFormat;
 use cpal::traits::HostTrait;
@@ -29,19 +29,14 @@ pub fn run_fifo_audio_loop(
         .default_output_device()
         .ok_or("No output device available")?;
 
-    // Query MPD for actual format (dynamic detection!)
-    let (initial_sample_rate, initial_bits, initial_channels) =
-        query_mpd_format().unwrap_or((format.sample_rate, format.bits_per_sample, format.channels));
+    let current_sample_rate = format.sample_rate;
+    let current_bits_per_sample = format.bits_per_sample;
+    let current_channels = format.channels;
 
     tracing::info!(
-        "🎵 Hi-Res Audio: {}Hz/{}bit/{}ch (bit-perfect)",
-        initial_sample_rate, initial_bits, initial_channels
+        "🎵 FIFO Audio: {}Hz/{}bit/{}ch (Fixed format pipeline)",
+        current_sample_rate, current_bits_per_sample, current_channels
     );
-
-    // Dynamic State
-    let mut current_sample_rate = initial_sample_rate;
-    let mut current_bits_per_sample = initial_bits;
-    let mut current_channels = initial_channels;
 
     // Use detected sample rate for bit-perfect output
     let stream_config = StreamConfig {
@@ -73,74 +68,15 @@ pub fn run_fifo_audio_loop(
     )?;
 
     // Calculate bytes per sample based on detected bit depth
-    let mut bytes_per_sample_val = (current_bits_per_sample / 8) as usize;
-    let mut frame_size = bytes_per_sample_val * current_channels as usize;
+    let bytes_per_sample_val = (current_bits_per_sample / 8) as usize;
+    let frame_size = bytes_per_sample_val * current_channels as usize;
     let buffer_frames = 2048;
     // Buffer needs to adapt. We start with max reasonable size?
     let mut read_buffer = vec![0u8; frame_size * buffer_frames];
 
-    // State for dynamic rate detection
-    let mut last_format_check = std::time::Instant::now();
-    let format_check_interval = std::time::Duration::from_secs(2);
     let mut _active_stream = stream; // Keep stream alive
 
     while running.load(Ordering::SeqCst) {
-        // Dynamic Format Check 🕵️‍♂️ (Poll MPD periodically)
-        if last_format_check.elapsed() > format_check_interval {
-            if let Some((new_rate, new_bits, new_ch)) = query_mpd_format() {
-                if new_rate != current_sample_rate
-                    || new_bits != current_bits_per_sample
-                    || new_ch != current_channels
-                {
-                    tracing::info!(
-                        "⟳ Audio Format Changed: {}Hz/{}bit/{}ch",
-                        new_rate, new_bits, new_ch
-                    );
-
-                    // 1. Update State
-                    current_sample_rate = new_rate;
-                    current_bits_per_sample = new_bits;
-                    current_channels = new_ch;
-
-                    bytes_per_sample_val = (current_bits_per_sample / 8) as usize;
-                    frame_size = bytes_per_sample_val * current_channels as usize;
-
-                    // 2. Re-allocate Read Buffer
-                    read_buffer = vec![0u8; frame_size * buffer_frames];
-
-                    // 3. Re-create EQ
-                    equalizer = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
-
-                    // 4. Rebuild Stream
-                    // Note: We can't easily change channels on the fly without complex buffer re-mapping if cpal doesn't support it.
-                    // For now, we assume channels (stereo) don't change often.
-                    // Restarting loop is hard here. Let's try to rebuild stream.
-
-                    let new_config = StreamConfig {
-                        channels: current_channels,
-                        sample_rate: cpal::SampleRate(current_sample_rate),
-                        buffer_size: cpal::BufferSize::Fixed(1024),
-                    };
-
-                    match build_audio_stream(
-                        &device,
-                        &new_config,
-                        ring_buffer.clone(),
-                        fade_level.clone(),
-                        global_volume.clone(),
-                        vis_buffer.clone(),
-                        0.001, // FADE_SPEED for FIFO (~30ms fade-in at 44100Hz)
-                        flush_signal.clone(),
-                    ) {
-                        Ok(s) => {
-                            _active_stream = s; // Replace old stream
-                        }
-                        Err(e) => tracing::error!("Failed to rebuild stream: {}", e),
-                    }
-                }
-            }
-            last_format_check = std::time::Instant::now();
-        }
 
         // Open FIFO (blocking)
         let fifo = match std::fs::OpenOptions::new()
@@ -196,10 +132,6 @@ pub fn run_fifo_audio_loop(
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
                     thread::sleep(Duration::from_millis(10));
-                    // Check format here too if stalled?
-                    if last_format_check.elapsed() > format_check_interval {
-                        break; // Break inner loop to check format in outer loop
-                    }
                     continue;
                 }
                 Ok(bytes_read) => {
@@ -296,9 +228,6 @@ pub fn run_fifo_audio_loop(
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(5));
-                    if last_format_check.elapsed() > format_check_interval {
-                        break; // Break to check format
-                    }
                     continue;
                 }
                 Err(_) => {
