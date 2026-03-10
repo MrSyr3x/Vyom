@@ -157,6 +157,22 @@ pub fn run_fifo_audio_loop(
         let mut reader = BufReader::with_capacity(65536, fifo);
         let mut float_buffer = Vec::with_capacity(buffer_frames * current_channels as usize);
 
+        // Drain stale FIFO OS kernel buffer on reopen 🔇
+        // After a pause/resume cycle, the kernel FIFO pipe buffer may contain
+        // old discontinuous PCM data. Read and discard everything immediately
+        // available before feeding into the ring buffer.
+        {
+            let mut drain_buf = [0u8; 65536];
+            loop {
+                match reader.read(&mut drain_buf) {
+                    Ok(0) => break,
+                    Ok(_) => continue, // Discard stale data
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(_) => break,
+                }
+            }
+        }
+
         while running.load(Ordering::SeqCst) {
             // Immediate Audio Flush Check ⚡
             if flush_signal.load(Ordering::SeqCst) {
@@ -164,8 +180,11 @@ pub fn run_fifo_audio_loop(
                 if let Ok(mut buffer) = ring_buffer.lock() {
                     buffer.clear(); // Drop old frames
                 }
+                // Reset fade to 0 so audio fades in smoothly on resume
+                // instead of popping at full volume
+                fade_level.store(0f32.to_bits(), Ordering::SeqCst);
                 equalizer.reset_filters();
-                // Break to reopen FIFO and drop OS cache
+                // Break to reopen FIFO and drop OS kernel buffer
                 break;
             }
 

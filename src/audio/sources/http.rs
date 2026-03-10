@@ -186,6 +186,8 @@ pub fn run_http_audio_loop(
                 if let Ok(mut buffer) = ring_buffer.lock() {
                     buffer.clear(); // Drop 1s+ of old audio
                 }
+                // Reset fade to 0 so audio fades in smoothly on resume
+                fade_level.store(0f32.to_bits(), Ordering::SeqCst);
                 processing_eq.reset_filters();
                 // Break out of the socket read loop to force MPD buffer drop!
                 break;
