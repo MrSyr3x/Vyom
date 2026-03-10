@@ -175,6 +175,9 @@ pub fn run_fifo_audio_loop(
             }
         }
 
+        // Frame alignment accumulator: carries leftover bytes between reads
+        let mut leftover = Vec::<u8>::with_capacity(frame_size);
+
         while running.load(Ordering::SeqCst) {
             // Immediate Audio Flush Check ⚡
             if flush_signal.load(Ordering::SeqCst) {
@@ -200,7 +203,32 @@ pub fn run_fifo_audio_loop(
                     continue;
                 }
                 Ok(bytes_read) => {
-                    let frames = bytes_read / frame_size;
+                    // Frame alignment: prepend leftover bytes from previous read.
+                    // FIFO read() returns arbitrary byte counts that may not be
+                    // frame-aligned. Without this, remainder bytes are silently
+                    // dropped, causing sustained sample misalignment → distortion.
+                    let work_buf: &[u8];
+                    let mut combined;
+                    if leftover.is_empty() {
+                        work_buf = &read_buffer[..bytes_read];
+                    } else {
+                        combined = Vec::with_capacity(leftover.len() + bytes_read);
+                        combined.extend_from_slice(&leftover);
+                        combined.extend_from_slice(&read_buffer[..bytes_read]);
+                        leftover.clear();
+                        work_buf = &combined;
+                    }
+
+                    let total_bytes = work_buf.len();
+                    let aligned_bytes = (total_bytes / frame_size) * frame_size;
+                    let remainder = total_bytes - aligned_bytes;
+
+                    // Save unaligned trailing bytes for the next iteration
+                    if remainder > 0 {
+                        leftover.extend_from_slice(&work_buf[aligned_bytes..]);
+                    }
+
+                    let frames = aligned_bytes / frame_size;
 
                     float_buffer.clear();
 
@@ -210,39 +238,27 @@ pub fn run_fifo_audio_loop(
 
                             let sample_f32 = match current_bits_per_sample {
                                 16 => {
-                                    if offset + 1 < bytes_read {
-                                        let s = i16::from_le_bytes([
-                                            read_buffer[offset],
-                                            read_buffer[offset + 1],
-                                        ]);
-                                        s as f32 / 32768.0
-                                    } else {
-                                        0.0
-                                    }
+                                    let s = i16::from_le_bytes([
+                                        work_buf[offset],
+                                        work_buf[offset + 1],
+                                    ]);
+                                    s as f32 / 32768.0
                                 }
                                 24 => {
-                                    if offset + 2 < bytes_read {
-                                        let b0 = read_buffer[offset] as i32;
-                                        let b1 = read_buffer[offset + 1] as i32;
-                                        let b2 = read_buffer[offset + 2] as i32;
-                                        let s = (b2 << 24) | (b1 << 16) | (b0 << 8);
-                                        (s >> 8) as f32 / 8388608.0
-                                    } else {
-                                        0.0
-                                    }
+                                    let b0 = work_buf[offset] as i32;
+                                    let b1 = work_buf[offset + 1] as i32;
+                                    let b2 = work_buf[offset + 2] as i32;
+                                    let s = (b2 << 24) | (b1 << 16) | (b0 << 8);
+                                    (s >> 8) as f32 / 8388608.0
                                 }
                                 32 => {
-                                    if offset + 3 < bytes_read {
-                                        let s = i32::from_le_bytes([
-                                            read_buffer[offset],
-                                            read_buffer[offset + 1],
-                                            read_buffer[offset + 2],
-                                            read_buffer[offset + 3],
-                                        ]);
-                                        s as f32 / 2147483648.0
-                                    } else {
-                                        0.0
-                                    }
+                                    let s = i32::from_le_bytes([
+                                        work_buf[offset],
+                                        work_buf[offset + 1],
+                                        work_buf[offset + 2],
+                                        work_buf[offset + 3],
+                                    ]);
+                                    s as f32 / 2147483648.0
                                 }
                                 _ => 0.0,
                             };

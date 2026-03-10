@@ -183,6 +183,13 @@ pub fn run_http_audio_loop(
             buffer.clear();
         }
 
+        // Frame alignment accumulator: carries leftover bytes between reads.
+        // TCP read() returns arbitrary byte counts (e.g. 8191 bytes for 16-bit
+        // stereo where frame_size=4). Without this, remainder bytes are silently
+        // dropped, causing sustained sample misalignment → distortion/buzz.
+        let frame_size = (current_channels * 2) as usize; // 16-bit = 2 bytes per sample
+        let mut leftover = Vec::<u8>::with_capacity(frame_size);
+
         while running.load(Ordering::SeqCst) {
             // Immediate Audio Flush Check ⚡
             if flush_signal.load(Ordering::SeqCst) {
@@ -193,6 +200,7 @@ pub fn run_http_audio_loop(
                 // Reset fade to 0 so audio fades in smoothly on resume
                 fade_level.store(0f32.to_bits(), Ordering::SeqCst);
                 processing_eq.reset_filters();
+                leftover.clear(); // Reset alignment state
                 // Break out of the socket read loop to force MPD buffer drop!
                 break;
             }
@@ -203,17 +211,37 @@ pub fn run_http_audio_loop(
                     break;
                 }
                 Ok(bytes_read) => {
-                    // 16-bit PCM to f32
-                    let samples = bytes_read / 2;
+                    // Prepend any leftover bytes from the previous read
+                    let work_buf: &[u8];
+                    let mut combined;
+                    if leftover.is_empty() {
+                        work_buf = &read_buffer[..bytes_read];
+                    } else {
+                        combined = Vec::with_capacity(leftover.len() + bytes_read);
+                        combined.extend_from_slice(&leftover);
+                        combined.extend_from_slice(&read_buffer[..bytes_read]);
+                        leftover.clear();
+                        work_buf = &combined;
+                    }
+
+                    let total_bytes = work_buf.len();
+                    let aligned_bytes = (total_bytes / frame_size) * frame_size;
+                    let remainder = total_bytes - aligned_bytes;
+
+                    // Save unaligned trailing bytes for the next iteration
+                    if remainder > 0 {
+                        leftover.extend_from_slice(&work_buf[aligned_bytes..]);
+                    }
+
+                    // 16-bit PCM to f32 (only process frame-aligned bytes)
+                    let samples = aligned_bytes / 2;
                     let mut float_buffer = Vec::with_capacity(samples);
 
                     for i in 0..samples {
                         let idx = i * 2;
-                        if idx + 1 < bytes_read {
-                            let sample_i16 =
-                                i16::from_le_bytes([read_buffer[idx], read_buffer[idx + 1]]);
-                            float_buffer.push(sample_i16 as f32 / 32768.0);
-                        }
+                        let sample_i16 =
+                            i16::from_le_bytes([work_buf[idx], work_buf[idx + 1]]);
+                        float_buffer.push(sample_i16 as f32 / 32768.0);
                     }
 
                     processing_eq.process_buffer(&mut float_buffer);
