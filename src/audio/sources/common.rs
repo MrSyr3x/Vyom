@@ -61,6 +61,7 @@ fn parse_mpd_status(response: &str) -> Option<(u32, u16, u16)> {
 }
 
 /// Helper to build audio output stream with consistent volume/fade/visualizer logic
+#[allow(clippy::too_many_arguments)]
 pub fn build_audio_stream(
     device: &cpal::Device,
     config: &StreamConfig,

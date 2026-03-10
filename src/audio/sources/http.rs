@@ -11,8 +11,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-/// Connect to MPD HTTP stream
-fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
+/// Connect to MPD HTTP stream and return a BufReader that preserves all data.
+/// 
+/// CRITICAL: We return the BufReader directly (not the raw TcpStream) because
+/// the BufReader pre-reads data into its internal buffer during header parsing.
+/// Returning the raw stream would lose that pre-read audio data, causing a
+/// ~1 second buzz/distortion on startup.
+fn connect_to_http_stream(host: &str, port: u16) -> Result<BufReader<TcpStream>, String> {
     let addr = format!("{}:{}", host, port);
     let mut stream =
         TcpStream::connect(&addr).map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
@@ -29,11 +34,10 @@ fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
         .write_all(request.as_bytes())
         .map_err(|e| format!("Failed to send request: {}", e))?;
 
-    // Read HTTP headers
-    let cloned_stream = stream
-        .try_clone()
-        .map_err(|e| format!("Failed to clone stream: {}", e))?;
-    let mut reader = BufReader::new(cloned_stream);
+    // Wrap in BufReader FIRST, then read headers through it.
+    // This way any audio data that gets pre-read into the BufReader's
+    // internal buffer stays available for the caller.
+    let mut reader = BufReader::with_capacity(16384, stream);
     let mut header_line = String::new();
     loop {
         header_line.clear();
@@ -48,7 +52,7 @@ fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
         }
     }
 
-    Ok(stream)
+    Ok(reader)
 }
 
 /// HTTP audio loop (16-bit PCM)
@@ -114,15 +118,13 @@ pub fn run_http_audio_loop(
     let mut processing_eq = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
 
     while running.load(Ordering::SeqCst) {
-        let tcp_stream = match connect_to_http_stream(host, port) {
-            Ok(s) => s,
+        let mut reader = match connect_to_http_stream(host, port) {
+            Ok(r) => r,
             Err(_) => {
                 thread::sleep(Duration::from_millis(500));
                 continue;
             }
         };
-
-        let mut reader = BufReader::with_capacity(16384, tcp_stream);
 
         // 1. Read WAV Header (44 bytes) for TRUTH 🕵️‍♂️
         let mut header = [0u8; 44];
