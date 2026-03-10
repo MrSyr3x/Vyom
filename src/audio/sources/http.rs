@@ -53,6 +53,7 @@ fn connect_to_http_stream(host: &str, port: u16) -> Result<TcpStream, String> {
 
 /// HTTP audio loop (16-bit PCM)
 #[cfg(feature = "eq")]
+#[allow(clippy::too_many_arguments)]
 pub fn run_http_audio_loop(
     host: &str,
     port: u16,
@@ -61,6 +62,7 @@ pub fn run_http_audio_loop(
     running: Arc<AtomicBool>,
     global_volume: Arc<std::sync::atomic::AtomicU8>,
     vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
+    flush_signal: Arc<AtomicBool>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -178,6 +180,17 @@ pub fn run_http_audio_loop(
         }
 
         while running.load(Ordering::SeqCst) {
+            // Immediate Audio Flush Check ⚡
+            if flush_signal.load(Ordering::SeqCst) {
+                flush_signal.store(false, Ordering::SeqCst);
+                if let Ok(mut buffer) = ring_buffer.lock() {
+                    buffer.clear(); // Drop 1s+ of old audio
+                }
+                processing_eq.reset_filters();
+                // Break out of the socket read loop to force MPD buffer drop!
+                break;
+            }
+
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
                     processing_eq.reset_filters();
@@ -202,6 +215,9 @@ pub fn run_http_audio_loop(
                     // Backpressure: Wait for space (prevents skipping) 🛑
                     let max_buffer_size = 32768;
                     loop {
+                        if flush_signal.load(Ordering::SeqCst) {
+                            break; // Abort wait immediately!
+                        }
                         let len = ring_buffer.lock().map(|b| b.len()).unwrap_or(0);
                         // Allow slight overflow for current batch
                         if len < max_buffer_size {

@@ -18,6 +18,7 @@ pub async fn handle_player_events(
 
     // Play/Pause ('Space')
     if keys.matches(key, &keys.play_pause) {
+        audio_pipeline.flush();
         if let Ok(is_playing) = player.play_pause() {
             app.show_toast(if is_playing { "▶ Play" } else { "⏸ Pause" });
         }
@@ -26,6 +27,7 @@ pub async fn handle_player_events(
 
     // Next Track ('n')
     if keys.matches(key, &keys.next_track) {
+        audio_pipeline.flush();
         let _ = player.next();
         app.show_toast("⏭ Next Track");
         return true;
@@ -33,6 +35,7 @@ pub async fn handle_player_events(
 
     // Prev Track ('p')
     if keys.matches(key, &keys.prev_track) {
+        audio_pipeline.flush();
         let _ = player.prev();
         app.show_toast("⏮ Previous Track");
         return true;
@@ -68,6 +71,7 @@ pub async fn handle_player_events(
     if (keys.matches(key, &keys.seek_backward) || keys.matches(key, &keys.nav_left_alt))
         && app.view_mode != app::ViewMode::EQ
     {
+        audio_pipeline.flush();
         let now = std::time::Instant::now();
         let is_new_sequence = if let Some(last) = app.last_seek_time {
             now.duration_since(last).as_millis() >= 500
@@ -129,6 +133,7 @@ pub async fn handle_player_events(
     if (keys.matches(key, &keys.seek_forward) || keys.matches(key, &keys.nav_right_alt))
         && app.view_mode != app::ViewMode::EQ
     {
+        audio_pipeline.flush();
         let now = std::time::Instant::now();
         let is_new_sequence = if let Some(last) = app.last_seek_time {
             now.duration_since(last).as_millis() >= 500

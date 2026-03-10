@@ -13,6 +13,7 @@ use std::time::Duration;
 
 /// FIFO audio loop (Hi-Res 16/24/32-bit)
 #[cfg(feature = "eq")]
+#[allow(clippy::too_many_arguments)]
 pub fn run_fifo_audio_loop(
     fifo_path: &str,
     format: &AudioInputFormat,
@@ -20,6 +21,7 @@ pub fn run_fifo_audio_loop(
     running: Arc<AtomicBool>,
     global_volume: Arc<std::sync::atomic::AtomicU8>,
     vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
+    flush_signal: Arc<AtomicBool>,
 ) -> Result<(), String> {
     // Get output device
     let audio_host = cpal::default_host();
@@ -156,6 +158,17 @@ pub fn run_fifo_audio_loop(
         let mut float_buffer = Vec::with_capacity(buffer_frames * current_channels as usize);
 
         while running.load(Ordering::SeqCst) {
+            // Immediate Audio Flush Check ⚡
+            if flush_signal.load(Ordering::SeqCst) {
+                flush_signal.store(false, Ordering::SeqCst);
+                if let Ok(mut buffer) = ring_buffer.lock() {
+                    buffer.clear(); // Drop old frames
+                }
+                equalizer.reset_filters();
+                // Break to reopen FIFO and drop OS cache
+                break;
+            }
+
             match reader.read(&mut read_buffer) {
                 Ok(0) => {
                     thread::sleep(Duration::from_millis(10));
@@ -221,6 +234,9 @@ pub fn run_fifo_audio_loop(
                     // Backpressure: Wait for space 🛑
                     let max_size = 65536;
                     loop {
+                        if flush_signal.load(Ordering::SeqCst) {
+                            break; // Abort wait immediately
+                        }
                         let len = ring_buffer.lock().map(|b| b.len()).unwrap_or(0);
                         if len < max_size {
                             break;

@@ -1,15 +1,16 @@
 use vyom::app::{App, LibraryMode, QueueItem, TagEditState, ViewMode};
-use vyom::config::AppConfig;
+use vyom::app::config::UserConfig;
 
 /// Helper to create a test app instance
 fn create_test_app() -> App {
-    let config = AppConfig::default();
+    let config = UserConfig::default();
     App::new(
         true,         // show_lyrics
         false,        // is_tmux
         true,         // is_mpd
         "Multi-Test", // source_app
         config,
+        vyom::app::config::PersistentState::default(),
     )
 }
 
@@ -100,5 +101,5 @@ fn test_queue_manipulation() {
 
     assert_eq!(app.queue.len(), 1);
     assert_eq!(app.queue[0].title, "Song A");
-    assert_eq!(app.queue[0].is_current, true);
+    assert!(app.queue[0].is_current);
 }

@@ -15,6 +15,8 @@ pub struct AudioPipeline {
     thread_handle: Option<thread::JoinHandle<()>>,
     /// Shared buffer for visualizer
     pub vis_buffer: Option<Arc<Mutex<VecDeque<f32>>>>,
+    /// Trigger to instantly flush buffers on seek/pause
+    pub flush_signal: Arc<AtomicBool>,
 }
 
 impl AudioPipeline {
@@ -27,6 +29,7 @@ impl AudioPipeline {
             global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
             vis_buffer: None,
+            flush_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -45,6 +48,7 @@ impl AudioPipeline {
             global_volume: Arc::new(std::sync::atomic::AtomicU8::new(100)),
             thread_handle: None,
             vis_buffer: None,
+            flush_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -56,6 +60,11 @@ impl AudioPipeline {
     /// Set global volume (0-100)
     pub fn set_volume(&self, volume: u8) {
         self.global_volume.store(volume.min(100), Ordering::SeqCst);
+    }
+
+    /// Ask the pipeline to flush its software buffers immediately
+    pub fn flush(&self) {
+        self.flush_signal.store(true, Ordering::SeqCst);
     }
 
     /// Start the audio pipeline
@@ -71,6 +80,7 @@ impl AudioPipeline {
         let source = self.config.source.clone();
         let format = self.config.format.clone();
         let vis_buffer = self.vis_buffer.clone();
+        let flush_signal = self.flush_signal.clone();
 
         running.store(true, Ordering::SeqCst);
 
@@ -82,8 +92,9 @@ impl AudioPipeline {
                     &format,
                     eq_gains,
                     running.clone(),
-                    global_volume,
-                    vis_buffer,
+                    global_volume.clone(),
+                    vis_buffer.clone(),
+                    flush_signal.clone(),
                 ),
                 AudioSource::Fifo { path } => run_fifo_audio_loop(
                     &path,
@@ -92,6 +103,7 @@ impl AudioPipeline {
                     running.clone(),
                     global_volume,
                     vis_buffer,
+                    flush_signal.clone(),
                 ),
             };
 

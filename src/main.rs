@@ -156,7 +156,8 @@ async fn main() -> Result<()> {
 
     // Performance Optimization: Global HTTP Client (Reused)
     let client = reqwest::Client::builder()
-        .user_agent("vyom-rs/1.0.1")
+        .user_agent(format!("vyom-rs/{}", env!("CARGO_PKG_VERSION")))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_default();
 
@@ -345,8 +346,7 @@ async fn main() -> Result<()> {
         let has_popup = app.show_keyhints
             || app.show_audio_info
             || app.input_state.is_some()
-            || app.tag_edit.is_some()
-            || app.toast.is_some();
+            || app.tag_edit.is_some();
 
         if !has_popup && app.had_popup_last_frame {
             terminal.clear()?;
@@ -415,15 +415,6 @@ async fn main() -> Result<()> {
                             // Critical: Set Loading state immediately
                             app.lyrics = LyricsState::Loading;
 
-                            // Audio Engine: Check for sample rate change 🎵 (REMOVED: Caused sped up audio)
-                            // if let Some(rate) = track.sample_rate {
-                            //    if rate > 0 && rate != audio_pipeline.get_sample_rate() {
-                            //        let _ = audio_pipeline.update_sample_rate(rate);
-                            //        app.show_toast(&format!("⟳ Rate: {}Hz", rate));
-                            //    }
-                            // }
-
-                            // Critical Fix: Reset manual scroll state on song change
                             // Critical Fix: Reset manual scroll state on song change
                             app.lyrics_offset = None;
                             app.last_scroll_time = None;
@@ -533,8 +524,11 @@ async fn main() -> Result<()> {
                 AppEvent::LyricsUpdate(id, state) => {
                     // Update cache if loaded
                     if let LyricsState::Loaded(ref l, _) = state {
+                         // LRU-style eviction: remove a random old entry instead of nuking everything
                          if app.lyrics_cache.len() > 50 {
-                             app.lyrics_cache.clear();
+                             if let Some(oldest_key) = app.lyrics_cache.keys().next().cloned() {
+                                 app.lyrics_cache.remove(&oldest_key);
+                             }
                          }
                          app.lyrics_cache.insert(id.clone(), l.clone());
                     }

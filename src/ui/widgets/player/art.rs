@@ -283,6 +283,7 @@ fn render_braille(raw_image: &image::DynamicImage, area: Rect) -> Vec<Line<'stat
 
 /// Floyd-Steinberg Dithering Implementation 🎨
 /// Converts a color image to a boolean matrix (true = on/white, false = off/black)
+#[allow(clippy::needless_range_loop)]
 fn floyd_steinberg_dithering(img: &image::DynamicImage) -> Vec<Vec<bool>> {
     let w = img.width() as usize;
     let h = img.height() as usize;

@@ -34,7 +34,6 @@ pub struct App {
     pub artwork: ArtworkState,
     pub art_style: ArtStyle,
     // Manual Scroll State (None = Auto-sync)
-    // Manual Scroll State (None = Auto-sync)
     pub lyrics_offset: Option<usize>,
     pub lyrics_selected: Option<usize>, // Manual selection for j/k navigation
     pub lyrics_cache: HashMap<String, Vec<crate::app::lyrics::LyricLine>>,
