@@ -189,6 +189,7 @@ pub fn run_http_audio_loop(
         // dropped, causing sustained sample misalignment → distortion/buzz.
         let frame_size = (current_channels * 2) as usize; // 16-bit = 2 bytes per sample
         let mut leftover = Vec::<u8>::with_capacity(frame_size);
+        let mut skipping_header = false;
 
         while running.load(Ordering::SeqCst) {
             // Immediate Audio Flush Check ⚡
@@ -198,6 +199,7 @@ pub fn run_http_audio_loop(
                     buffer.clear(); // Drop 1s+ of old audio
                 }
                 // Reset fade to 0 so audio fades in smoothly on resume
+                // instead of popping at full volume
                 fade_level.store(0f32.to_bits(), Ordering::SeqCst);
                 processing_eq.reset_filters();
                 leftover.clear(); // Reset alignment state
@@ -225,33 +227,51 @@ pub fn run_http_audio_loop(
                     }
 
                     // Mid-stream WAV header detection 🛡️
-                    // MPD httpd with `always_on "yes"` resends a 44-byte WAV
-                    // header when tracks change. If we decode those bytes as
-                    // PCM samples, they produce audible garbage/buzz.
-                    // Scan for embedded RIFF headers and skip past them.
-                    let pcm_start = if work_buf.len() >= 44 {
-                        // Check first 4 bytes for RIFF signature
-                        if &work_buf[0..4] == b"RIFF" {
-                            tracing::debug!("Skipped mid-stream WAV header (44 bytes)");
-                            44 // Skip the entire WAV header
-                        } else {
-                            // Also scan for RIFF embedded deeper in the buffer
-                            // (could arrive mid-read)
-                            let mut skip_to = 0;
-                            for pos in 0..work_buf.len().saturating_sub(44) {
-                                if &work_buf[pos..pos + 4] == b"RIFF" {
-                                    // Found embedded header — skip everything
-                                    // up to and including it
-                                    skip_to = pos + 44;
-                                    tracing::debug!("Skipped embedded WAV header at offset {}", pos);
-                                    break;
-                                }
-                            }
-                            skip_to
+                    // MPD httpd with `always_on "yes"` resends a WAV header when
+                    // tracks change. These headers can be >44 bytes if they contain
+                    // LIST chunks or ID3 tags. If we decode those bytes as PCM,
+                    // they produce a violently loud POP/buzz.
+                    
+                    let mut pcm_start = 0;
+                    
+                    // 1. Look for RIFF anywhere in the newly arrived buffer
+                    // (It usually arrives at the very start of a read when tracks change)
+                    for pos in 0..work_buf.len().saturating_sub(4) {
+                        if &work_buf[pos..pos + 4] == b"RIFF" {
+                            tracing::debug!("Detected mid-stream RIFF header. Entering skip mode.");
+                            skipping_header = true;
+                            // Throw away everything before the RIFF too, it's either
+                            // old track tail or garbage
+                            pcm_start = pos;
+                            break;
                         }
-                    } else {
-                        0
-                    };
+                    }
+
+                    // 2. If we are in skip mode, aggressively hunt for the 'data' chunk
+                    if skipping_header {
+                        let mut found_data = false;
+                        let search_start = pcm_start;
+                        for pos in search_start..work_buf.len().saturating_sub(8) {
+                            if &work_buf[pos..pos + 4] == b"data" {
+                                // Found the 'data' chunk! The actual PCM audio begins
+                                // 8 bytes after the 'd' (4 bytes for "data", 4 bytes for size)
+                                pcm_start = pos + 8;
+                                skipping_header = false;
+                                found_data = true;
+                                tracing::debug!("Found 'data' chunk. Resuming PCM decode.");
+                                break;
+                            }
+                        }
+                        
+                        // If we didn't find 'data' in this buffer, the ENTIRE buffer is metadata.
+                        // Skip the whole thing and wait for the 'data' chunk in the next read.
+                        if !found_data {
+                            leftover.clear(); // Drop any accumulated incomplete frames
+                            continue; // Skip decode completely
+                        }
+                        
+                        // We found 'data', so we only decode from pcm_start onwards
+                    }
 
                     let pcm_data = &work_buf[pcm_start..];
                     let total_bytes = pcm_data.len();
