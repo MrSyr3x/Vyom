@@ -629,7 +629,8 @@ async fn main() -> Result<()> {
                     }
 
                     let is_animating_lyrics = app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some());
-                    let needs_high_fps = app.view_mode == app::ViewMode::Visualizer || is_animating_lyrics;
+                    let has_active_toast = app.toast.is_some();
+                    let needs_high_fps = app.view_mode == app::ViewMode::Visualizer || is_animating_lyrics || has_active_toast;
 
                     if needs_high_fps {
                         app.needs_redraw = true;
