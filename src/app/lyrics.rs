@@ -74,10 +74,14 @@ impl LyricsFetcher {
 
     fn save_to_cache(path: &PathBuf, lyrics: &Vec<LyricLine>) {
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(e) = fs::create_dir_all(parent) {
+                tracing::debug!("Failed to create lyrics cache dir: {}", e);
+            }
         }
         if let Ok(file) = fs::File::create(path) {
-            let _ = serde_json::to_writer(file, lyrics);
+            if let Err(e) = serde_json::to_writer(file, lyrics) {
+                tracing::debug!("Failed to write lyrics cache: {}", e);
+            }
         }
     }
 
@@ -443,5 +447,72 @@ impl LyricsFetcher {
         };
 
         Some(min * 60000 + sec * 1000 + ms)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_timestamp_standard() {
+        // [01:23.45] → 1*60000 + 23*1000 + 450 = 83450
+        assert_eq!(LyricsFetcher::parse_timestamp("01:23.45"), Some(83450));
+    }
+
+    #[test]
+    fn test_parse_timestamp_zero() {
+        assert_eq!(LyricsFetcher::parse_timestamp("00:00.00"), Some(0));
+    }
+
+    #[test]
+    fn test_parse_timestamp_no_fraction() {
+        // [02:30] → 2*60000 + 30*1000 = 150000
+        assert_eq!(LyricsFetcher::parse_timestamp("02:30"), Some(150000));
+    }
+
+    #[test]
+    fn test_parse_timestamp_three_digit_ms() {
+        // [01:05.123] → 1*60000 + 5*1000 + 123 = 65123
+        assert_eq!(LyricsFetcher::parse_timestamp("01:05.123"), Some(65123));
+    }
+
+    #[test]
+    fn test_parse_timestamp_malformed() {
+        assert_eq!(LyricsFetcher::parse_timestamp("not:valid"), None);
+        assert_eq!(LyricsFetcher::parse_timestamp(""), None);
+        assert_eq!(LyricsFetcher::parse_timestamp("12345"), None);
+    }
+
+    #[test]
+    fn test_parse_lrc_content_standard() {
+        let content = "[00:05.00] Hello world\n[00:10.50] Second line";
+        let lines = LyricsFetcher::parse_lrc_content(content);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].timestamp_ms, 5000);
+        assert_eq!(lines[0].text, "Hello world");
+        assert_eq!(lines[1].timestamp_ms, 10500);
+        assert_eq!(lines[1].text, "Second line");
+    }
+
+    #[test]
+    fn test_parse_lrc_content_empty() {
+        let lines = LyricsFetcher::parse_lrc_content("");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_parse_lrc_content_no_timestamps() {
+        let content = "This is just plain text\nWith no timestamps";
+        let lines = LyricsFetcher::parse_lrc_content(content);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_parse_lrc_content_mixed() {
+        let content = "[ar:Artist Name]\n[00:05.00] Valid line\nplain text\n[00:10.00] Another valid";
+        let lines = LyricsFetcher::parse_lrc_content(content);
+        // [ar:Artist Name] has a ] but "ar" is not a valid timestamp → filtered out
+        assert_eq!(lines.len(), 2);
     }
 }

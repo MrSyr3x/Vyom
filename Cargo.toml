@@ -18,6 +18,7 @@ image = "0.25"
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = "1.0.134"
 anyhow = "1.0.94"
+thiserror = "2.0"
 futures = "0.3.31"
 toml = "0.9.10"
 clap = { version = "4.4", features = ["derive"] }
@@ -63,3 +64,9 @@ criterion = "0.5"
 [[bench]]
 name = "dsp_bench"
 harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1

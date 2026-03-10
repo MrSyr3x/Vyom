@@ -21,11 +21,13 @@ pub const EQ_FREQUENCIES: [f32; 10] = [
 ];
 
 /// Convert app EQ value (0.0-1.0) to dB gain (-12 to +12)
+#[must_use]
 pub fn value_to_db(value: f32) -> f32 {
     (value - 0.5) * 24.0
 }
 
 /// Convert dB gain (-12 to +12) to app EQ value (0.0-1.0)
+#[must_use]
 #[allow(dead_code)]
 pub fn db_to_value(db: f32) -> f32 {
     (db / 24.0) + 0.5
@@ -343,4 +345,80 @@ impl DspEqualizer {
 
     pub fn process_buffer(&mut self, _buffer: &mut [f32]) {}
     pub fn reset_filters(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_value_to_db_boundaries() {
+        assert!((value_to_db(0.0) - (-12.0)).abs() < f32::EPSILON);
+        assert!((value_to_db(0.5) - 0.0).abs() < f32::EPSILON);
+        assert!((value_to_db(1.0) - 12.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_db_to_value_boundaries() {
+        assert!((db_to_value(-12.0) - 0.0).abs() < f32::EPSILON);
+        assert!((db_to_value(0.0) - 0.5).abs() < f32::EPSILON);
+        assert!((db_to_value(12.0) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_roundtrip_consistency() {
+        for i in 0..=10 {
+            let original = i as f32 / 10.0;
+            let roundtrip = db_to_value(value_to_db(original));
+            assert!((roundtrip - original).abs() < 1e-6, "Roundtrip failed for {}", original);
+        }
+    }
+
+    #[test]
+    fn test_eq_gains_clamping() {
+        let gains = EqGains::new();
+        gains.set_gain(0, 20.0);
+        assert!((gains.get_gains()[0] - 12.0).abs() < f32::EPSILON);
+        gains.set_gain(0, -20.0);
+        assert!((gains.get_gains()[0] - (-12.0)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_eq_gains_default_flat() {
+        let gains = EqGains::new();
+        for g in gains.get_gains().iter() {
+            assert!((g - 0.0).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_eq_gains_out_of_range_band() {
+        let gains = EqGains::new();
+        gains.set_gain(10, 5.0);
+        gains.set_gain(100, 5.0);
+        for g in gains.get_gains().iter() {
+            assert!((g - 0.0).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_set_all_from_values() {
+        let gains = EqGains::new();
+        let values = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0];
+        gains.set_all_from_values(&values);
+        let result = gains.get_gains();
+        for (i, v) in values.iter().enumerate() {
+            assert!((result[i] - value_to_db(*v)).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_enabled_toggle() {
+        let gains = EqGains::new();
+        assert!(gains.is_enabled());
+        gains.set_enabled(false);
+        assert!(!gains.is_enabled());
+        gains.set_enabled(true);
+        assert!(gains.is_enabled());
+    }
 }

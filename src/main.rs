@@ -59,7 +59,9 @@ async fn main() -> Result<()> {
     let log_dir = dirs::cache_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("vyom");
-    let _ = std::fs::create_dir_all(&log_dir);
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("Warning: failed to create log directory: {}", e);
+    }
     // Use a daily rolling log file to prevent infinite growth
     let file_appender = tracing_appender::rolling::daily(log_dir, "vyom.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -102,7 +104,9 @@ async fn main() -> Result<()> {
     let (is_mpd_mode, source_app) = if args.controller {
         // Auto-Pause MPD to prevent concurrent audio ⏸️
         if let Ok(mut mpd) = mpd::Client::connect(format!("{}:{}", args.mpd_host, args.mpd_port)) {
-            let _ = mpd.pause(true);
+            if let Err(e) = mpd.pause(true) {
+                tracing::debug!("Failed to pause MPD on controller init: {}", e);
+            }
         }
         (false, "Spotify / Apple Music")
     } else {
@@ -241,14 +245,20 @@ async fn main() -> Result<()> {
                 }
 
                 if let Ok(info) = track_res {
-                    let _ = tx_spotify.send(AppEvent::TrackUpdate(info)).await;
+                    if let Err(e) = tx_spotify.send(AppEvent::TrackUpdate(info)).await {
+                        tracing::debug!("Channel closed during track update: {}", e);
+                    }
                 }
                 if let Some(Ok(queue)) = queue_opt {
-                    let _ = tx_spotify.send(AppEvent::QueueUpdate(queue)).await;
+                    if let Err(e) = tx_spotify.send(AppEvent::QueueUpdate(queue)).await {
+                        tracing::debug!("Channel closed during queue update: {}", e);
+                    }
                 }
                 // Send status update if we polled it successfully
                 if let (Some(s), Some(r)) = (shuffle_opt, repeat_opt) {
-                    let _ = tx_spotify.send(AppEvent::StatusUpdate(s, r)).await;
+                    if let Err(e) = tx_spotify.send(AppEvent::StatusUpdate(s, r)).await {
+                        tracing::debug!("Channel closed during status update: {}", e);
+                    }
                 }
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -330,7 +340,9 @@ async fn main() -> Result<()> {
                     // Hot Reload: Reload config, verify keys changed
                     let (new_user_config, _, reload_err) = AppConfig::load();
                     if let Some(err_msg) = reload_err {
-                        let _ = tx_config.send(AppEvent::ToastUpdate(err_msg)).await;
+                        if let Err(e) = tx_config.send(AppEvent::ToastUpdate(err_msg)).await {
+                            tracing::debug!("Channel closed during config toast: {}", e);
+                        }
                     } else if tx_config
                         .send(AppEvent::KeyConfigUpdate(Box::new(new_user_config.keys)))
                         .await
@@ -406,6 +418,11 @@ async fn main() -> Result<()> {
                 // ... (Input handling omitted)
                 // Mouse Interaction Removed as per User Request
                 AppEvent::Input(Event::Mouse(_)) => {},
+                AppEvent::Input(Event::Resize(_, _)) => {
+                    terminal.clear()?;
+                    app.image_protocol = None; // Force re-render of Kitty image
+                    app.needs_redraw = true;
+                },
                 AppEvent::Input(Event::Key(key)) => {
                     // Filter out modifier-only key events (bare Shift/Ctrl/Alt presses)
                     // crossterm 0.28 reports these as KeyCode::Modifier(...) which no handler matches,
@@ -483,17 +500,17 @@ async fn main() -> Result<()> {
                                     use vyom::app::lyrics::LyricsFetchResult;
                                     match fetcher.fetch(&artist, &name, dur, file_path.as_ref()).await {
                                         Ok(LyricsFetchResult::Found(lyrics, source)) => {
-                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics, source))).await;
+                                            if let Err(e) = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Loaded(lyrics, source))).await { tracing::debug!("Channel closed: {}", e); }
                                         },
                                         Ok(LyricsFetchResult::Instrumental) => {
-                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Instrumental)).await;
+                                             if let Err(e) = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Instrumental)).await { tracing::debug!("Channel closed: {}", e); }
                                         },
                                         Ok(LyricsFetchResult::None) => {
-                                             let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::NotFound)).await;
+                                             if let Err(e) = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::NotFound)).await { tracing::debug!("Channel closed: {}", e); }
                                         }
                                         Err(e) => {
                                             // Send Error State
-                                            let _ = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Failed(e.to_string()))).await;
+                                            if let Err(err) = tx_lyrics.send(AppEvent::LyricsUpdate(fetch_id, LyricsState::Failed(e.to_string()))).await { tracing::debug!("Channel closed: {}", err); }
                                         }
                                     }
                                 });
@@ -513,11 +530,11 @@ async fn main() -> Result<()> {
                                     match renderer.fetch_itunes_artwork(&artist, &album).await {
                                         Ok(url) => {
                                              match renderer.fetch_image(&url).await {
-                                                 Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
-                                                 Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id.clone(), ArtworkState::Failed)).await; }
+                                                 Ok(img) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await { tracing::debug!("Channel closed: {}", e); } },
+                                                 Err(_) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id.clone(), ArtworkState::Failed)).await { tracing::debug!("Channel closed: {}", e); } }
                                              }
                                         },
-                                        Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
+                                        Err(_) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await { tracing::debug!("Channel closed: {}", e); } }
                                     }
                                 });
                             }
@@ -536,8 +553,8 @@ async fn main() -> Result<()> {
                                         }).await;
 
                                         match result {
-                                            Ok(Ok(img)) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
-                                            _ => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
+                                            Ok(Ok(img)) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await { tracing::debug!("Channel closed: {}", e); } },
+                                            _ => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await { tracing::debug!("Channel closed: {}", e); } }
                                         }
                                     });
                                 }
@@ -555,8 +572,8 @@ async fn main() -> Result<()> {
                                 tokio::spawn(async move {
                                     let renderer = ArtworkRenderer::new(client);
                                     match renderer.fetch_image(&url).await {
-                                         Ok(img) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await; },
-                                         Err(_) => { let _ = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await; }
+                                         Ok(img) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Loaded(img))).await { tracing::debug!("Channel closed: {}", e); } },
+                                         Err(_) => { if let Err(e) = tx_art.send(AppEvent::ArtworkUpdate(fetch_id, ArtworkState::Failed)).await { tracing::debug!("Channel closed: {}", e); } }
                                     }
                                 });
                             }

@@ -21,7 +21,9 @@ pub async fn handle_player_events(
         audio_pipeline.flush();
         let p = player.clone();
         tokio::task::spawn_blocking(move || {
-            let _ = p.play_pause();
+            if let Err(e) = p.play_pause() {
+                tracing::warn!("Failed to toggle play/pause: {}", e);
+            }
         });
         app.show_toast("⏯ Play/Pause");
         return true;

@@ -199,3 +199,111 @@ impl KeyConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn key_shift(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn test_matches_space() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Char(' ')), &cfg.play_pause));
+    }
+
+    #[test]
+    fn test_matches_enter() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Enter), &cfg.enter_dir));
+    }
+
+    #[test]
+    fn test_matches_backspace() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Backspace), &cfg.back_dir));
+    }
+
+    #[test]
+    fn test_matches_esc() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Esc), &cfg.back_dir_alt));
+    }
+
+    #[test]
+    fn test_matches_tab() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Tab), &cfg.tab_next));
+    }
+
+    #[test]
+    fn test_matches_backtab() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::BackTab), &cfg.tab_prev));
+    }
+
+    #[test]
+    fn test_matches_arrows() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Up), &cfg.nav_up_alt));
+        assert!(cfg.matches(key(KeyCode::Down), &cfg.nav_down_alt));
+        assert!(cfg.matches(key(KeyCode::Left), &cfg.nav_left_alt));
+        assert!(cfg.matches(key(KeyCode::Right), &cfg.nav_right_alt));
+    }
+
+    #[test]
+    fn test_matches_lowercase_char() {
+        let cfg = KeyConfig::default();
+        assert!(cfg.matches(key(KeyCode::Char('q')), &cfg.quit));
+        assert!(cfg.matches(key(KeyCode::Char('n')), &cfg.next_track));
+        assert!(cfg.matches(key(KeyCode::Char('p')), &cfg.prev_track));
+    }
+
+    #[test]
+    fn test_matches_uppercase_with_shift() {
+        let cfg = KeyConfig::default();
+        // Shift+a should match "A"
+        assert!(cfg.matches(key_shift(KeyCode::Char('a')), &cfg.cycle_art));
+        // Direct uppercase char should also match
+        assert!(cfg.matches(key(KeyCode::Char('A')), &cfg.cycle_art));
+    }
+
+    #[test]
+    fn test_no_false_positive() {
+        let cfg = KeyConfig::default();
+        // 'q' should not match play_pause ("Space")
+        assert!(!cfg.matches(key(KeyCode::Char('q')), &cfg.play_pause));
+        // Enter should not match quit ("q")
+        assert!(!cfg.matches(key(KeyCode::Enter), &cfg.quit));
+    }
+
+    #[test]
+    fn test_display_special_keys() {
+        let cfg = KeyConfig::default();
+        assert_eq!(cfg.display("Space"), "Space");
+        assert_eq!(cfg.display("Up"), "↑");
+        assert_eq!(cfg.display("Down"), "↓");
+        assert_eq!(cfg.display("Left"), "←");
+        assert_eq!(cfg.display("Right"), "→");
+        assert_eq!(cfg.display("BackTab"), "S-Tab");
+        assert_eq!(cfg.display("Backspace"), "Bksp");
+        assert_eq!(cfg.display("q"), "q");
+    }
+}

@@ -103,3 +103,51 @@ fn test_queue_manipulation() {
     assert_eq!(app.queue[0].title, "Song A");
     assert!(app.queue[0].is_current);
 }
+
+#[test]
+fn test_toast_creation() {
+    let mut app = create_test_app();
+    assert!(app.toast.is_none());
+
+    app.show_toast("Hello!");
+    assert!(app.toast.is_some());
+    assert_eq!(app.toast.as_ref().unwrap().message, "Hello!");
+}
+
+#[test]
+fn test_toast_stacking_updates_message() {
+    let mut app = create_test_app();
+    app.show_toast("First");
+    let start_time = app.toast.as_ref().unwrap().start_time;
+
+    app.show_toast("Second");
+    // Message should be updated
+    assert_eq!(app.toast.as_ref().unwrap().message, "Second");
+    // start_time should be preserved (no re-animation)
+    assert_eq!(app.toast.as_ref().unwrap().start_time, start_time);
+}
+
+#[test]
+fn test_toast_expiry_on_tick() {
+    let mut app = create_test_app();
+    app.show_toast("Expiring");
+    assert!(app.toast.is_some());
+
+    // Manually set deadline to the past to simulate expiry
+    if let Some(ref mut toast) = app.toast {
+        toast.deadline = std::time::Instant::now() - std::time::Duration::from_millis(1);
+    }
+
+    app.on_tick();
+    assert!(app.toast.is_none(), "Toast should be cleared after deadline");
+}
+
+#[test]
+fn test_toast_not_expired_during_active() {
+    let mut app = create_test_app();
+    app.show_toast("Still alive");
+
+    // Don't modify deadline — it should be 2s in the future
+    app.on_tick();
+    assert!(app.toast.is_some(), "Toast should still be visible");
+}
