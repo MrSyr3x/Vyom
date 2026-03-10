@@ -136,6 +136,7 @@ pub fn run_http_audio_loop(
         // 2. Parse Format
         let mut new_rate = current_sample_rate;
         let mut new_channels = current_channels;
+        let mut skipping_header = false;
 
         // Check for RIFF/WAVE signature
         if &header[0..4] == b"RIFF" && &header[8..12] == b"WAVE" && &header[12..16] == b"fmt " {
@@ -150,6 +151,13 @@ pub fn run_http_audio_loop(
             }
             if !(8000..=192000).contains(&new_rate) {
                 new_rate = 44100;
+            }
+            
+            // Check if the 44-byte header ends with the 'data' chunk.
+            // If it doesn't, this is an extended WAV header with metadata.
+            if &header[36..40] != b"data" {
+                skipping_header = true;
+                tracing::debug!("Extended WAV header detected on connect. Entering skip mode.");
             }
         }
 
@@ -189,7 +197,6 @@ pub fn run_http_audio_loop(
         // dropped, causing sustained sample misalignment → distortion/buzz.
         let frame_size = (current_channels * 2) as usize; // 16-bit = 2 bytes per sample
         let mut leftover = Vec::<u8>::with_capacity(frame_size);
-        let mut skipping_header = false;
 
         while running.load(Ordering::SeqCst) {
             // Immediate Audio Flush Check ⚡
