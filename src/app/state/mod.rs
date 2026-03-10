@@ -29,6 +29,7 @@ pub struct App {
     pub keys: KeyConfig, // Store keys for runtime lookup
 
     pub is_running: bool,
+    pub tick_count: u64,
     pub track: Option<TrackInfo>,
     pub lyrics: LyricsState, // changed from Option<Vec<LyricLine>>
     pub artwork: ArtworkState,
@@ -173,6 +174,7 @@ impl App {
             keys: user_config.keys.clone(), // Clone keys from user config
             is_running: true,
             needs_redraw: true,
+            tick_count: 0,
             track: None,
             lyrics: LyricsState::Idle,
             artwork: ArtworkState::Idle,

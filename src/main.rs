@@ -346,9 +346,9 @@ async fn main() -> Result<()> {
     // 5. Animation / Status Tick Task ⚡
     let tx_tick = tx.clone();
     tokio::spawn(async move {
-        // Reduced from 16ms (60FPS) to 500ms (2FPS) for battery optimization.
-        // Fast animations (like Seeking) are now correctly event-driven.
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        // Fast animations (like Seeking and Cava Visualizer) need 16ms to render correctly.
+        // We handle conditional drawing inside the event loop so this doesn't burn CPU unnecessarily.
+        let mut interval = tokio::time::interval(Duration::from_millis(16));
         loop {
             interval.tick().await;
             if tx_tick.send(AppEvent::Tick).await.is_err() {
@@ -621,20 +621,25 @@ async fn main() -> Result<()> {
 
                 AppEvent::Tick => {
                     app.on_tick();
+                    app.tick_count = app.tick_count.wrapping_add(1);
 
                     let mut is_playing = false;
-                    // Simplest fallback for now: redraw if we have an active track
-                    // and we are not explicitly paused. (Actually we don't store pause state in App yet easily).
-                    // We will just redraw if visualizer is open, OR if we have a track.
                     if app.track.is_some() {
                         is_playing = true;
                     }
 
-                    if app.view_mode == app::ViewMode::Visualizer || is_playing {
+                    let is_animating_lyrics = app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some());
+                    let needs_high_fps = app.view_mode == app::ViewMode::Visualizer || is_animating_lyrics;
+
+                    if needs_high_fps {
+                        app.needs_redraw = true;
+                    } else if is_playing && app.tick_count % 30 == 0 {
+                        // Only force a redraw every ~480ms (30 ticks) to update the progress bar 
+                        // when no high-FPS visualizer/animation is active
                         app.needs_redraw = true;
                     }
 
-                    if app.last_scroll_time.is_none() && (app.lyrics_offset.is_some() || app.lyrics_selected.is_some()) {
+                    if is_animating_lyrics {
                         if let (LyricsState::Loaded(lyrics, _), Some(_track)) = (&app.lyrics, &app.track) {
                             // 1. Calculate Target
                             // Find target line based on interpolated time
