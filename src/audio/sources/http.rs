@@ -93,7 +93,7 @@ pub fn run_http_audio_loop(
         let stream_config = StreamConfig {
             channels,
             sample_rate: cpal::SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Default,
+            buffer_size: cpal::BufferSize::Fixed(1024),
         };
 
         build_audio_stream(
@@ -103,7 +103,7 @@ pub fn run_http_audio_loop(
             fade_level.clone(),
             global_volume.clone(),
             vis_buffer_orig.clone(),
-            0.005, // FADE_SPEED for HTTP
+            0.001, // FADE_SPEED for HTTP (~30ms fade-in at 44100Hz)
             flush_sig_orig.clone(),
         )
     };
@@ -224,13 +224,43 @@ pub fn run_http_audio_loop(
                         work_buf = &combined;
                     }
 
-                    let total_bytes = work_buf.len();
+                    // Mid-stream WAV header detection 🛡️
+                    // MPD httpd with `always_on "yes"` resends a 44-byte WAV
+                    // header when tracks change. If we decode those bytes as
+                    // PCM samples, they produce audible garbage/buzz.
+                    // Scan for embedded RIFF headers and skip past them.
+                    let pcm_start = if work_buf.len() >= 44 {
+                        // Check first 4 bytes for RIFF signature
+                        if &work_buf[0..4] == b"RIFF" {
+                            tracing::debug!("Skipped mid-stream WAV header (44 bytes)");
+                            44 // Skip the entire WAV header
+                        } else {
+                            // Also scan for RIFF embedded deeper in the buffer
+                            // (could arrive mid-read)
+                            let mut skip_to = 0;
+                            for pos in 0..work_buf.len().saturating_sub(44) {
+                                if &work_buf[pos..pos + 4] == b"RIFF" {
+                                    // Found embedded header — skip everything
+                                    // up to and including it
+                                    skip_to = pos + 44;
+                                    tracing::debug!("Skipped embedded WAV header at offset {}", pos);
+                                    break;
+                                }
+                            }
+                            skip_to
+                        }
+                    } else {
+                        0
+                    };
+
+                    let pcm_data = &work_buf[pcm_start..];
+                    let total_bytes = pcm_data.len();
                     let aligned_bytes = (total_bytes / frame_size) * frame_size;
                     let remainder = total_bytes - aligned_bytes;
 
                     // Save unaligned trailing bytes for the next iteration
                     if remainder > 0 {
-                        leftover.extend_from_slice(&work_buf[aligned_bytes..]);
+                        leftover.extend_from_slice(&pcm_data[aligned_bytes..]);
                     }
 
                     // 16-bit PCM to f32 (only process frame-aligned bytes)
@@ -240,7 +270,7 @@ pub fn run_http_audio_loop(
                     for i in 0..samples {
                         let idx = i * 2;
                         let sample_i16 =
-                            i16::from_le_bytes([work_buf[idx], work_buf[idx + 1]]);
+                            i16::from_le_bytes([pcm_data[idx], pcm_data[idx + 1]]);
                         float_buffer.push(sample_i16 as f32 / 32768.0);
                     }
 

@@ -47,7 +47,7 @@ pub fn run_fifo_audio_loop(
     let stream_config = StreamConfig {
         channels: current_channels,
         sample_rate: cpal::SampleRate(current_sample_rate),
-        buffer_size: cpal::BufferSize::Default,
+        buffer_size: cpal::BufferSize::Fixed(1024),
     };
 
     // Create EQ at correct sample rate
@@ -68,7 +68,7 @@ pub fn run_fifo_audio_loop(
         fade_level.clone(),
         global_volume.clone(),
         vis_buffer.clone(),
-        0.003, // FADE_SPEED for FIFO
+        0.001, // FADE_SPEED for FIFO (~30ms fade-in at 44100Hz)
         flush_signal.clone(),
     )?;
 
@@ -119,7 +119,7 @@ pub fn run_fifo_audio_loop(
                     let new_config = StreamConfig {
                         channels: current_channels,
                         sample_rate: cpal::SampleRate(current_sample_rate),
-                        buffer_size: cpal::BufferSize::Default,
+                        buffer_size: cpal::BufferSize::Fixed(1024),
                     };
 
                     match build_audio_stream(
@@ -129,7 +129,7 @@ pub fn run_fifo_audio_loop(
                         fade_level.clone(),
                         global_volume.clone(),
                         vis_buffer.clone(),
-                        0.003, // FADE_SPEED for FIFO
+                        0.001, // FADE_SPEED for FIFO (~30ms fade-in at 44100Hz)
                         flush_signal.clone(),
                     ) {
                         Ok(s) => {
