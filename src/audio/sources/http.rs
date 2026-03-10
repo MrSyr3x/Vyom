@@ -4,12 +4,19 @@ use crate::audio::types::AudioInputFormat;
 use cpal::traits::HostTrait;
 use cpal::StreamConfig;
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::errors::Error as SymphoniaError;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::{MediaSource, MediaSourceStream, ReadOnlySource};
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
 
 /// Connect to MPD HTTP stream and return a BufReader that preserves all data.
 /// 
@@ -111,14 +118,12 @@ pub fn run_http_audio_loop(
     // Initial stream build (fallback)
     _current_stream = Some(build_stream(current_sample_rate, current_channels)?);
 
-    let mut read_buffer = vec![0u8; 8192];
-
     // EQ instance for processing loop (needs to match sample rate too!)
     // We'll recreate it if rate changes.
     let mut processing_eq = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
 
     while running.load(Ordering::SeqCst) {
-        let mut reader = match connect_to_http_stream(host, port) {
+        let reader = match connect_to_http_stream(host, port) {
             Ok(r) => r,
             Err(_) => {
                 thread::sleep(Duration::from_millis(500));
@@ -126,61 +131,75 @@ pub fn run_http_audio_loop(
             }
         };
 
-        // 1. Read WAV Header (44 bytes) for TRUTH 🕵️‍♂️
-        let mut header = [0u8; 44];
-        if reader.read_exact(&mut header).is_err() {
-            thread::sleep(Duration::from_millis(100));
-            continue;
+        let mss = MediaSourceStream::new(
+            Box::new(ReadOnlySource::new(reader)) as Box<dyn MediaSource>,
+            Default::default()
+        );
+        
+        // Wait for buffer flush signal before starting decode
+        if flush_signal.load(Ordering::SeqCst) {
+            flush_signal.store(false, Ordering::SeqCst);
+            if let Ok(mut buffer) = ring_buffer.lock() {
+                buffer.clear();
+            }
+            fade_level.store(0f32.to_bits(), Ordering::SeqCst);
+            processing_eq.reset_filters();
         }
 
-        // 2. Parse Format
-        let mut new_rate = current_sample_rate;
-        let mut new_channels = current_channels;
-        let mut skipping_header = false;
+        let hint = Hint::new();
+        let format_opts = FormatOptions {
+            enable_gapless: true,
+            ..Default::default()
+        };
+        let metadata_opts = MetadataOptions::default();
 
-        // Check for RIFF/WAVE signature
-        if &header[0..4] == b"RIFF" && &header[8..12] == b"WAVE" && &header[12..16] == b"fmt " {
-            // channels at offset 22 (u16)
-            new_channels = u16::from_le_bytes([header[22], header[23]]);
-            // sample rate at offset 24 (u32)
-            new_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-
-            // Sanity checks
-            if new_channels == 0 || new_channels > 8 {
-                new_channels = 2;
+        let probed = match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!("Symphonia probe failed (maybe end of stream?): {:?}", e);
+                thread::sleep(Duration::from_millis(100));
+                continue;
             }
-            if !(8000..=192000).contains(&new_rate) {
-                new_rate = 44100;
+        };
+
+        let mut format = probed.format;
+        
+        // Find the first audio track
+        let track = match format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL) {
+            Some(t) => t.clone(),
+            None => {
+                tracing::error!("No audio track found in stream!");
+                thread::sleep(Duration::from_millis(500));
+                continue;
             }
-            
-            // Check if the 44-byte header ends with the 'data' chunk.
-            // If it doesn't, this is an extended WAV header with metadata.
-            if &header[36..40] != b"data" {
-                skipping_header = true;
-                tracing::debug!("Extended WAV header detected on connect. Entering skip mode.");
+        };
+
+        let track_id = track.id;
+        let p_sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+        let p_channels = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+
+        let dec_opts = DecoderOptions::default();
+        let mut decoder = match symphonia::default::get_codecs().make(&track.codec_params, &dec_opts) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!("Failed to create decoder: {:?}", e);
+                thread::sleep(Duration::from_millis(500));
+                continue;
             }
-        }
+        };
 
-        // 3. Reconfigure Stream if changed
-        if new_rate != current_sample_rate || new_channels != current_channels {
-            tracing::info!(
-                "⟳ Audio Format Changed: {}Hz / {}ch",
-                new_rate, new_channels
-            );
-            current_sample_rate = new_rate;
-            current_channels = new_channels;
+        // Stream Reconfiguration
+        if p_sample_rate != current_sample_rate || p_channels != current_channels {
+            tracing::info!("⟳ Audio Format Changed: {}Hz / {}ch", p_sample_rate, p_channels);
+            current_sample_rate = p_sample_rate;
+            current_channels = p_channels;
 
-            // Update EQ for processing loop
-            processing_eq = DspEqualizer::new(new_rate as f32, eq_gains.clone());
+            processing_eq = DspEqualizer::new(current_sample_rate as f32, eq_gains.clone());
 
-            // Rebuild cpal stream
-            // Dropping old stream (by overwriting Option) stops it
-            _current_stream = match build_stream(new_rate, new_channels) {
+            _current_stream = match build_stream(current_sample_rate, current_channels) {
                 Ok(s) => Some(s),
                 Err(e) => {
-                    tracing::error!("Failed to rebuild stream: {}", e);
-                    // Try to keep old one? Or fallback?
-                    // If rebuild fails, we are kind of stuck. Wait and retry?
+                    tracing::error!("Failed to rebuild cpal stream: {}", e);
                     thread::sleep(Duration::from_secs(1));
                     continue;
                 }
@@ -191,158 +210,94 @@ pub fn run_http_audio_loop(
             buffer.clear();
         }
 
-        // Frame alignment accumulator: carries leftover bytes between reads.
-        // TCP read() returns arbitrary byte counts (e.g. 8191 bytes for 16-bit
-        // stereo where frame_size=4). Without this, remainder bytes are silently
-        // dropped, causing sustained sample misalignment → distortion/buzz.
-        let frame_size = (current_channels * 2) as usize; // 16-bit = 2 bytes per sample
-        let mut leftover = Vec::<u8>::with_capacity(frame_size);
+        let mut sample_buf: Option<symphonia::core::audio::SampleBuffer<f32>> = None;
 
+        // Packet decode loop
         while running.load(Ordering::SeqCst) {
-            // Immediate Audio Flush Check ⚡
             if flush_signal.load(Ordering::SeqCst) {
                 flush_signal.store(false, Ordering::SeqCst);
                 if let Ok(mut buffer) = ring_buffer.lock() {
-                    buffer.clear(); // Drop 1s+ of old audio
+                    buffer.clear();
                 }
-                // Reset fade to 0 so audio fades in smoothly on resume
-                // instead of popping at full volume
                 fade_level.store(0f32.to_bits(), Ordering::SeqCst);
                 processing_eq.reset_filters();
-                leftover.clear(); // Reset alignment state
-                // Break out of the socket read loop to force MPD buffer drop!
-                break;
+                break; // Break the internal decode loop to reconnect the HTTP socket
             }
 
-            match reader.read(&mut read_buffer) {
-                Ok(0) => {
+            let packet = match format.next_packet() {
+                Ok(p) => p,
+                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                Err(e) => {
+                    tracing::debug!("Stream ended or Error: {:?} - Reconnecting...", e);
                     processing_eq.reset_filters();
                     break;
                 }
-                Ok(bytes_read) => {
-                    // Prepend any leftover bytes from the previous read
-                    let work_buf: &[u8];
-                    let mut combined;
-                    if leftover.is_empty() {
-                        work_buf = &read_buffer[..bytes_read];
-                    } else {
-                        combined = Vec::with_capacity(leftover.len() + bytes_read);
-                        combined.extend_from_slice(&leftover);
-                        combined.extend_from_slice(&read_buffer[..bytes_read]);
-                        leftover.clear();
-                        work_buf = &combined;
+            };
+
+            if packet.track_id() != track_id {
+                continue; // Not our audio track
+            }
+
+            match decoder.decode(&packet) {
+                Ok(decoded) => {
+                    // Convert decoded audio to f32 samples
+                    if sample_buf.is_none() || sample_buf.as_ref().unwrap().capacity() < decoded.capacity() {
+                        let spec = *decoded.spec();
+                        let duration = decoded.capacity() as u64;
+                        sample_buf = Some(symphonia::core::audio::SampleBuffer::<f32>::new(duration, spec));
                     }
 
-                    // Mid-stream WAV header detection 🛡️
-                    // MPD httpd with `always_on "yes"` resends a WAV header when
-                    // tracks change. These headers can be >44 bytes if they contain
-                    // LIST chunks or ID3 tags. If we decode those bytes as PCM,
-                    // they produce a violently loud POP/buzz.
-                    
-                    let mut pcm_start = 0;
-                    
-                    // 1. Look for RIFF anywhere in the newly arrived buffer
-                    // (It usually arrives at the very start of a read when tracks change)
-                    for pos in 0..work_buf.len().saturating_sub(4) {
-                        if &work_buf[pos..pos + 4] == b"RIFF" {
-                            tracing::debug!("Detected mid-stream RIFF header. Entering skip mode.");
-                            skipping_header = true;
-                            // Throw away everything before the RIFF too, it's either
-                            // old track tail or garbage
-                            pcm_start = pos;
-                            break;
-                        }
-                    }
+                    if let Some(buf) = &mut sample_buf {
+                        buf.copy_interleaved_ref(decoded);
+                        let samples = buf.samples();
 
-                    // 2. If we are in skip mode, aggressively hunt for the 'data' chunk
-                    if skipping_header {
-                        let mut found_data = false;
-                        let search_start = pcm_start;
-                        for pos in search_start..work_buf.len().saturating_sub(8) {
-                            if &work_buf[pos..pos + 4] == b"data" {
-                                // Found the 'data' chunk! The actual PCM audio begins
-                                // 8 bytes after the 'd' (4 bytes for "data", 4 bytes for size)
-                                pcm_start = pos + 8;
-                                skipping_header = false;
-                                found_data = true;
-                                tracing::debug!("Found 'data' chunk. Resuming PCM decode.");
+                        let mut float_buffer = samples.to_vec();
+
+                        processing_eq.process_buffer(&mut float_buffer);
+
+                        // Backpressure: Wait for space 🛑
+                        let max_buffer_size = 32768;
+                        loop {
+                            if flush_signal.load(Ordering::SeqCst) {
+                                break; 
+                            }
+                            let len = ring_buffer.lock().map(|b| b.len()).unwrap_or(0);
+                            if len < max_buffer_size {
                                 break;
                             }
+                            thread::sleep(Duration::from_millis(5));
+                            if !running.load(Ordering::SeqCst) {
+                                processing_eq.reset_filters();
+                                return Ok(());
+                            }
                         }
-                        
-                        // If we didn't find 'data' in this buffer, the ENTIRE buffer is metadata.
-                        // Skip the whole thing and wait for the 'data' chunk in the next read.
-                        if !found_data {
-                            leftover.clear(); // Drop any accumulated incomplete frames
-                            continue; // Skip decode completely
-                        }
-                        
-                        // We found 'data', so we only decode from pcm_start onwards
-                    }
 
-                    let pcm_data = &work_buf[pcm_start..];
-                    let total_bytes = pcm_data.len();
-                    let aligned_bytes = (total_bytes / frame_size) * frame_size;
-                    let remainder = total_bytes - aligned_bytes;
-
-                    // Save unaligned trailing bytes for the next iteration
-                    if remainder > 0 {
-                        leftover.extend_from_slice(&pcm_data[aligned_bytes..]);
-                    }
-
-                    // 16-bit PCM to f32 (only process frame-aligned bytes)
-                    let samples = aligned_bytes / 2;
-                    let mut float_buffer = Vec::with_capacity(samples);
-
-                    for i in 0..samples {
-                        let idx = i * 2;
-                        let sample_i16 =
-                            i16::from_le_bytes([pcm_data[idx], pcm_data[idx + 1]]);
-                        float_buffer.push(sample_i16 as f32 / 32768.0);
-                    }
-
-                    processing_eq.process_buffer(&mut float_buffer);
-
-                    // Backpressure: Wait for space (prevents skipping) 🛑
-                    let max_buffer_size = 32768;
-                    loop {
-                        if flush_signal.load(Ordering::SeqCst) {
-                            break; // Abort wait immediately!
-                        }
-                        let len = ring_buffer.lock().map(|b| b.len()).unwrap_or(0);
-                        // Allow slight overflow for current batch
-                        if len < max_buffer_size {
-                            break;
-                        }
-                        thread::sleep(Duration::from_millis(5));
-                        if !running.load(Ordering::SeqCst) {
-                            processing_eq.reset_filters(); // Ensure cleanup
-                            return Ok(());
-                        }
-                    }
-
-                    if let Ok(mut buffer) = ring_buffer.lock() {
-                        for sample in float_buffer {
-                            buffer.push_back(sample);
-                        }
-                        // Safety valve: only drop if we are excessively behind (e.g. 2x)
-                        while buffer.len() > max_buffer_size * 2 {
-                            buffer.pop_front();
+                        if let Ok(mut buffer) = ring_buffer.lock() {
+                            buffer.extend(float_buffer);
+                            while buffer.len() > max_buffer_size * 2 {
+                                buffer.pop_front();
+                            }
                         }
                     }
                 }
-                Err(ref e)
-                    if e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::TimedOut =>
-                {
-                    continue
+                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    tracing::debug!("Decoder hit EOF. MPD stream wrapped.");
+                    break; // Reconnect
                 }
-                Err(_) => {
-                    processing_eq.reset_filters();
+                Err(SymphoniaError::DecodeError(e)) => {
+                    tracing::debug!("Decode Error: {:?}. Ignoring packet.", e);
+                    continue;
+                }
+                Err(e) => {
+                    tracing::error!("Symphonia decode error: {:?}", e);
                     break;
                 }
             }
         }
+        thread::sleep(Duration::from_millis(100));
         thread::sleep(Duration::from_millis(100));
     }
 
