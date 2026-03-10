@@ -19,18 +19,23 @@ pub async fn handle_player_events(
     // Play/Pause ('Space')
     if keys.matches(key, &keys.play_pause) {
         audio_pipeline.flush();
-        if let Ok(is_playing) = player.play_pause() {
-            app.show_toast(if is_playing { "▶ Play" } else { "⏸ Pause" });
-        }
+        let p = player.clone();
+        tokio::task::spawn_blocking(move || {
+            let _ = p.play_pause();
+        });
+        app.show_toast("⏯ Play/Pause");
         return true;
     }
 
     // Next Track ('n')
     if keys.matches(key, &keys.next_track) {
         audio_pipeline.flush();
-        if let Err(e) = player.next() {
-            tracing::warn!("Failed to skip to next track: {}", e);
-        }
+        let p = player.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = p.next() {
+                tracing::warn!("Failed to skip to next track: {}", e);
+            }
+        });
         app.show_toast("⏭ Next Track");
         return true;
     }
@@ -38,9 +43,12 @@ pub async fn handle_player_events(
     // Prev Track ('p')
     if keys.matches(key, &keys.prev_track) {
         audio_pipeline.flush();
-        if let Err(e) = player.prev() {
-            tracing::warn!("Failed to skip to previous track: {}", e);
-        }
+        let p = player.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = p.prev() {
+                tracing::warn!("Failed to skip to previous track: {}", e);
+            }
+        });
         app.show_toast("⏮ Previous Track");
         return true;
     }
@@ -51,9 +59,12 @@ pub async fn handle_player_events(
         app.app_volume = new_vol;
         app.last_volume_action = Some(std::time::Instant::now());
         audio_pipeline.set_volume(new_vol);
-        if let Err(e) = player.set_volume(new_vol) {
-            app.show_toast(&format!("Error: {}", e));
-        }
+        let p = player.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = p.set_volume(new_vol) {
+                tracing::warn!("Failed to set volume: {}", e);
+            }
+        });
         app.show_toast(&format!("🔊 Volume: {}%", new_vol));
         return true;
     }
@@ -64,9 +75,12 @@ pub async fn handle_player_events(
         app.app_volume = new_vol;
         app.last_volume_action = Some(std::time::Instant::now());
         audio_pipeline.set_volume(new_vol);
-        if let Err(e) = player.set_volume(new_vol) {
-            app.show_toast(&format!("Error: {}", e));
-        }
+        let p = player.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = p.set_volume(new_vol) {
+                tracing::warn!("Failed to set volume: {}", e);
+            }
+        });
         app.show_toast(&format!("🔉 Volume: {}%", new_vol));
         return true;
     }

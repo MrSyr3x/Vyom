@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Theme {
     pub base: Color,
     pub surface: Color,
