@@ -31,9 +31,9 @@ pub async fn handle_player_events(
             .unwrap_or(false);
             
         if is_playing {
-            app.show_toast("⏸ Pause");
+            app.show_toast("Pause");
         } else {
-            app.show_toast("▶️ Play");
+            app.show_toast("Play");
         }
         return true;
     }
@@ -47,7 +47,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to skip to next track: {}", e);
             }
         });
-        app.show_toast("⏭ Next Track");
+        app.show_toast("Next Track");
         return true;
     }
 
@@ -60,7 +60,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to skip to previous track: {}", e);
             }
         });
-        app.show_toast("⏮ Previous Track");
+        app.show_toast("Previous Track");
         return true;
     }
 
@@ -76,7 +76,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to set volume: {}", e);
             }
         });
-        app.show_toast(&format!("🔊 Volume: {}%", new_vol));
+        app.show_toast(&format!("Volume: {}%", new_vol));
         return true;
     }
 
@@ -92,7 +92,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to set volume: {}", e);
             }
         });
-        app.show_toast(&format!("🔉 Volume: {}%", new_vol));
+        app.show_toast(&format!("Volume: {}%", new_vol));
         return true;
     }
 
@@ -129,7 +129,7 @@ pub async fn handle_player_events(
                 target = target.max(0.0);
             }
 
-            // Increment Seek ID (Generation Counter) ⏩
+            // Increment Seek ID (Generation Counter)
             app.seek_id
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
@@ -143,7 +143,7 @@ pub async fn handle_player_events(
             tokio::task::spawn_blocking(move || {
                 // Check if a newer seek request has come in
                 if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
-                    return; // Stale request, discard 🗑️
+                    return; // Stale request, discard
                 }
 
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
@@ -155,7 +155,7 @@ pub async fn handle_player_events(
                     }
                 }
             });
-            app.show_toast(&format!("⏪ Seek: {:+.0}s", app.seek_accumulator));
+            app.show_toast(&format!("Seek: {:+.0}s", app.seek_accumulator));
         }
         return true;
     }
@@ -193,7 +193,7 @@ pub async fn handle_player_events(
                 target = target.max(0.0);
             }
 
-            // Increment Seek ID (Generation Counter) ⏩
+            // Increment Seek ID (Generation Counter)
             app.seek_id
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let my_id = app.seek_id.load(std::sync::atomic::Ordering::Relaxed);
@@ -207,7 +207,7 @@ pub async fn handle_player_events(
             tokio::task::spawn_blocking(move || {
                 // Check if a newer seek request has come in
                 if global_seek_id.load(std::sync::atomic::Ordering::Relaxed) != my_id {
-                    return; // Stale request, discard 🗑️
+                    return; // Stale request, discard
                 }
 
                 if let Ok(Some(current_track)) = player_bg.get_current_track() {
@@ -219,7 +219,7 @@ pub async fn handle_player_events(
                     }
                 }
             });
-            app.show_toast(&format!("⏩ Seek: {:+.0}s", app.seek_accumulator));
+            app.show_toast(&format!("Seek: {:+.0}s", app.seek_accumulator));
         }
         return true;
     }
@@ -233,7 +233,7 @@ pub async fn handle_player_events(
             }
             app.shuffle = new_state;
             app.show_toast(&format!(
-                "🔀 Shuffle: {}",
+                "Shuffle: {}",
                 if new_state { "ON" } else { "OFF" }
             ));
         } else {
@@ -254,7 +254,7 @@ pub async fn handle_player_events(
 
                 if let Some(state) = new_shuffle_state {
                     app.shuffle = state;
-                    app.show_toast(&format!("🔀 Shuffle: {}", if state { "ON" } else { "OFF" }));
+                    app.show_toast(&format!("Shuffle: {}", if state { "ON" } else { "OFF" }));
                 }
             }
         }

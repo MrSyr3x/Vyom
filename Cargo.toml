@@ -53,6 +53,7 @@ nix = { version = "0.31.1", features = ["signal"] }
 fs2 = "0.4.3"
 ratatui-image = { version = "10.0.6", features = ["crossterm"] }
 symphonia = { version = "0.5.5", features = ["wav", "flac", "mp3", "aac", "ogg"] }
+unicode-width = "0.2.2"
 
 [features]
 default = ["mpd", "eq"]

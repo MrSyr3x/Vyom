@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 pub fn render(f: &mut Frame, app: &App) {
     if let Some(ref toast) = app.toast {
@@ -14,7 +15,7 @@ pub fn render(f: &mut Frame, app: &App) {
 
         // Auto-dismiss handled in App::on_tick()
         let message = &toast.message;
-        let width = (message.len() as u16 + 6).min(f.area().width.saturating_sub(4));
+        let width = (message.width() as u16 + 6).min(f.area().width.saturating_sub(4));
         let height = 3;
         let target_x = f.area().width.saturating_sub(width + 1); // Top-right fixed
         let mut x = target_x;
