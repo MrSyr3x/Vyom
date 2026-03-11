@@ -31,9 +31,9 @@ pub async fn handle_player_events(
             .unwrap_or(false);
             
         if is_playing {
-            app.show_toast("Pause");
+            app.show_toast("⏸ Pause");
         } else {
-            app.show_toast("Play");
+            app.show_toast("▶ Play");
         }
         return true;
     }
@@ -47,7 +47,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to skip to next track: {}", e);
             }
         });
-        app.show_toast("Next Track");
+        app.show_toast("⏭ Next Track");
         return true;
     }
 
@@ -60,7 +60,7 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to skip to previous track: {}", e);
             }
         });
-        app.show_toast("Previous Track");
+        app.show_toast("⏮ Previous Track");
         return true;
     }
 
@@ -155,7 +155,7 @@ pub async fn handle_player_events(
                     }
                 }
             });
-            app.show_toast(&format!("Seek: {:+.0}s", app.seek_accumulator));
+            app.show_toast(&format!("⏪ Seek: {:+.0}s", app.seek_accumulator));
         }
         return true;
     }
@@ -219,7 +219,7 @@ pub async fn handle_player_events(
                     }
                 }
             });
-            app.show_toast(&format!("Seek: {:+.0}s", app.seek_accumulator));
+            app.show_toast(&format!("⏩ Seek: {:+.0}s", app.seek_accumulator));
         }
         return true;
     }
@@ -233,7 +233,7 @@ pub async fn handle_player_events(
             }
             app.shuffle = new_state;
             app.show_toast(&format!(
-                "Shuffle: {}",
+                "🔀 Shuffle: {}",
                 if new_state { "ON" } else { "OFF" }
             ));
         } else {
@@ -254,7 +254,7 @@ pub async fn handle_player_events(
 
                 if let Some(state) = new_shuffle_state {
                     app.shuffle = state;
-                    app.show_toast(&format!("Shuffle: {}", if state { "ON" } else { "OFF" }));
+                    app.show_toast(&format!("🔀 Shuffle: {}", if state { "ON" } else { "OFF" }));
                 }
             }
         }
