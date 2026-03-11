@@ -25,7 +25,16 @@ pub async fn handle_player_events(
                 tracing::warn!("Failed to toggle play/pause: {}", e);
             }
         });
-        app.show_toast("⏯ Play/Pause");
+        
+        let is_playing = app.track.as_ref()
+            .map(|t| t.state == crate::player::PlayerState::Playing)
+            .unwrap_or(false);
+            
+        if is_playing {
+            app.show_toast("⏸ Pause");
+        } else {
+            app.show_toast("▶️ Play");
+        }
         return true;
     }
 
