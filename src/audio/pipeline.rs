@@ -80,7 +80,7 @@ impl AudioPipeline {
         let source = self.config.source.clone();
         let format = self.config.format.clone();
         let vis_buffer = self.vis_buffer.clone();
-        let flush_signal = self.flush_signal.clone();
+        let flush_signal = Arc::clone(&self.flush_signal);
 
         running.store(true, Ordering::SeqCst);
 
@@ -91,19 +91,19 @@ impl AudioPipeline {
                     port,
                     &format,
                     eq_gains,
-                    running.clone(),
-                    global_volume.clone(),
+                    Arc::clone(&running),
+                    Arc::clone(&global_volume),
                     vis_buffer.clone(),
-                    flush_signal.clone(),
+                    Arc::clone(&flush_signal),
                 ),
                 AudioSource::Fifo { path } => run_fifo_audio_loop(
                     &path,
                     &format,
                     eq_gains,
-                    running.clone(),
-                    global_volume,
+                    Arc::clone(&running),
+                    Arc::clone(&global_volume),
                     vis_buffer,
-                    flush_signal.clone(),
+                    Arc::clone(&flush_signal),
                 ),
             };
 

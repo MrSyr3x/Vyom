@@ -72,9 +72,9 @@ pub fn build_audio_stream(
     fade_speed: f32,
     flush_signal: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<cpal::Stream, String> {
-    let rb_clone = ring_buffer.clone();
-    let fl_clone = fade_level.clone();
-    let gv_clone = global_volume.clone();
+    let rb_clone = Arc::clone(&ring_buffer);
+    let fl_clone = Arc::clone(&fade_level);
+    let gv_clone = Arc::clone(&global_volume);
     let vb_clone = vis_buffer.clone();
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate.0;
@@ -103,8 +103,8 @@ pub fn build_audio_stream(
     // When flush fires, this is set to ~100ms worth of samples.
     // The callback drains any ring buffer data as silence until this reaches 0.
     let mute_remaining = Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let mute_clone = mute_remaining.clone();
-    let flush_clone = flush_signal.clone();
+    let mute_clone = Arc::clone(&mute_remaining);
+    let flush_clone = Arc::clone(&flush_signal);
 
     let stream = device
         .build_output_stream(

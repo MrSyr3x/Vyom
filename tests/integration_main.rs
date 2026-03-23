@@ -1,5 +1,5 @@
-use vyom::app::{App, LibraryMode, QueueItem, TagEditState, ViewMode};
 use vyom::app::config::UserConfig;
+use vyom::app::{App, LibraryMode, QueueItem, TagEditState, ViewMode};
 
 /// Helper to create a test app instance
 fn create_test_app() -> App {
@@ -139,7 +139,10 @@ fn test_toast_expiry_on_tick() {
     }
 
     app.on_tick();
-    assert!(app.toast.is_none(), "Toast should be cleared after deadline");
+    assert!(
+        app.toast.is_none(),
+        "Toast should be cleared after deadline"
+    );
 }
 
 #[test]

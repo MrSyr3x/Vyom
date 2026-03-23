@@ -4,8 +4,8 @@ use vyom::audio::{DspEqualizer, EqGains};
 fn bench_process_sample(c: &mut Criterion) {
     // Setup a 10-band equalizer at 44.1kHz with some active bands
     let gains = EqGains::new();
-    gains.set_gain(0, 5.0);   // Boost Sub-bass
-    gains.set_gain(5, -3.0);  // Cut 1kHz
+    gains.set_gain(0, 5.0); // Boost Sub-bass
+    gains.set_gain(5, -3.0); // Cut 1kHz
 
     let mut eq = DspEqualizer::new(44100.0, gains);
 
