@@ -8,6 +8,7 @@ pub mod inputs;
 pub mod keys;
 pub mod library_helpers;
 pub mod lock;
+pub mod runner;
 pub mod tmux;
 pub use state::*;
 
