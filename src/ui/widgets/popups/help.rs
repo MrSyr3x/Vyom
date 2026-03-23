@@ -1,8 +1,8 @@
 use crate::app::{App, ViewMode};
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::Span,
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
@@ -237,96 +237,124 @@ pub fn render(f: &mut Frame, app: &App) {
         ]
     };
 
-    // Build popup content first to calculate exact height
-    let mut lines: Vec<Line> = Vec::new();
+    // Mathematical Explicit Tracking - Disjoint Grid Renderer
+    // Completely unlinks Emoji width calculations from text rendering shifts!
+    use unicode_width::UnicodeWidthStr;
 
-    // Context keys
-    for (key, icon, desc) in &keys {
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(" {:<7} ", key),
-                Style::default()
-                    .fg(theme.yellow)
-                    .add_modifier(Modifier::BOLD),
+    let max_key_w = keys
+        .iter()
+        .chain(global_keys.iter())
+        .map(|(k, _, _)| k.width())
+        .max()
+        .unwrap_or(7)
+        .max(7);
+
+    let max_desc_w = keys
+        .iter()
+        .chain(global_keys.iter())
+        .map(|(_, _, d)| d.width())
+        .max()
+        .unwrap_or(20);
+
+    let content_width = (max_key_w + max_desc_w + 7).max(22);
+
+    let mut num_lines = keys.len();
+    if !keys.is_empty() {
+        num_lines += 1;
+    }
+    num_lines += 2; // global title + empty line
+    num_lines += global_keys.len();
+
+    let max_height = f.area().height.saturating_sub(4);
+    let popup_height = (num_lines as u16 + 2).min(max_height);
+    let popup_width = (content_width as u16 + 2).min(f.area().width.saturating_sub(2));
+
+    // Anchored identically to the original layout (flush right)
+    let margin_right = 1;
+    let margin_bottom = 2;
+    let popup_x = f.area().width.saturating_sub(popup_width + margin_right);
+    let popup_y = f.area().height.saturating_sub(popup_height + margin_bottom);
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // EXACT Wipe Area: Do not over-wipe! Previously, an oversized Clear widget
+    // broke the main UI boundaries. Now we only wipe exactly what we draw.
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.blue))
+        .title(format!(" {} ", title))
+        .title_alignment(Alignment::Left);
+
+    let inner_area = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let mut current_y = inner_area.y;
+
+    let draw_row = |f: &mut Frame, y: u16, key: &str, icon: &str, desc: &str| {
+        if y >= inner_area.bottom() {
+            return;
+        }
+
+        let key_span = Span::styled(
+            format!("{:<width$}", key, width = max_key_w),
+            Style::default()
+                .fg(theme.yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(
+            Paragraph::new(key_span),
+            Rect::new(inner_area.x + 1, y, max_key_w as u16, 1),
+        );
+
+        f.render_widget(
+            Paragraph::new(icon.to_string()),
+            Rect::new(inner_area.x + 1 + max_key_w as u16 + 2, y, 2, 1),
+        );
+
+        let desc_span = Span::styled(desc.to_string(), Style::default().fg(theme.text));
+        f.render_widget(
+            Paragraph::new(desc_span),
+            Rect::new(
+                inner_area.x + 1 + max_key_w as u16 + 5,
+                y,
+                max_desc_w as u16,
+                1,
             ),
-            Span::styled("   ", Style::default().fg(theme.overlay)), // Cleaner spacer
-            Span::styled(format!("{} ", icon), Style::default()),
-            Span::styled(*desc, Style::default().fg(theme.text)),
-        ]));
+        );
+    };
+
+    // Draw Context Keys
+    for (key, icon, desc) in &keys {
+        draw_row(f, current_y, key, icon, desc);
+        current_y += 1;
     }
 
     if !keys.is_empty() {
-        lines.push(Line::from(""));
+        current_y += 1;
     }
 
-    // Global section - Left aligned with divider
-    lines.push(Line::from(Span::styled(
-        "────── Global ──────",
-        Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(""));
-
-    for (key, icon, desc) in &global_keys {
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(" {:<7} ", key),
-                Style::default()
-                    .fg(theme.green)
-                    .add_modifier(Modifier::BOLD),
+    if current_y < inner_area.bottom() {
+        let global_title = Span::styled(
+            "────── Global ──────",
+            Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(
+            Paragraph::new(global_title),
+            Rect::new(
+                inner_area.x + 1,
+                current_y,
+                inner_area.width.saturating_sub(2),
+                1,
             ),
-            Span::styled("   ", Style::default().fg(theme.overlay)), // Cleaner spacer
-            Span::styled(format!("{} ", icon), Style::default()),
-            Span::styled(*desc, Style::default().fg(theme.text)),
-        ]));
+        );
+        current_y += 2;
     }
 
-    // Calculate popup size - fit content exactly 📏
-    let content_width = keys
-        .iter()
-        .chain(global_keys.iter())
-        .map(|(k, _i, d)| {
-            // " kkkkkkk    ii ddddddd"
-            // padding(1) + key(max 7) + padding(1) + spacer(3) + icon/space(3) + desc
-            // We use fixed 7 for key alignment, but if key > 7 it expands
-            2 + k.len().max(7) + 3 + 3 + d.len()
-        })
-        .max()
-        .unwrap_or(20) // Minimum width
-        .max(22); // "────── Global ──────" length
-
-    let max_height = f.area().height.saturating_sub(4);
-    let popup_height = (lines.len() as u16 + 2).min(max_height); // +2 for borders
-    let popup_width = (content_width as u16 + 4).min(f.area().width.saturating_sub(2));
-
-    // Position at bottom-right
-    let popup_x = f.area().width.saturating_sub(popup_width + 1);
-    let popup_y = f.area().height.saturating_sub(popup_height + 2);
-    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
-
-    // SEAMLESS Z-INDEX FIX: Un-skip cells so Ratatui overwrites Kitty images
-    let buf = f.buffer_mut();
-    for y in popup_area.top()..popup_area.bottom() {
-        for x in popup_area.left()..popup_area.right() {
-            if let Some(cell) = buf.cell_mut((x, y)) {
-                cell.set_skip(false);
-                cell.set_char(' ');
-                cell.set_bg(ratatui::style::Color::Reset);
-                cell.set_fg(ratatui::style::Color::Reset);
-            }
-        }
+    // Draw Global Keys
+    for (key, icon, desc) in &global_keys {
+        draw_row(f, current_y, key, icon, desc);
+        current_y += 1;
     }
-
-    // Clear background
-    f.render_widget(Clear, popup_area);
-
-    let popup = Paragraph::new(lines).alignment(Alignment::Left).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.blue))
-            .title(format!(" {} ", title))
-            .title_alignment(Alignment::Left)
-            .style(Style::default().bg(Color::Reset)),
-    );
-    f.render_widget(popup, popup_area);
 }

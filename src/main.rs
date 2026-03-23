@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     // Use a daily rolling log file to prevent infinite growth
     let file_appender = tracing_appender::rolling::daily(log_dir, "vyom.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-    
+
     // We only set this up if we are not generating config
     tracing_subscriber::fmt()
         .with_writer(non_blocking)
@@ -371,6 +371,7 @@ async fn main() -> Result<()> {
 
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
+    let mut last_view_mode = app.view_mode.clone();
 
     loop {
         // Auto-Reset Lyrics Scroll Logic
@@ -391,16 +392,23 @@ async fn main() -> Result<()> {
         // Ratatui's image renderer uses `skip=true` for cells covered by the Kitty image.
         // Ratatui's buffer differ completely ignores skipped cells.
         // When a popup closes, the text characters belonging to the popup get stranded underneath the image.
-        // By forcing a `terminal.clear()` exactly when the popup closes, we wipe the ghost text 
+        // By forcing a `terminal.clear()` exactly when the popup closes, we wipe the ghost text
         // from the screen and force Ratatui to redraw the image placeholders smoothly.
         let has_popup = app.show_keyhints
             || app.show_audio_info
             || app.input_state.is_some()
             || app.tag_edit.is_some();
 
-        if !has_popup && app.had_popup_last_frame {
+        let popup_closed = !has_popup && app.had_popup_last_frame;
+        let view_changed = app.view_mode != last_view_mode;
+
+        // Force a strict terminal flush if a popup closes or if the user switches main views,
+        // irrevocably annihilating any cross-tab layout ghosting entirely. 👻🔫
+        if popup_closed || view_changed {
             terminal.clear()?;
         }
+
+        last_view_mode = app.view_mode.clone();
         app.had_popup_last_frame = has_popup;
 
         // Reactive Rendering: Only draw if state was actually mutated
@@ -652,7 +660,7 @@ async fn main() -> Result<()> {
                     if needs_high_fps {
                         app.needs_redraw = true;
                     } else if is_playing && app.tick_count % 30 == 0 {
-                        // Only force a redraw every ~480ms (30 ticks) to update the progress bar 
+                        // Only force a redraw every ~480ms (30 ticks) to update the progress bar
                         // when no high-FPS visualizer/animation is active
                         app.needs_redraw = true;
                     }
