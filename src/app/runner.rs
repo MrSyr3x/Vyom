@@ -12,6 +12,7 @@ use ratatui::{backend::Backend, Terminal};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_app<B: Backend>(
     app: &mut App,
     terminal: &mut Terminal<B>,
@@ -27,7 +28,7 @@ where
 {
     let mut last_track_id = String::new();
     let mut last_artwork_url = None;
-    let mut last_view_mode = app.view_mode.clone();
+    let mut last_view_mode = app.view_mode;
 
     loop {
         // Auto-Reset Lyrics Scroll Logic
@@ -55,7 +56,7 @@ where
             terminal.clear()?;
         }
 
-        last_view_mode = app.view_mode.clone();
+        last_view_mode = app.view_mode;
         app.had_popup_last_frame = has_popup;
 
         // Reactive Rendering: Only draw if state was actually mutated
@@ -282,9 +283,7 @@ where
                     let has_active_toast = app.toast.is_some();
                     let needs_high_fps = app.view_mode == crate::app::ViewMode::Visualizer || is_animating_lyrics || has_active_toast;
 
-                    if needs_high_fps {
-                        app.needs_redraw = true;
-                    } else if is_playing && app.tick_count % 30 == 0 {
+                    if needs_high_fps || (is_playing && app.tick_count.is_multiple_of(30)) {
                         app.needs_redraw = true;
                     }
 

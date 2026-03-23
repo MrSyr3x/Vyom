@@ -13,7 +13,6 @@ use tokio::sync::mpsc;
 use vyom::app::config::AppConfig;
 
 use vyom::app;
-use vyom::artwork;
 use vyom::audio::pipeline as audio_pipeline;
 
 use vyom::player;
