@@ -43,7 +43,8 @@ mod tests {
 
     #[test]
     fn test_error_is_std_error() {
-        let err: Box<dyn std::error::Error> = Box::new(VyomError::AudioPipeline("no device".to_string()));
+        let err: Box<dyn std::error::Error> =
+            Box::new(VyomError::AudioPipeline("no device".to_string()));
         assert_eq!(format!("{}", err), "Audio pipeline error: no device");
     }
 }

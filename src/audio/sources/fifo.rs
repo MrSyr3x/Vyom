@@ -35,7 +35,9 @@ pub fn run_fifo_audio_loop(
 
     tracing::info!(
         "🎵 FIFO Audio: {}Hz/{}bit/{}ch (Fixed format pipeline)",
-        current_sample_rate, current_bits_per_sample, current_channels
+        current_sample_rate,
+        current_bits_per_sample,
+        current_channels
     );
 
     // Use detected sample rate for bit-perfect output
@@ -77,7 +79,6 @@ pub fn run_fifo_audio_loop(
     let mut _active_stream = stream; // Keep stream alive
 
     while running.load(Ordering::SeqCst) {
-
         // Open FIFO (blocking)
         let fifo = match std::fs::OpenOptions::new()
             .read(true)

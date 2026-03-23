@@ -510,7 +510,8 @@ mod tests {
 
     #[test]
     fn test_parse_lrc_content_mixed() {
-        let content = "[ar:Artist Name]\n[00:05.00] Valid line\nplain text\n[00:10.00] Another valid";
+        let content =
+            "[ar:Artist Name]\n[00:05.00] Valid line\nplain text\n[00:10.00] Another valid";
         let lines = LyricsFetcher::parse_lrc_content(content);
         // [ar:Artist Name] has a ] but "ar" is not a valid timestamp → filtered out
         assert_eq!(lines.len(), 2);

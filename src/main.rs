@@ -163,20 +163,8 @@ async fn main() -> Result<()> {
     }
 
     // Player Backend Selection 🎛️
-    #[cfg(feature = "mpd")]
-    let player: std::sync::Arc<dyn player::PlayerTrait> = if !args.controller {
-        std::sync::Arc::new(player::MpdPlayer::new(
-            args.mpd_host.clone(),
-            args.mpd_port,
-            user_config.music_directory.clone(),
-        ))
-    } else {
-        std::sync::Arc::from(player::get_player())
-    };
-
-    #[cfg(not(feature = "mpd"))]
     let player: std::sync::Arc<dyn player::PlayerTrait> =
-        std::sync::Arc::from(player::get_player());
+        player::PlayerFactory::create(&args, &user_config);
 
     let (tx, mut rx) = mpsc::channel(100);
 

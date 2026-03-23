@@ -370,7 +370,11 @@ mod tests {
         for i in 0..=10 {
             let original = i as f32 / 10.0;
             let roundtrip = db_to_value(value_to_db(original));
-            assert!((roundtrip - original).abs() < 1e-6, "Roundtrip failed for {}", original);
+            assert!(
+                (roundtrip - original).abs() < 1e-6,
+                "Roundtrip failed for {}",
+                original
+            );
         }
     }
 

@@ -19,10 +19,10 @@ pub use artwork::ArtworkState;
 pub use library::{LibraryItem, LibraryItemType, LibraryMode, QueueItem};
 pub use lyrics::LyricsState;
 
-pub use ui::{InputMode, InputState, TagEditState, Toast, ViewMode};
 pub use artwork::ArtStyle;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
+pub use ui::{InputMode, InputState, TagEditState, Toast, ViewMode};
 
 pub struct App {
     pub theme: Theme,
@@ -259,7 +259,7 @@ impl App {
             // Find best image protocol based on terminal capabilities
             // Use query if possible, fallback to a sensible halfblocks picker if terminal is dumb
             image_picker: ratatui_image::picker::Picker::from_query_stdio()
-                    .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks()),
+                .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks()),
             image_protocol: None,
             had_popup_last_frame: false,
         };

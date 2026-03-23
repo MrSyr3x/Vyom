@@ -355,7 +355,10 @@ pub fn handle_library_events(key: KeyEvent, app: &mut App, args: &Args) -> bool 
                                         ..Default::default()
                                     }) {
                                         if let Err(e) = mpd.switch(id) {
-                                            tracing::warn!("Failed to switch MPD track via search: {}", e);
+                                            tracing::warn!(
+                                                "Failed to switch MPD track via search: {}",
+                                                e
+                                            );
                                         }
                                     }
                                 }

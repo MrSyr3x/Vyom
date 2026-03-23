@@ -19,7 +19,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 /// Connect to MPD HTTP stream and return a BufReader that preserves all data.
-/// 
+///
 /// CRITICAL: We return the BufReader directly (not the raw TcpStream) because
 /// the BufReader pre-reads data into its internal buffer during header parsing.
 /// Returning the raw stream would lose that pre-read audio data, causing a
@@ -133,9 +133,9 @@ pub fn run_http_audio_loop(
 
         let mss = MediaSourceStream::new(
             Box::new(ReadOnlySource::new(reader)) as Box<dyn MediaSource>,
-            Default::default()
+            Default::default(),
         );
-        
+
         // Wait for buffer flush signal before starting decode
         if flush_signal.load(Ordering::SeqCst) {
             flush_signal.store(false, Ordering::SeqCst);
@@ -153,7 +153,12 @@ pub fn run_http_audio_loop(
         };
         let metadata_opts = MetadataOptions::default();
 
-        let probed = match symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts) {
+        let probed = match symphonia::default::get_probe().format(
+            &hint,
+            mss,
+            &format_opts,
+            &metadata_opts,
+        ) {
             Ok(p) => p,
             Err(e) => {
                 tracing::debug!("Symphonia probe failed (maybe end of stream?): {:?}", e);
@@ -163,9 +168,13 @@ pub fn run_http_audio_loop(
         };
 
         let mut format = probed.format;
-        
+
         // Find the first audio track
-        let track = match format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL) {
+        let track = match format
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        {
             Some(t) => t.clone(),
             None => {
                 tracing::error!("No audio track found in stream!");
@@ -176,21 +185,30 @@ pub fn run_http_audio_loop(
 
         let track_id = track.id;
         let p_sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-        let p_channels = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+        let p_channels = track
+            .codec_params
+            .channels
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
 
         let dec_opts = DecoderOptions::default();
-        let mut decoder = match symphonia::default::get_codecs().make(&track.codec_params, &dec_opts) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::error!("Failed to create decoder: {:?}", e);
-                thread::sleep(Duration::from_millis(500));
-                continue;
-            }
-        };
+        let mut decoder =
+            match symphonia::default::get_codecs().make(&track.codec_params, &dec_opts) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::error!("Failed to create decoder: {:?}", e);
+                    thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+            };
 
         // Stream Reconfiguration
         if p_sample_rate != current_sample_rate || p_channels != current_channels {
-            tracing::info!("⟳ Audio Format Changed: {}Hz / {}ch", p_sample_rate, p_channels);
+            tracing::info!(
+                "⟳ Audio Format Changed: {}Hz / {}ch",
+                p_sample_rate,
+                p_channels
+            );
             current_sample_rate = p_sample_rate;
             current_channels = p_channels;
 
@@ -226,7 +244,10 @@ pub fn run_http_audio_loop(
 
             let packet = match format.next_packet() {
                 Ok(p) => p,
-                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                Err(SymphoniaError::IoError(e))
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
                     thread::sleep(Duration::from_millis(5));
                     continue;
                 }
@@ -244,10 +265,14 @@ pub fn run_http_audio_loop(
             match decoder.decode(&packet) {
                 Ok(decoded) => {
                     // Convert decoded audio to f32 samples
-                    if sample_buf.is_none() || sample_buf.as_ref().unwrap().capacity() < decoded.capacity() {
+                    if sample_buf.is_none()
+                        || sample_buf.as_ref().unwrap().capacity() < decoded.capacity()
+                    {
                         let spec = *decoded.spec();
                         let duration = decoded.capacity() as u64;
-                        sample_buf = Some(symphonia::core::audio::SampleBuffer::<f32>::new(duration, spec));
+                        sample_buf = Some(symphonia::core::audio::SampleBuffer::<f32>::new(
+                            duration, spec,
+                        ));
                     }
 
                     if let Some(buf) = &mut sample_buf {
@@ -262,7 +287,7 @@ pub fn run_http_audio_loop(
                         let max_buffer_size = 32768;
                         loop {
                             if flush_signal.load(Ordering::SeqCst) {
-                                break; 
+                                break;
                             }
                             let len = ring_buffer.lock().map(|b| b.len()).unwrap_or(0);
                             if len < max_buffer_size {
@@ -283,7 +308,9 @@ pub fn run_http_audio_loop(
                         }
                     }
                 }
-                Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                Err(SymphoniaError::IoError(e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
                     tracing::debug!("Decoder hit EOF. MPD stream wrapped.");
                     break; // Reconnect
                 }

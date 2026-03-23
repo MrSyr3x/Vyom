@@ -26,7 +26,7 @@ pub struct PersistentState {
     // Moved from UserConfig:
     #[serde(default)]
     pub presets: Vec<EqPreset>,
-    
+
     #[serde(default)]
     pub art_style: crate::app::state::artwork::ArtStyle,
 }
