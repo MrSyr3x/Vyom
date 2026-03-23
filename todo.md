@@ -46,3 +46,33 @@ This document tracks the final items required to push Vyom (`tmux-music`) into 1
 - [x] **Performance Benchmarking**: Deployed `criterion` pipelines tracking DSP mathematical throughput at 100ns execution cycles.
 - [x] **Release Profile Optimization**: Shipped thin LTO caching with 1 CPU-Codegen stripping in `Cargo.toml`.
 - [x] **Structured OS Logging**: Flawlessly aggregated blind STDERR streams into `~/.cache/vyom/vyom.log` to preserve UI integrity.
+
+---
+
+## 🌌 The Future of Vyom (v2.0 Vision)
+
+This section contains highly ambitious roadmap concepts and quality-of-life enhancements designed to elevate Vyom beyond an MPD client into an autonomous, top-tier standalone terminal media engine.
+
+### 1. Absolute UI/Glyph Customization
+- **Goal:** Move all hard-coded glyphs (play/pause borders, progress bar characters, EQ symbols) into `config.toml`.
+- **Impact:** Users will have 100% control over the visual identity of Vyom, allowing for extreme minimalism or ornate nerd-font styling uniquely tailored per user.
+
+### 2. Standalone Zero-Dependency Audio Engine
+- **Goal:** Build a self-hosted `rodio`/`symphonia` audio orchestrator with local SQLite indexing, completely divorcing the need for an external `mpd` daemon.
+- **Impact:** Makes Vyom an infinitely portable, out-of-the-box music player that natively manages its own library filesystem, caching, and playback without requiring users to configure external MPD sockets.
+
+### 3. Advanced Artwork Refinement
+- **Goal:** Expand `ratatui-image` support dynamically based on deep terminal capability interrogations (Kitty vs Sixel vs iTerm2 protocols) and introduce cross-fade transition animations for album art.
+- **Impact:** Studio-grade smoothness when iterating tracks, with zero visual artifacts. 
+
+### 4. Deep DSP Latency Diagnostics
+- **Goal:** Implement real-time acoustic telemetry metrics in the `Audio Info` diagnostic popup.
+- **Impact:** Proactively detects OS buffer underruns, thread drift, and polling latency in nanoseconds. We will establish proactive scanning routines to expose ANY unseen variables delaying sound handoff, guaranteeing 0ms latency responsiveness globally.
+
+### 5. OS-Native Media Key Integration
+- **Goal:** Leverage the `souvlaki` crate or raw OS bindings to route Vyom's metadata directly to the operating system's lock screen and global media widgets (macOS Control Center / Linux MPRIS).
+- **Impact:** Users can pause or skip tracks using their physical keyboard media keys without needing the terminal in focus.
+
+### 6. Lock-free Audio Effects Pipeline
+- **Goal:** Replace standard explicit `Mutex` data-bus channels with lock-free `crossbeam` atomic ring buffers.
+- **Impact:** This clears the path to introduce real-time Convolution Reverb, Pitch Shifting, and Flanger features natively into the Equalizer UI without triggering a single microscopic frame drop.
