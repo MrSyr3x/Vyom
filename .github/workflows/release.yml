@@ -1,0 +1,106 @@
+name: Auto-Release & Multi-Platform Matrix
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Triggers when a new version tag is pushed natively
+  # Allow manual dispatch from GitHub UI to force a release
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Semver bump type (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    name: ⬆️ Version Automation
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: 🚀 Install cargo-release
+        run: cargo install cargo-release
+
+      - name: 🔄 Bump and Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cargo release ${{ github.event.inputs.version_bump }} --execute --no-confirm --no-push
+          git push origin main --tags
+
+  build-and-release:
+    name: 📦 Build Core Binaries (${{ matrix.target }})
+    # Run if invoked by manual dispatch (after bump) OR a direct tag push
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Give bump job time to complete if dispatched manually
+    needs: [bump-version]
+    # Bypass `needs` if it was a direct tag push
+    if: always() && (needs.bump-version.result == 'success' || needs.bump-version.result == 'skipped')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: vyom-mac-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: vyom-mac-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: vyom-linux-x86_64
+            
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # If dispatched manually, checkout the newly tagged ref if possible
+        ref: ${{ github.ref }} 
+
+    - name: 📦 Install Linux Dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config
+
+    - name: 🦀 Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: ⚙️ Build Production Binary
+      run: cargo build --release --target ${{ matrix.target }}
+      
+    - name: 🗜️ Archive Artifact
+      run: |
+        cd target/${{ matrix.target }}/release
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          tar -czvf ../../../${{ matrix.artifact_name }}.tar.gz vyom.exe
+        else
+          tar -czvf ../../../${{ matrix.artifact_name }}.tar.gz vyom
+        fi
+        cd ../../..
+
+    - name: 🚀 Upload Binaries to GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: ${{ matrix.artifact_name }}.tar.gz
+        draft: false
+        prerelease: false
+        generate_release_notes: true

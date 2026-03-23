@@ -5,23 +5,23 @@ This document tracks the final items required to push Vyom (`tmux-music`) into 1
 ## 🚀 Priority Action Items (Pending)
 
 ### Architecture Refinement
-- [ ] **1. Decouple `main.rs` Monolith**
+- [x] **1. Decouple `main.rs` Monolith**
   - Extract the massive `AppEvent::Input` keybinding logic and rendering dispatch into a dedicated `app::runner` or `app::commands` module. 
   - Goal: Reduce the `main.rs` binary entry point stringency to under 100 lines.
-- [ ] **2. Player Factory Pattern**
+- [x] **2. Player Factory Pattern**
   - Formalize controller/backend dispatch using a `PlayerFactory` or Builder pattern to eliminate monolithic ad-hoc `if/else` branching.
 
 ### Code Quality & Static Analysis
-- [ ] **3. Eliminate Clippy Pointer Debt**
+- [x] **3. Eliminate Clippy Pointer Debt**
   - Resolve the final 35 `clone_on_ref_ptr` warnings inside the `src/audio/sources` pipeline.
   - Refactor instances of `Arc_variable.clone()` to the strict idiomatic `Arc::clone(&Arc_variable)` to enforce memory allocation transparency.
 
 ### Deployment & Binary Optimization
-- [ ] **4. CI/CD Multi-platform Builds & Static Gates**
+- [x] **4. CI/CD Multi-platform Builds & Static Gates**
   - Create a GitHub Actions `.github/workflows/ci.yml` pipeline.
   - Block Pull Requests globally unless `cargo test` and `cargo clippy -- -D warnings` pass cleanly.
   - Auto-compile binaries for x86_64 Mac, ARM64 Mac, and Linux.
-- [ ] **5. Version Automation**
+- [x] **5. Version Automation**
   - Wire `cargo-release` or a CI step that automatically bumps version metrics and builds macOS tags from a single source of truth.
 
 ---
