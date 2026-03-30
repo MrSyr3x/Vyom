@@ -3357,6 +3357,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtrb"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7204ed6420f698836b76d4d5c2ec5dec7585fd5c3a788fd1cde855d1de598239"
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4602,7 +4608,7 @@ dependencies = [
 
 [[package]]
 name = "vyom"
-version = "1.0.249"
+version = "1.0.250"
 dependencies = [
  "anyhow",
  "biquad",
@@ -4626,6 +4632,7 @@ dependencies = [
  "ratatui-image",
  "reqwest",
  "rodio",
+ "rtrb",
  "rustfft",
  "serde",
  "serde_json",
