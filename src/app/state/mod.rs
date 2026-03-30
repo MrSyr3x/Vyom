@@ -228,16 +228,24 @@ impl App {
             last_album: String::new(),
             shuffle: false,          // Will be updated from MPD
             repeat: RepeatMode::Off, // Will be updated from MPD
-            output_device: audio_device::get_output_device_name(),
+            output_device: if cfg!(test) {
+                "Mock Audio Device".to_string()
+            } else {
+                audio_device::get_output_device_name()
+            },
             audio_devices: {
-                let sys_devices = audio_device::get_devices_from_system();
-                if !sys_devices.is_empty() {
-                    sys_devices
+                if cfg!(test) {
+                    vec!["Mock Audio Device".to_string()]
                 } else {
-                    audio_device::get_output_devices()
-                        .into_iter()
-                        .map(|d| d.name)
-                        .collect()
+                    let sys_devices = audio_device::get_devices_from_system();
+                    if !sys_devices.is_empty() {
+                        sys_devices
+                    } else {
+                        audio_device::get_output_devices()
+                            .into_iter()
+                            .map(|d| d.name)
+                            .collect()
+                    }
                 }
             },
             selected_device_idx: 0,
@@ -257,9 +265,13 @@ impl App {
             mpd_client: None,
 
             // Find best image protocol based on terminal capabilities
-            // Use query if possible, fallback to a sensible halfblocks picker if terminal is dumb
-            image_picker: ratatui_image::picker::Picker::from_query_stdio()
-                .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks()),
+            // CRITICAL: We skip from_query_stdio() during tests as it panics in headless CI
+            image_picker: if cfg!(test) {
+                ratatui_image::picker::Picker::halfblocks()
+            } else {
+                ratatui_image::picker::Picker::from_query_stdio()
+                    .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks())
+            },
             image_protocol: None,
             had_popup_last_frame: false,
         };

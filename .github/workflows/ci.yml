@@ -13,6 +13,9 @@ jobs:
   lint-and-test:
     name: 🛡️ Audit & Test
     runs-on: macos-latest
+    env:
+      RUST_BACKTRACE: 1
+      TERM: xterm-256color
     
     steps:
     - uses: actions/checkout@v4
@@ -28,9 +31,9 @@ jobs:
     - name: 🎨 Format Verification
       run: cargo fmt --all -- --check
 
-    - name: 🧐 Strict Clippy Lints
-      # We temporarily relax this to identify hidden warnings in the log
+    - name: 🧐 Audit Lints (Relaxed)
       run: cargo clippy --all-targets --all-features
 
-    - name: 🧪 Run Unit Test Suite
-      run: cargo test --all-features
+    - name: 🧪 Run Unit Test Suite (Diagnostic)
+      # Run with --nocapture so we can see the panic message in the log
+      run: cargo test --all-features -- --nocapture --test-threads=1
