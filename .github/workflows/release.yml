@@ -24,7 +24,7 @@ jobs:
   bump-version:
     name: ⬆️ Version Automation
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,21 +70,12 @@ jobs:
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: vyom-mac-x86_64
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: vyom-linux-x86_64
             
     steps:
     - uses: actions/checkout@v4
       with:
         # If dispatched manually, checkout the newly tagged ref if possible
         ref: ${{ github.ref }} 
-
-    - name: 📦 Install Linux Dependencies
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
 
     - name: 🦀 Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

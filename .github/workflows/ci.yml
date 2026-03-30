@@ -12,17 +12,11 @@ env:
 jobs:
   lint-and-test:
     name: 🛡️ Audit & Test
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     
-    # We require libasound2-dev for ALSA support on Linux (CPAL dependency)
     steps:
     - uses: actions/checkout@v4
     
-    - name: 📦 Install Linux Audio Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
-        
     - name: 🦀 Setup Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
