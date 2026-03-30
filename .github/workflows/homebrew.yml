@@ -15,7 +15,7 @@ jobs:
         run: |
           # 1. Setup Variables
           VERSION=${TAG#v}
-          URL="https://github.com/MrSyr3x/termony/archive/refs/tags/${TAG}.tar.gz"
+          URL="https://github.com/MrSyr3x/Vyom/archive/refs/tags/${TAG}.tar.gz"
           
           echo "Processing Release: $TAG (Version: $VERSION)"
           echo "Download URL: $URL"
@@ -62,6 +62,6 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore(brew): update formula to ${TAG}"
-            git push origin HEAD:main
-            echo "Successfully pushed update to main!"
+            git push origin HEAD:master
+            echo "Successfully pushed update to master!"
           fi
