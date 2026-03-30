@@ -228,13 +228,13 @@ impl App {
             last_album: String::new(),
             shuffle: false,          // Will be updated from MPD
             repeat: RepeatMode::Off, // Will be updated from MPD
-            output_device: if cfg!(test) {
+            output_device: if std::env::var("GITHUB_ACTIONS").is_ok() {
                 "Mock Audio Device".to_string()
             } else {
                 audio_device::get_output_device_name()
             },
             audio_devices: {
-                if cfg!(test) {
+                if std::env::var("GITHUB_ACTIONS").is_ok() {
                     vec!["Mock Audio Device".to_string()]
                 } else {
                     let sys_devices = audio_device::get_devices_from_system();
@@ -264,9 +264,8 @@ impl App {
             #[cfg(feature = "mpd")]
             mpd_client: None,
 
-            // Find best image protocol based on terminal capabilities
             // CRITICAL: We skip from_query_stdio() during tests as it panics in headless CI
-            image_picker: if cfg!(test) {
+            image_picker: if std::env::var("GITHUB_ACTIONS").is_ok() {
                 ratatui_image::picker::Picker::halfblocks()
             } else {
                 ratatui_image::picker::Picker::from_query_stdio()
