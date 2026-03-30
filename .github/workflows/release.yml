@@ -30,6 +30,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: 📦 Install Linux Audio Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+      
       - name: 🦀 Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
@@ -48,11 +53,12 @@ jobs:
   build-and-release:
     name: 📦 Build Core Binaries (${{ matrix.target }})
     # Run if invoked by manual dispatch (after bump) OR a direct tag push
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     # Give bump job time to complete if dispatched manually
     needs: [bump-version]
-    # Bypass `needs` if it was a direct tag push
-    if: always() && (needs.bump-version.result == 'success' || needs.bump-version.result == 'skipped')
+    if: |
+      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') &&
+      always() && 
+      (needs.bump-version.result == 'success' || needs.bump-version.result == 'skipped')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
