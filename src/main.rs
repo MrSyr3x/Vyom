@@ -128,6 +128,7 @@ async fn main() -> Result<()> {
         is_tmux,
         is_mpd_mode,
         source_app,
+        false, // is_test
         user_config.clone(),
         persistent_state,
     );

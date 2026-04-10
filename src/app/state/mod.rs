@@ -143,6 +143,7 @@ impl App {
         is_tmux: bool,
         is_mpd: bool,
         source_app: &str,
+        is_test: bool,
         user_config: UserConfig,
         state: PersistentState,
     ) -> Self {
@@ -228,13 +229,13 @@ impl App {
             last_album: String::new(),
             shuffle: false,          // Will be updated from MPD
             repeat: RepeatMode::Off, // Will be updated from MPD
-            output_device: if std::env::var("GITHUB_ACTIONS").is_ok() {
+            output_device: if is_test {
                 "Mock Audio Device".to_string()
             } else {
                 audio_device::get_output_device_name()
             },
             audio_devices: {
-                if std::env::var("GITHUB_ACTIONS").is_ok() {
+                if is_test {
                     vec!["Mock Audio Device".to_string()]
                 } else {
                     let sys_devices = audio_device::get_devices_from_system();
@@ -265,7 +266,7 @@ impl App {
             mpd_client: None,
 
             // CRITICAL: We skip from_query_stdio() during tests as it panics in headless CI
-            image_picker: if std::env::var("GITHUB_ACTIONS").is_ok() {
+            image_picker: if is_test {
                 ratatui_image::picker::Picker::halfblocks()
             } else {
                 ratatui_image::picker::Picker::from_query_stdio()

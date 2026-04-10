@@ -9,6 +9,7 @@ fn create_test_app() -> App {
         false,        // is_tmux
         true,         // is_mpd
         "Multi-Test", // source_app
+        true,         // is_test
         config,
         vyom::app::config::PersistentState::default(),
     )
